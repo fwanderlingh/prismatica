@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -54,11 +54,9 @@ import {
   ZoomIn
 } from "lucide-react";
 import {
-  appUsers as seedUsers,
   dedupCandidates as seedDedupCandidates,
   extractionRows,
   highlightRules,
-  importBatches,
   initialDecisions,
   initialWorkflowEvents,
   projectCounts as seedProjectCounts,
@@ -71,6 +69,7 @@ import {
   screeningStudies,
   type DedupCandidate,
   type Decision,
+  type ImportBatch,
   type PrismaCounts,
   type ReviewProject,
   type Report,
@@ -138,6 +137,17 @@ const emptyProjectForm: NewProjectForm = {
   memberIds: []
 };
 
+const guestUser: AppUser = {
+  id: "guest",
+  name: "New reviewer",
+  email: "",
+  initials: "NR",
+  organization: "Prismatica",
+  title: "Reviewer",
+  timezone: "Europe/Rome",
+  avatarColor: "#167d7f"
+};
+
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -160,13 +170,14 @@ function getErrorMessage(error: unknown) {
 export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [users, setUsers] = useState<AppUser[]>(seedUsers);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
-  const [currentUserId, setCurrentUserId] = useState(seedUsers[0].id);
+  const [imports, setImports] = useState<ImportBatch[]>([]);
+  const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
   const [authMode, setAuthMode] = useState<"signIn" | "register">("signIn");
-  const [loginEmail, setLoginEmail] = useState(seedUsers[0].email);
-  const [loginPassword, setLoginPassword] = useState("review-demo");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -186,7 +197,7 @@ export function PrismaReviewApp() {
   const [teamMessage, setTeamMessage] = useState("");
   const [newProjectForm, setNewProjectForm] = useState<NewProjectForm>({
     ...emptyProjectForm,
-    memberIds: [seedUsers[0].id, seedUsers[1].id]
+    memberIds: []
   });
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
@@ -198,8 +209,11 @@ export function PrismaReviewApp() {
   const [retrievalStatus, setRetrievalStatus] = useState<Report["retrievalStatus"]>(reportQueue[0].retrievalStatus);
   const [fullTextDecision, setFullTextDecision] = useState<DecisionValue | null>(null);
   const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
+  const [importMessage, setImportMessage] = useState("");
+  const bibtexInputRef = useRef<HTMLInputElement>(null);
+  const risInputRef = useRef<HTMLInputElement>(null);
 
-  const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? seedUsers[0];
+  const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
   const userProjects = useMemo(
     () => projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerId === currentUser.id),
     [currentUser.id, projects]
@@ -208,7 +222,7 @@ export function PrismaReviewApp() {
   const activeCounts = useMemo(() => getCountsForProject(selectedProject), [selectedProject]);
   const isProjectView = activeView !== "dashboard" && activeView !== "newProject" && activeView !== "profile";
   const hasProjectSeedData = selectedProject.id === "demo-review";
-  const projectImportBatches = hasProjectSeedData ? importBatches : [];
+  const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
   const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
   const projectScreeningStudies = hasProjectSeedData ? screeningStudies : [];
   const projectReportQueue = hasProjectSeedData ? reportQueue : [];
@@ -352,6 +366,7 @@ export function PrismaReviewApp() {
   function applyAppState(payload: AppStatePayload | AppMutationPayload) {
     setUsers(payload.users);
     setProjects(payload.projects);
+    setImports(payload.imports);
     setDecisions(payload.decisions);
     setEvents(payload.events);
     setDedupCandidates(payload.dedupCandidates);
@@ -450,12 +465,7 @@ export function PrismaReviewApp() {
     await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setIsAuthenticated(false);
     setActiveView("dashboard");
-    setLoginPassword("review-demo");
-  }
-
-  function selectLoginUser(user: AppUser) {
-    setLoginEmail(user.email);
-    setLoginError("");
+    setLoginPassword("");
   }
 
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
@@ -601,6 +611,32 @@ export function PrismaReviewApp() {
       setActiveView("projectDashboard");
     } catch (error) {
       setLoginError(getErrorMessage(error));
+    }
+  }
+
+  async function importCitationFile(format: ImportBatch["format"], event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setImportMessage(`Importing ${file.name}...`);
+    try {
+      const content = await file.text();
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports`, {
+        method: "POST",
+        body: JSON.stringify({
+          format,
+          filename: file.name,
+          byteSize: file.size,
+          content
+        })
+      });
+      applyAppState(payload);
+      setImportMessage(`${file.name} imported and stored on the server.`);
+    } catch (error) {
+      setImportMessage(getErrorMessage(error));
     }
   }
 
@@ -920,16 +956,36 @@ export function PrismaReviewApp() {
             <p className="subtle">RIS, BibTeX, EndNote XML, and CSV batches remain traceable to the original payload.</p>
           </div>
           <div className="toolbarCluster">
-            <button className="ghostButton" type="button" title="Upload a BibTeX file">
+            <input
+              className="hiddenFileInput"
+              ref={bibtexInputRef}
+              type="file"
+              accept=".bib,.bibtex,text/x-bibtex,text/plain"
+              onChange={(event) => importCitationFile("bib", event)}
+            />
+            <input
+              className="hiddenFileInput"
+              ref={risInputRef}
+              type="file"
+              accept=".ris,application/x-research-info-systems,text/plain"
+              onChange={(event) => importCitationFile("ris", event)}
+            />
+            <button className="ghostButton" type="button" title="Upload a BibTeX file" onClick={() => bibtexInputRef.current?.click()}>
               <FileArchive size={17} />
               BibTeX
             </button>
-            <button className="primaryButton" type="button" title="Upload an RIS file">
+            <button className="ghostButton" type="button" title="Upload an RIS file" onClick={() => risInputRef.current?.click()}>
               <Upload size={17} />
-              RIS Upload
+              RIS
             </button>
           </div>
         </section>
+        {importMessage ? (
+          <div className={importMessage.startsWith("Importing") || importMessage.includes("imported") ? "validationItem ok" : "validationItem blocked"}>
+            {importMessage.startsWith("Importing") || importMessage.includes("imported") ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{importMessage}</span>
+          </div>
+        ) : null}
 
         <section className="importGrid">
           <div className="panel">
@@ -2128,30 +2184,6 @@ export function PrismaReviewApp() {
             </button>
           </form>
           )}
-        </section>
-
-        <section className="loginUsers">
-          <div>
-            <p className="eyebrow">Seed accounts</p>
-            <h2>Choose email</h2>
-          </div>
-          <div className="userGrid">
-            {users.map((user) => (
-              <button
-                className={loginEmail === user.email ? "loginUserCard active" : "loginUserCard"}
-                type="button"
-                key={user.id}
-                onClick={() => selectLoginUser(user)}
-              >
-                <span className="avatar" style={{ background: user.avatarColor }}>
-                  {user.initials}
-                </span>
-                <strong>{user.name}</strong>
-                <small>{user.title}</small>
-                <em>{projects.filter((project) => project.memberIds.includes(user.id) || project.ownerId === user.id).length} reviews</em>
-              </button>
-            ))}
-          </div>
         </section>
       </main>
     );

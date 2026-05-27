@@ -3,14 +3,10 @@ import fs from "fs";
 import path from "path";
 import type { AppMutationPayload, AppStatePayload } from "./apiTypes";
 import {
-  appUsers,
-  dedupCandidates as seedDedupCandidates,
-  initialDecisions,
-  initialWorkflowEvents,
-  reviewProjects,
   type AppUser,
   type Decision,
   type DedupCandidate,
+  type ImportBatch,
   type ReviewProject,
   type WorkflowEvent
 } from "./prismaData";
@@ -27,6 +23,7 @@ type PersistedState = {
   version: 1;
   users: StoredUser[];
   projects: ReviewProject[];
+  imports: ImportBatch[];
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
@@ -45,8 +42,7 @@ type NewProjectInput = {
   memberIds?: string[];
 };
 
-const defaultPassword = "review-demo";
-const invitePassword = process.env.PRISMATICA_INVITE_PASSWORD ?? defaultPassword;
+const demoUserIds = new Set(["user-rivera", "user-chen", "user-patel", "user-okafor"]);
 
 export class ApiError extends Error {
   status: number;
@@ -65,19 +61,14 @@ function dataFilePath() {
 }
 
 function createSeedState(): PersistedState {
-  const now = new Date().toISOString();
   return {
     version: 1,
-    users: appUsers.map((user) => ({
-      ...user,
-      ...hashPassword(defaultPassword),
-      createdAt: now,
-      updatedAt: now
-    })),
-    projects: reviewProjects,
-    decisions: initialDecisions,
-    events: initialWorkflowEvents,
-    dedupCandidates: seedDedupCandidates
+    users: [],
+    projects: [],
+    imports: [],
+    decisions: [],
+    events: [],
+    dedupCandidates: []
   };
 }
 
@@ -90,7 +81,9 @@ function readState(): PersistedState {
   }
 
   const parsed = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ filePath, "utf8")) as Partial<PersistedState>;
-  return normalizeState(parsed);
+  const normalized = normalizeState(parsed);
+  writeState(normalized);
+  return normalized;
 }
 
 function writeState(state: PersistedState) {
@@ -103,7 +96,17 @@ function writeState(state: PersistedState) {
 
 function normalizeState(state: Partial<PersistedState>): PersistedState {
   const now = new Date().toISOString();
-  const users = Array.isArray(state.users) && state.users.length > 0 ? state.users : createSeedState().users;
+  const users = Array.isArray(state.users) ? state.users.filter((user) => !demoUserIds.has(user.id)) : [];
+  const userIds = new Set(users.map((user) => user.id));
+  const projects = Array.isArray(state.projects)
+    ? state.projects
+        .filter((project) => userIds.has(project.ownerId))
+        .map((project) => ({
+          ...project,
+          memberIds: project.memberIds.filter((memberId) => userIds.has(memberId))
+        }))
+    : [];
+  const projectIds = new Set(projects.map((project) => project.id));
 
   return {
     version: 1,
@@ -113,15 +116,18 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
       }
       return {
         ...user,
-        ...hashPassword(defaultPassword),
+        ...hashPassword(crypto.randomBytes(18).toString("base64url")),
         createdAt: now,
         updatedAt: now
       } as StoredUser;
     }),
-    projects: Array.isArray(state.projects) && state.projects.length > 0 ? state.projects : reviewProjects,
-    decisions: Array.isArray(state.decisions) ? state.decisions : initialDecisions,
-    events: Array.isArray(state.events) ? state.events : initialWorkflowEvents,
-    dedupCandidates: Array.isArray(state.dedupCandidates) ? state.dedupCandidates : seedDedupCandidates
+    projects,
+    imports: Array.isArray(state.imports) ? state.imports.filter((batch) => projectIds.has(batch.projectId)) : [],
+    decisions: Array.isArray(state.decisions)
+      ? state.decisions.filter((decision) => projectIds.has(decision.projectId) && userIds.has(decision.userId))
+      : [],
+    events: Array.isArray(state.events) ? state.events.filter((event) => projectIds.has(event.entity)) : [],
+    dedupCandidates: Array.isArray(state.dedupCandidates) ? state.dedupCandidates.filter(() => projectIds.has("demo-review")) : []
   };
 }
 
@@ -198,6 +204,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     currentUser: publicUser(currentUser),
     users: state.users.map(publicUser),
     projects,
+    imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
     decisions: state.decisions.filter((decision) => {
       const project = projectById.get(decision.projectId);
       if (!project) {
@@ -379,6 +386,7 @@ export function inviteUserToProjectForUser(
   let temporaryPassword: string | undefined;
   if (!invitedUser) {
     const now = new Date().toISOString();
+    temporaryPassword = process.env.PRISMATICA_INVITE_PASSWORD ?? crypto.randomBytes(12).toString("base64url");
     invitedUser = {
       id: createId(`user-${slugify(email)}`),
       name,
@@ -388,11 +396,10 @@ export function inviteUserToProjectForUser(
       title: input.title?.trim() || "Reviewer",
       timezone: "Europe/Rome",
       avatarColor: pickAvatarColor(state.users.length),
-      ...hashPassword(invitePassword),
+      ...hashPassword(temporaryPassword),
       createdAt: now,
       updatedAt: now
     };
-    temporaryPassword = invitePassword;
     state.users.push(invitedUser);
   }
 
@@ -448,6 +455,65 @@ export function removeProjectMemberForUser(userId: string, projectId: string, me
       : candidate
   );
   appendEvent(state, currentUser.name, `Removed ${removedUser?.name ?? "user"} from project team`, projectId);
+  writeState(state);
+
+  return buildPayload(state, userId);
+}
+
+export function createImportBatchForUser(
+  userId: string,
+  projectId: string,
+  input: {
+    format?: ImportBatch["format"];
+    filename?: string;
+    byteSize?: number;
+    content?: string;
+  }
+): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  const project = requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  if (!input.format || !["ris", "bib"].includes(input.format)) {
+    throw new ApiError("Choose a RIS or BibTeX file to import.");
+  }
+
+  const filename = input.filename?.trim() || `${input.format}-import.${input.format === "bib" ? "bib" : "ris"}`;
+  const content = input.content ?? "";
+  const records = countImportedRecords(input.format, content);
+  const parserWarnings = content.trim() ? 0 : 1;
+  const sourceName = input.format === "bib" ? "BibTeX upload" : "RIS upload";
+  const now = new Date();
+  const batch: ImportBatch = {
+    id: createId("imp"),
+    projectId,
+    sourceName,
+    format: input.format,
+    filename,
+    status: parserWarnings > 0 ? "needs_review" : "parsed",
+    records,
+    parserWarnings,
+    uploadedBy: currentUser.name,
+    uploadedAt: now.toISOString().slice(0, 16).replace("T", " ")
+  };
+
+  state.imports.unshift(batch);
+  state.projects = state.projects.map((candidate) =>
+    candidate.id === projectId
+      ? {
+          ...candidate,
+          status: candidate.status === "draft" ? "active" : candidate.status,
+          stage: candidate.stage === "setup" ? "import" : candidate.stage,
+          recordsTotal: candidate.recordsTotal + records,
+          updatedAt: toEuToday(),
+          lastEvent: `Imported ${filename}`
+        }
+      : candidate
+  );
+  appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}`, project.id);
   writeState(state);
 
   return buildPayload(state, userId);
@@ -620,6 +686,25 @@ function clampVoteCount(value: number | undefined) {
     return 2;
   }
   return Math.min(Math.max(Math.trunc(value), 1), 4);
+}
+
+function countImportedRecords(format: ImportBatch["format"], content: string) {
+  const normalized = content.trim();
+  if (!normalized) {
+    return 0;
+  }
+
+  if (format === "ris") {
+    const risStarts = normalized.match(/^TY\s+-/gim);
+    const risEnds = normalized.match(/^ER\s+-?/gim);
+    return Math.max(risStarts?.length ?? 0, risEnds?.length ?? 0, 1);
+  }
+
+  if (format === "bib") {
+    return normalized.match(/@\w+\s*[{(]/g)?.length ?? 1;
+  }
+
+  return 1;
 }
 
 function isEuDate(value: string) {

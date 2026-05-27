@@ -61,7 +61,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 Open `http://127.0.0.1:3000`.
 
-The first server request seeds demo users and projects into the server data file. Seed users use `review-demo` as the password.
+No demo accounts are pre-created. Register the first account from the sign-in screen, then create review projects and invite team members from project settings.
 
 ## Server Storage And Sessions
 

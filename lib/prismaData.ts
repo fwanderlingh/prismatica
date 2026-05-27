@@ -55,6 +55,7 @@ export type ReviewProject = ProjectSummary & {
 
 export type ImportBatch = {
   id: string;
+  projectId: string;
   sourceName: string;
   format: "ris" | "bib" | "endnote_xml" | "csv";
   filename: string;
@@ -150,49 +151,6 @@ export type WorkflowEvent = {
   time: string;
 };
 
-export const appUsers: AppUser[] = [
-  {
-    id: "user-rivera",
-    name: "M. Rivera",
-    email: "m.rivera@example.org",
-    initials: "MR",
-    organization: "Evidence Methods Unit",
-    title: "Review lead",
-    timezone: "Europe/Rome",
-    avatarColor: "#6d5aa7"
-  },
-  {
-    id: "user-chen",
-    name: "A. Chen",
-    email: "a.chen@example.org",
-    initials: "AC",
-    organization: "Evidence Methods Unit",
-    title: "Information specialist",
-    timezone: "Europe/London",
-    avatarColor: "#167d7f"
-  },
-  {
-    id: "user-patel",
-    name: "S. Patel",
-    email: "s.patel@example.org",
-    initials: "SP",
-    organization: "Community Health Reviews",
-    title: "Reviewer",
-    timezone: "America/New_York",
-    avatarColor: "#3b6ea8"
-  },
-  {
-    id: "user-okafor",
-    name: "L. Okafor",
-    email: "l.okafor@example.org",
-    initials: "LO",
-    organization: "Clinical Evidence Lab",
-    title: "Adjudicator",
-    timezone: "Europe/Rome",
-    avatarColor: "#2f7d4f"
-  }
-];
-
 export const projectSummary: ProjectSummary = {
   id: "demo-review",
   title: "Digital Health Interventions for Chronic Disease Self-Management",
@@ -275,6 +233,7 @@ export const reviewProjects: ReviewProject[] = [
 export const importBatches: ImportBatch[] = [
   {
     id: "imp-001",
+    projectId: "demo-review",
     sourceName: "PubMed",
     format: "ris",
     filename: "pubmed_chronic_digital_health.ris",
@@ -286,6 +245,7 @@ export const importBatches: ImportBatch[] = [
   },
   {
     id: "imp-002",
+    projectId: "demo-review",
     sourceName: "Embase",
     format: "ris",
     filename: "embase_export_week20.ris",
@@ -297,6 +257,7 @@ export const importBatches: ImportBatch[] = [
   },
   {
     id: "imp-003",
+    projectId: "demo-review",
     sourceName: "ClinicalTrials.gov",
     format: "csv",
     filename: "registry_trials.csv",
@@ -308,6 +269,7 @@ export const importBatches: ImportBatch[] = [
   },
   {
     id: "imp-004",
+    projectId: "demo-review",
     sourceName: "Scopus",
     format: "bib",
     filename: "scopus_citations.bib",

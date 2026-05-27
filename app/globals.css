@@ -61,6 +61,10 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+.hiddenFileInput {
+  display: none;
+}
+
 h1,
 h2,
 h3,
@@ -268,14 +272,14 @@ p {
 
 .loginShell {
   display: grid;
-  grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(320px, 460px);
+  justify-content: center;
+  align-content: center;
   min-height: 100vh;
   padding: 28px;
 }
 
-.loginPanel,
-.loginUsers {
+.loginPanel {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -357,19 +361,6 @@ p {
   background: var(--teal-soft);
 }
 
-.loginUsers {
-  display: grid;
-  align-content: start;
-  gap: 18px;
-  padding: 26px;
-}
-
-.loginUsers h2 {
-  margin-top: 5px;
-  font-size: 1.36rem;
-}
-
-.loginUserCard,
 .userSwitch {
   display: grid;
   gap: 7px;
@@ -382,16 +373,12 @@ p {
   text-align: left;
 }
 
-.loginUserCard:hover,
-.loginUserCard.active,
 .userSwitch:hover,
 .userSwitch.active {
   border-color: #b9d9d7;
   background: var(--teal-soft);
 }
 
-.loginUserCard small,
-.loginUserCard em,
 .userSwitch small,
 .userCard small {
   color: var(--muted);
@@ -651,7 +638,6 @@ p {
 }
 
 .userCard .avatar,
-.loginUserCard .avatar,
 .memberOption .avatar,
 .userSwitch .avatar,
 .profileHero .avatar {
