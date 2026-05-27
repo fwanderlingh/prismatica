@@ -1,6 +1,6 @@
 # Prismatica
 
-Open source PRISMA review platform built with Next.js, React, and TypeScript from `prisma_website_specifications.md`.
+Open source PRISMA review platform built with Next.js, React, and TypeScript.
 
 ![Dashboard](images/dashboard_1.png "Dashboard")
 
