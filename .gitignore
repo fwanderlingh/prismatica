@@ -1,5 +1,6 @@
 .next/
 out/
+data/
 node_modules/
 .tools/
 *.log

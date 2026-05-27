@@ -77,6 +77,7 @@ import {
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
+import type { ApiErrorPayload, AppMutationPayload, AppStatePayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue } from "@/lib/workflow";
 
 type NavItem = {
@@ -122,9 +123,6 @@ type NewProjectForm = {
   memberIds: string[];
 };
 
-const sessionStorageKey = "prisma-review-session-v1";
-const projectsStorageKey = "prisma-review-projects-v1";
-const usersStorageKey = "prisma-review-users-v1";
 const exclusionReasons = Object.keys(prismaCounts.reportsExcludedWithReasons);
 
 const emptyProjectForm: NewProjectForm = {
@@ -140,10 +138,28 @@ const emptyProjectForm: NewProjectForm = {
   memberIds: []
 };
 
+async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const response = await fetch(url, { ...init, headers });
+  const payload = (await response.json().catch(() => ({}))) as T | ApiErrorPayload;
+  if (!response.ok) {
+    throw new Error((payload as ApiErrorPayload).error || "The server request failed.");
+  }
+
+  return payload as T;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "The server request failed.";
+}
+
 export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [hasLoadedSession, setHasLoadedSession] = useState(false);
   const [users, setUsers] = useState<AppUser[]>(seedUsers);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
   const [currentUserId, setCurrentUserId] = useState(seedUsers[0].id);
@@ -188,7 +204,7 @@ export function PrismaReviewApp() {
     () => projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerId === currentUser.id),
     [currentUser.id, projects]
   );
-  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0];
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
   const activeCounts = useMemo(() => getCountsForProject(selectedProject), [selectedProject]);
   const isProjectView = activeView !== "dashboard" && activeView !== "newProject" && activeView !== "profile";
   const hasProjectSeedData = selectedProject.id === "demo-review";
@@ -196,7 +212,10 @@ export function PrismaReviewApp() {
   const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
   const projectScreeningStudies = hasProjectSeedData ? screeningStudies : [];
   const projectReportQueue = hasProjectSeedData ? reportQueue : [];
-  const projectEvents = hasProjectSeedData ? events : events.filter((event) => event.entity === selectedProject.id);
+  const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
+  const projectEvents = hasProjectSeedData
+    ? events.filter((event) => !projectIdSet.has(event.entity) || event.entity === selectedProject.id)
+    : events.filter((event) => event.entity === selectedProject.id);
   const currentStudy = projectScreeningStudies[studyIndex] ?? screeningStudies[0];
   const currentUserDecision = useMemo(
     () =>
@@ -253,74 +272,29 @@ export function PrismaReviewApp() {
     projectScreeningStudies.length > 0 ? Math.round((screenedByMe / projectScreeningStudies.length) * 100) : 0;
 
   useEffect(() => {
-    const storedSession = window.localStorage.getItem(sessionStorageKey);
-    const storedProjects = window.localStorage.getItem(projectsStorageKey);
-    const storedUsers = window.localStorage.getItem(usersStorageKey);
+    let isMounted = true;
 
-    let hydratedUsers = seedUsers;
-
-    if (storedUsers) {
+    async function loadServerSession() {
       try {
-        const parsedUsers = JSON.parse(storedUsers) as AppUser[];
-        if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
-          hydratedUsers = parsedUsers;
-          setUsers(parsedUsers);
+        const payload = await apiRequest<AppStatePayload>("/api/app-state");
+        if (!isMounted) {
+          return;
         }
+        applyAppState(payload);
+        setLoginEmail(payload.currentUser.email);
+        setIsAuthenticated(true);
       } catch {
-        window.localStorage.removeItem(usersStorageKey);
+        if (isMounted) {
+          setIsAuthenticated(false);
+        }
       }
     }
 
-    if (storedProjects) {
-      try {
-        const parsedProjects = JSON.parse(storedProjects) as ReviewProject[];
-        if (Array.isArray(parsedProjects) && parsedProjects.length > 0) {
-          setProjects(parsedProjects);
-        }
-      } catch {
-        window.localStorage.removeItem(projectsStorageKey);
-      }
-    }
-
-    if (storedSession) {
-      try {
-        const session = JSON.parse(storedSession) as {
-          isAuthenticated?: boolean;
-          currentUserId?: string;
-          selectedProjectId?: string;
-        };
-        if (session.currentUserId && hydratedUsers.some((user) => user.id === session.currentUserId)) {
-          setCurrentUserId(session.currentUserId);
-          setLoginEmail(hydratedUsers.find((user) => user.id === session.currentUserId)?.email ?? seedUsers[0].email);
-        }
-        if (session.selectedProjectId) {
-          setSelectedProjectId(session.selectedProjectId);
-        }
-        setIsAuthenticated(Boolean(session.isAuthenticated));
-      } catch {
-        window.localStorage.removeItem(sessionStorageKey);
-      }
-    }
-
-    setHasLoadedSession(true);
+    loadServerSession();
+    return () => {
+      isMounted = false;
+    };
   }, []);
-
-  useEffect(() => {
-    if (!hasLoadedSession) {
-      return;
-    }
-
-    window.localStorage.setItem(projectsStorageKey, JSON.stringify(projects));
-    window.localStorage.setItem(usersStorageKey, JSON.stringify(users));
-    window.localStorage.setItem(
-      sessionStorageKey,
-      JSON.stringify({
-        isAuthenticated,
-        currentUserId,
-        selectedProjectId
-      })
-    );
-  }, [currentUserId, hasLoadedSession, isAuthenticated, projects, selectedProjectId, users]);
 
   useEffect(() => {
     if (!isAuthenticated || userProjects.length === 0) {
@@ -375,37 +349,55 @@ export function PrismaReviewApp() {
     return () => window.removeEventListener("keydown", handleKeydown);
   }, [activeView, currentStudy.id, currentUserDecision, decisions, projectScreeningStudies.length, selectedProject.id]);
 
-  function handleLogin(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    const matchingUser = users.find((user) => user.email.toLowerCase() === loginEmail.trim().toLowerCase());
+  function applyAppState(payload: AppStatePayload | AppMutationPayload) {
+    setUsers(payload.users);
+    setProjects(payload.projects);
+    setDecisions(payload.decisions);
+    setEvents(payload.events);
+    setDedupCandidates(payload.dedupCandidates);
+    setCurrentUserId(payload.currentUser.id);
+    setNewProjectForm((previous) => ({
+      ...previous,
+      organization: payload.currentUser.organization,
+      memberIds: Array.from(new Set([payload.currentUser.id, ...previous.memberIds]))
+    }));
+    setSelectedProjectId((previousProjectId) => {
+      if ("selectedProjectId" in payload && payload.selectedProjectId) {
+        return payload.selectedProjectId;
+      }
+      if (payload.projects.some((project) => project.id === previousProjectId)) {
+        return previousProjectId;
+      }
+      return payload.projects[0]?.id ?? reviewProjects[0].id;
+    });
+  }
 
-    if (!matchingUser) {
-      setLoginError("Choose an existing user or register a new account.");
-      return;
-    }
+  async function handleLogin(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
 
     if (!loginPassword.trim()) {
       setLoginError("Enter a password to continue.");
       return;
     }
 
-    const accessibleProjects = projects.filter(
-      (project) => project.memberIds.includes(matchingUser.id) || project.ownerId === matchingUser.id
-    );
-
-    setCurrentUserId(matchingUser.id);
-    setSelectedProjectId(accessibleProjects[0]?.id ?? projects[0].id);
-    setNewProjectForm((previous) => ({
-      ...previous,
-      organization: matchingUser.organization,
-      memberIds: Array.from(new Set([matchingUser.id, ...previous.memberIds]))
-    }));
-    setIsAuthenticated(true);
-    setActiveView("dashboard");
     setLoginError("");
+    try {
+      const payload = await apiRequest<AppStatePayload>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword
+        })
+      });
+      applyAppState(payload);
+      setIsAuthenticated(true);
+      setActiveView("dashboard");
+    } catch (error) {
+      setLoginError(getErrorMessage(error));
+    }
   }
 
-  function handleRegistration(event: FormEvent<HTMLFormElement>) {
+  async function handleRegistration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const email = registerForm.email.trim().toLowerCase();
     const name = registerForm.name.trim();
@@ -416,75 +408,54 @@ export function PrismaReviewApp() {
       return;
     }
 
-    if (users.some((user) => user.email.toLowerCase() === email)) {
-      setLoginError("That email already has an account. Sign in instead.");
-      setAuthMode("signIn");
-      setLoginEmail(email);
-      return;
-    }
-
-    const newUser: AppUser = {
-      id: `user-${slugify(email)}-${Date.now()}`,
-      name,
-      email,
-      initials: getInitials(name),
-      organization,
-      title: registerForm.title.trim() || "Reviewer",
-      timezone: "Europe/Rome",
-      avatarColor: pickAvatarColor(users.length)
-    };
-
-    setUsers((previous) => [...previous, newUser]);
-    setCurrentUserId(newUser.id);
-    setLoginEmail(newUser.email);
-    setLoginPassword(registerForm.password);
-    setNewProjectForm({
-      ...emptyProjectForm,
-      organization: newUser.organization,
-      memberIds: [newUser.id]
-    });
-    setRegisterForm({
-      name: "",
-      email: "",
-      organization: "",
-      title: "Reviewer",
-      password: ""
-    });
-    setIsAuthenticated(true);
-    setActiveView("dashboard");
     setLoginError("");
+    try {
+      const payload = await apiRequest<AppStatePayload>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          email,
+          organization,
+          title: registerForm.title,
+          password: registerForm.password
+        })
+      });
+      applyAppState(payload);
+      setLoginEmail(payload.currentUser.email);
+      setLoginPassword(registerForm.password);
+      setNewProjectForm({
+        ...emptyProjectForm,
+        organization: payload.currentUser.organization,
+        memberIds: [payload.currentUser.id]
+      });
+      setRegisterForm({
+        name: "",
+        email: "",
+        organization: "",
+        title: "Reviewer",
+        password: ""
+      });
+      setIsAuthenticated(true);
+      setActiveView("dashboard");
+    } catch (error) {
+      setLoginError(getErrorMessage(error));
+      if (getErrorMessage(error).includes("already has an account")) {
+        setAuthMode("signIn");
+        setLoginEmail(email);
+      }
+    }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setIsAuthenticated(false);
     setActiveView("dashboard");
     setLoginPassword("review-demo");
-    window.localStorage.setItem(
-      sessionStorageKey,
-      JSON.stringify({
-        isAuthenticated: false,
-        currentUserId,
-        selectedProjectId
-      })
-    );
   }
 
-  function switchUser(userId: string) {
-    const nextUser = users.find((user) => user.id === userId);
-    if (!nextUser) {
-      return;
-    }
-
-    const accessibleProjects = projects.filter((project) => project.memberIds.includes(nextUser.id) || project.ownerId === nextUser.id);
-    setCurrentUserId(nextUser.id);
-    setLoginEmail(nextUser.email);
-    setSelectedProjectId(accessibleProjects[0]?.id ?? projects[0].id);
-    setNewProjectForm((previous) => ({
-      ...previous,
-      organization: nextUser.organization,
-      memberIds: Array.from(new Set([nextUser.id, ...previous.memberIds]))
-    }));
-    setActiveView("dashboard");
+  function selectLoginUser(user: AppUser) {
+    setLoginEmail(user.email);
+    setLoginError("");
   }
 
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
@@ -515,25 +486,21 @@ export function PrismaReviewApp() {
     });
   }
 
-  function updateProjectMembers(projectId: string, memberIds: string[], eventLabel: string) {
-    const uniqueMemberIds = Array.from(new Set(memberIds));
-    setProjects((previous) =>
-      previous.map((project) =>
-        project.id === projectId
-          ? {
-              ...project,
-              memberIds: uniqueMemberIds,
-              reviewers: uniqueMemberIds.length,
-              updatedAt: toEuToday(),
-              lastEvent: eventLabel
-            }
-          : project
-      )
-    );
-    addEvent(eventLabel, projectId);
+  async function updateProjectMembers(projectId: string, memberIds: string[], eventLabel: string) {
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${projectId}/members`, {
+        method: "PATCH",
+        body: JSON.stringify({ memberIds, eventLabel })
+      });
+      applyAppState(payload);
+      return true;
+    } catch (error) {
+      setTeamMessage(getErrorMessage(error));
+      return false;
+    }
   }
 
-  function addExistingUserToProject() {
+  async function addExistingUserToProject() {
     if (!teamUserId) {
       setTeamMessage("Choose a user to add.");
       return;
@@ -550,12 +517,14 @@ export function PrismaReviewApp() {
       return;
     }
 
-    updateProjectMembers(selectedProject.id, [...selectedProject.memberIds, user.id], `Added ${user.name} to project team`);
-    setTeamUserId("");
-    setTeamMessage(`${user.name} added to ${selectedProject.title}.`);
+    const didUpdate = await updateProjectMembers(selectedProject.id, [...selectedProject.memberIds, user.id], `Added ${user.name} to project team`);
+    if (didUpdate) {
+      setTeamUserId("");
+      setTeamMessage(`${user.name} added to ${selectedProject.title}.`);
+    }
   }
 
-  function inviteUserToProject(event: FormEvent<HTMLFormElement>) {
+  async function inviteUserToProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const email = inviteForm.email.trim().toLowerCase();
     const name = inviteForm.name.trim();
@@ -565,33 +534,30 @@ export function PrismaReviewApp() {
       return;
     }
 
-    let invitedUser = users.find((user) => user.email.toLowerCase() === email);
-
-    if (!invitedUser) {
-      invitedUser = {
-        id: `user-${slugify(email)}-${Date.now()}`,
-        name,
-        email,
-        initials: getInitials(name),
-        organization: selectedProject.organization,
-        title: inviteForm.title.trim() || "Reviewer",
-        timezone: "Europe/Rome",
-        avatarColor: pickAvatarColor(users.length)
-      };
-      setUsers((previous) => [...previous, invitedUser as AppUser]);
-    }
-
-    if (selectedProject.memberIds.includes(invitedUser.id)) {
+    const invitedUser = users.find((user) => user.email.toLowerCase() === email);
+    if (invitedUser && selectedProject.memberIds.includes(invitedUser.id)) {
       setTeamMessage(`${invitedUser.name} is already in this review.`);
       return;
     }
 
-    updateProjectMembers(selectedProject.id, [...selectedProject.memberIds, invitedUser.id], `Invited ${invitedUser.name} to project team`);
-    setInviteForm({ name: "", email: "", title: "Reviewer" });
-    setTeamMessage(`${invitedUser.name} invited to ${selectedProject.title}.`);
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/invite`, {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          email,
+          title: inviteForm.title
+        })
+      });
+      applyAppState(payload);
+      setInviteForm({ name: "", email: "", title: "Reviewer" });
+      setTeamMessage(payload.message ?? `${name} invited to ${selectedProject.title}.`);
+    } catch (error) {
+      setTeamMessage(getErrorMessage(error));
+    }
   }
 
-  function removeUserFromProject(userId: string) {
+  async function removeUserFromProject(userId: string) {
     const user = users.find((candidate) => candidate.id === userId);
     if (!user) {
       return;
@@ -602,158 +568,104 @@ export function PrismaReviewApp() {
       return;
     }
 
-    updateProjectMembers(
-      selectedProject.id,
-      selectedProject.memberIds.filter((memberId) => memberId !== userId),
-      `Removed ${user.name} from project team`
-    );
-    setTeamMessage(`${user.name} removed from ${selectedProject.title}.`);
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/members/${userId}`, {
+        method: "DELETE"
+      });
+      applyAppState(payload);
+      setTeamMessage(`${user.name} removed from ${selectedProject.title}.`);
+    } catch (error) {
+      setTeamMessage(getErrorMessage(error));
+    }
   }
 
-  function createProject(event: FormEvent<HTMLFormElement>) {
+  async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = newProjectForm.title.trim();
     if (!title || !isEuDate(newProjectForm.dueDate)) {
       return;
     }
 
-    const nextProject: ReviewProject = {
-      id: slugify(`${title}-${Date.now()}`),
-      title,
-      organization: newProjectForm.organization.trim() || currentUser.organization,
-      protocolId: newProjectForm.protocolId.trim() || "Draft protocol",
-      blindMode: newProjectForm.blindMode,
-      abstractRequiredVotes: newProjectForm.abstractRequiredVotes,
-      fullTextRequiredVotes: newProjectForm.fullTextRequiredVotes,
-      maybePolicy: newProjectForm.maybePolicy,
-      reviewers: newProjectForm.memberIds.length,
-      lastEvent: "Project created just now",
-      description: newProjectForm.description.trim() || "New systematic review project.",
-      status: "draft",
-      stage: "setup",
-      ownerId: currentUser.id,
-      memberIds: Array.from(new Set([currentUser.id, ...newProjectForm.memberIds])),
-      createdAt: toEuToday(),
-      updatedAt: toEuToday(),
-      dueDate: newProjectForm.dueDate,
-      recordsTotal: 0,
-      recordsScreened: 0,
-      conflicts: 0,
-      studiesIncluded: 0
-    };
-
-    setProjects((previous) => [nextProject, ...previous]);
-    setSelectedProjectId(nextProject.id);
-    setNewProjectForm({
-      ...emptyProjectForm,
-      organization: currentUser.organization,
-      memberIds: [currentUser.id]
-    });
-    setActiveView("projectDashboard");
-    addEvent("Created review project", nextProject.id);
+    try {
+      const payload = await apiRequest<AppMutationPayload>("/api/projects", {
+        method: "POST",
+        body: JSON.stringify(newProjectForm)
+      });
+      applyAppState(payload);
+      setSelectedProjectId(payload.selectedProjectId ?? selectedProjectId);
+      setNewProjectForm({
+        ...emptyProjectForm,
+        organization: currentUser.organization,
+        memberIds: [currentUser.id]
+      });
+      setActiveView("projectDashboard");
+    } catch (error) {
+      setLoginError(getErrorMessage(error));
+    }
   }
 
-  function addEvent(action: string, entity: string) {
-    const nextEvent: WorkflowEvent = {
-      id: `evt-${Date.now()}`,
-      actor: currentUser.name,
-      action,
-      entity,
-      time: "just now"
-    };
-    setEvents((previous) => [nextEvent, ...previous].slice(0, 8));
-  }
-
-  function addScreeningDecision(decisionValue: Exclude<DecisionValue, "not_retrieved">) {
+  async function addScreeningDecision(decisionValue: Exclude<DecisionValue, "not_retrieved">) {
     if (projectScreeningStudies.length === 0) {
       return;
     }
 
-    const previousDecision = decisions.find(
-      (decision) =>
-        decision.projectId === selectedProject.id &&
-        decision.studyId === currentStudy.id &&
-        decision.userId === currentUser.id &&
-        decision.stage === "title_abstract" &&
-        decision.isCurrent
-    );
-
-    const nextDecision: Decision = {
-      id: `dec-${Date.now()}`,
-      projectId: selectedProject.id,
-      studyId: currentStudy.id,
-      stage: "title_abstract",
-      userId: currentUser.id,
-      userName: currentUser.name,
-      decisionValue,
-      note: screeningNote || undefined,
-      isCurrent: true,
-      supersedesDecisionId: previousDecision?.id,
-      createdAt: new Date().toLocaleString()
-    };
-
-    setDecisions((previous) => [
-      ...previous.map((decision) =>
-        previousDecision && decision.id === previousDecision.id ? { ...decision, isCurrent: false } : decision
-      ),
-      nextDecision
-    ]);
-    setDecisionActions((previous) => [...previous, { studyId: currentStudy.id, previousDecisionId: previousDecision?.id }]);
-    addEvent(`Voted ${formatDecision(decisionValue)}`, currentStudy.id);
-    setScreeningNote("");
-    setStudyIndex((index) => Math.min(index + 1, Math.max(projectScreeningStudies.length - 1, 0)));
+    try {
+      const payload = await apiRequest<AppMutationPayload>("/api/decisions", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: selectedProject.id,
+          studyId: currentStudy.id,
+          decisionValue,
+          note: screeningNote
+        })
+      });
+      applyAppState(payload);
+      if (payload.decisionAction) {
+        setDecisionActions((previous) => [...previous, payload.decisionAction as DecisionAction]);
+      }
+      setScreeningNote("");
+      setStudyIndex((index) => Math.min(index + 1, Math.max(projectScreeningStudies.length - 1, 0)));
+    } catch (error) {
+      setLoginError(getErrorMessage(error));
+    }
   }
 
-  function undoLastDecision() {
+  async function undoLastDecision() {
     const lastAction = decisionActions[decisionActions.length - 1];
     if (!lastAction) {
       return;
     }
 
     const study = projectScreeningStudies.find((candidateStudy) => candidateStudy.id === lastAction.studyId);
-    const current = decisions.find(
-      (decision) =>
-        decision.projectId === selectedProject.id &&
-        decision.studyId === lastAction.studyId &&
-        decision.userId === currentUser.id &&
-        decision.stage === "title_abstract" &&
-        decision.isCurrent
-    );
-    const previous = lastAction.previousDecisionId
-      ? decisions.find((decision) => decision.id === lastAction.previousDecisionId)
-      : undefined;
-
-    setDecisions((existing) => {
-      const withoutCurrent = existing.map((decision) =>
-        current && decision.id === current.id ? { ...decision, isCurrent: false } : decision
-      );
-
-      if (!previous) {
-        return withoutCurrent;
+    try {
+      const payload = await apiRequest<AppMutationPayload>("/api/decisions/undo", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: selectedProject.id,
+          studyId: lastAction.studyId,
+          previousDecisionId: lastAction.previousDecisionId
+        })
+      });
+      applyAppState(payload);
+      setDecisionActions((previous) => previous.slice(0, -1));
+      if (study) {
+        setStudyIndex(projectScreeningStudies.findIndex((candidateStudy) => candidateStudy.id === study.id));
       }
-
-      const restoredDecision: Decision = {
-        ...previous,
-        id: `dec-${Date.now()}`,
-        isCurrent: true,
-        supersedesDecisionId: current?.id,
-        createdAt: new Date().toLocaleString()
-      };
-      return [...withoutCurrent, restoredDecision];
-    });
-
-    setDecisionActions((previous) => previous.slice(0, -1));
-    if (study) {
-      setStudyIndex(projectScreeningStudies.findIndex((candidateStudy) => candidateStudy.id === study.id));
-      addEvent("Undid latest screening vote", study.id);
+    } catch (error) {
+      setLoginError(getErrorMessage(error));
     }
   }
 
-  function updateDedupCandidate(candidateId: string, status: DedupCandidate["status"]) {
-    setDedupCandidates((previous) =>
-      previous.map((candidate) => (candidate.id === candidateId ? { ...candidate, status } : candidate))
-    );
-    addEvent(status === "confirmed" ? "Confirmed duplicate candidate" : "Rejected duplicate candidate", candidateId);
+  async function updateDedupCandidate(candidateId: string, status: DedupCandidate["status"]) {
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/dedup-candidates/${candidateId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+      applyAppState(payload);
+    } catch (error) {
+      setLoginError(getErrorMessage(error));
+    }
   }
 
   function renderActiveView() {
@@ -2030,7 +1942,7 @@ export function PrismaReviewApp() {
 
         <section className="settingsGrid">
           <div className="panel">
-            <SectionTitle icon={UserCircle} title="Account" action="Demo session" />
+            <SectionTitle icon={UserCircle} title="Account" action="Server session" />
             <div className="profileRows">
               <StatusRow label="Organization" value={currentUser.organization} tone="info" />
               <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
@@ -2039,14 +1951,12 @@ export function PrismaReviewApp() {
           </div>
 
           <div className="panel">
-            <SectionTitle icon={Users} title="Switch User" action="Available users" />
+            <SectionTitle icon={Users} title="Team Directory" action="Server accounts" />
             <div className="memberPicker">
               {users.map((user) => (
-                <button
+                <div
                   className={user.id === currentUser.id ? "userSwitch active" : "userSwitch"}
-                  type="button"
                   key={user.id}
-                  onClick={() => switchUser(user.id)}
                 >
                   <span className="avatar" style={{ background: user.avatarColor }}>
                     {user.initials}
@@ -2055,7 +1965,7 @@ export function PrismaReviewApp() {
                     <strong>{user.name}</strong>
                     <small>{user.email}</small>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -2170,7 +2080,7 @@ export function PrismaReviewApp() {
             <div>
               <p className="eyebrow">Register</p>
               <h1>Create a reviewer account</h1>
-              <p className="subtle">Registration creates a local browser account. You can create a review immediately after signing up.</p>
+              <p className="subtle">Registration creates a server account. You can create a review immediately after signing up.</p>
             </div>
             <label>
               <span>Name</span>
@@ -2222,8 +2132,8 @@ export function PrismaReviewApp() {
 
         <section className="loginUsers">
           <div>
-            <p className="eyebrow">Users</p>
-            <h2>Switch access context</h2>
+            <p className="eyebrow">Seed accounts</p>
+            <h2>Choose email</h2>
           </div>
           <div className="userGrid">
             {users.map((user) => (
@@ -2231,15 +2141,7 @@ export function PrismaReviewApp() {
                 className={loginEmail === user.email ? "loginUserCard active" : "loginUserCard"}
                 type="button"
                 key={user.id}
-                onClick={() => {
-                  setLoginEmail(user.email);
-                  setCurrentUserId(user.id);
-                  setNewProjectForm((previous) => ({
-                    ...previous,
-                    organization: user.organization,
-                    memberIds: Array.from(new Set([user.id, ...previous.memberIds]))
-                  }));
-                }}
+                onClick={() => selectLoginUser(user)}
               >
                 <span className="avatar" style={{ background: user.avatarColor }}>
                   {user.initials}
@@ -2322,13 +2224,6 @@ export function PrismaReviewApp() {
               <History size={17} />
               Audit
             </button>
-            <select className="userSelect" value={currentUser.id} onChange={(event) => switchUser(event.target.value)} aria-label="Switch user">
-              {users.map((user) => (
-                <option value={user.id} key={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
             <button className="userPill" type="button" onClick={() => setActiveView("profile")} title="Open profile">
               <span style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>
               <strong>{currentUser.name}</strong>
@@ -2543,35 +2438,6 @@ function formatEuDate(value: string) {
     return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
   }
   return value;
-}
-
-function toEuToday() {
-  const now = new Date();
-  const day = String(now.getDate()).padStart(2, "0");
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  return `${day}-${month}-${now.getFullYear()}`;
-}
-
-function getInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
-}
-
-function pickAvatarColor(index: number) {
-  const colors = ["#6d5aa7", "#167d7f", "#3b6ea8", "#2f7d4f", "#b27716", "#c94f45"];
-  return colors[index % colors.length];
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function formatMaybePolicy(value: "advance_to_full_text" | "conflict" | "third_vote") {

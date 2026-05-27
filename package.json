@@ -5,8 +5,8 @@
   "description": "A PRISMA systematic review workflow website prototype.",
   "scripts": {
     "dev": "next dev",
+    "start": "next start",
     "build": "next build",
-    "preview": "python3 -m http.server 4173 --directory out",
     "check": "tsc --noEmit"
   },
   "dependencies": {

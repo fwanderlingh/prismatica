@@ -266,15 +266,6 @@ p {
   font-size: 0.88rem;
 }
 
-.userSelect {
-  width: 142px;
-  min-height: 38px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
 .loginShell {
   display: grid;
   grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
