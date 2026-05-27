@@ -1,0 +1,27 @@
+{
+  "name": "prisma-review-website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A PRISMA systematic review workflow website prototype.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "preview": "python3 -m http.server 4173 --directory out",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "1.16.0",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "overrides": {
+    "postcss": "8.5.10"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
+}
