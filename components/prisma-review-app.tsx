@@ -2243,11 +2243,13 @@ export function PrismaReviewApp() {
 
       <main className="mainArea">
         <header className="topbar">
-          <div className="projectCrumb">
-            <span>{!isProjectView ? currentUser.organization : selectedProject.organization}</span>
-            <ChevronRight size={15} />
-            <strong>{!isProjectView ? (activeView === "newProject" ? "New review" : activeView === "profile" ? "Profile" : "All reviews") : selectedProject.protocolId}</strong>
-          </div>
+          {!isProjectView ? (
+            <div className="projectCrumb">
+              <span>{currentUser.organization}</span>
+              <ChevronRight size={15} />
+              <strong>{activeView === "newProject" ? "New review" : activeView === "profile" ? "Profile" : "All reviews"}</strong>
+            </div>
+          ) : null}
           <div className="topbarActions">
             <button className="ghostButton iconOnly" type="button" title="Search records">
               <Search size={17} />

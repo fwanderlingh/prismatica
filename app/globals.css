@@ -240,6 +240,7 @@ p {
 }
 
 .topbarActions {
+  margin-left: auto;
   gap: 9px;
 }
 
@@ -388,7 +389,7 @@ p {
 
 .avatar {
   display: grid;
-  flex: 0 0 34px;
+  flex-shrink: 0;
   width: 34px;
   height: 34px;
   place-items: center;
