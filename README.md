@@ -24,27 +24,37 @@ Open source PRISMA review platform built with Next.js, React, and TypeScript fro
 
 Registered users, newly created reviews, and the active session are stored in browser `localStorage`, so they survive refreshes in the same browser.
 
-## Runtime
+## System Dependencies
 
-System Node.js was not available in this environment, and `sudo` requires an interactive password, so a portable Node.js runtime was installed inside this project folder:
+Prismatica requires Node.js 20.9 or newer, npm, and Python 3 for the optional static preview command.
+
+On Ubuntu/Debian, install the required system dependencies with:
 
 ```bash
-export PATH="/home/wanderfra/www/prismatica/.tools/node-v20.18.1-linux-x64/bin:$PATH"
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg python3
+
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
 ```
 
-If you already have Node.js 20.9 or newer available globally, the PATH export is optional.
+Verify the installation:
+
+```bash
+node --version
+npm --version
+python3 --version
+```
 
 ## Install
 
 ```bash
-export PATH="/home/wanderfra/www/prismatica/.tools/node-v20.18.1-linux-x64/bin:$PATH"
 npm install
 ```
 
 ## Development Server
 
 ```bash
-export PATH="/home/wanderfra/www/prismatica/.tools/node-v20.18.1-linux-x64/bin:$PATH"
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
@@ -55,7 +65,6 @@ Open `http://127.0.0.1:3000`.
 For access from another machine on the same subnet, bind the dev server to all interfaces:
 
 ```bash
-export PATH="/home/wanderfra/www/prismatica/.tools/node-v20.18.1-linux-x64/bin:$PATH"
 npm run dev -- --hostname 0.0.0.0 --port 3000
 ```
 
@@ -64,14 +73,12 @@ Then open `http://130.251.6.42:3000` from another machine. If the LAN IP changes
 ## Type Check
 
 ```bash
-export PATH="/home/wanderfra/www/prismatica/.tools/node-v20.18.1-linux-x64/bin:$PATH"
 npm run check
 ```
 
 ## Production Build
 
 ```bash
-export PATH="/home/wanderfra/www/prismatica/.tools/node-v20.18.1-linux-x64/bin:$PATH"
 npm run build
 ```
 
@@ -80,7 +87,6 @@ The static site is exported to `out/`.
 ## Preview Static Build
 
 ```bash
-export PATH="/home/wanderfra/www/prismatica/.tools/node-v20.18.1-linux-x64/bin:$PATH"
 npm run preview
 ```
 
