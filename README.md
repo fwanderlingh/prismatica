@@ -70,6 +70,22 @@ npm run dev -- --hostname 0.0.0.0 --port 3000
 
 Then open `http://130.251.6.42:3000` from another machine. If the LAN IP changes, add the new IP to `allowedDevOrigins` in `next.config.mjs` and restart the dev server.
 
+## Network-Enabled Public Access
+
+For access from outside the local subnet, run the app bound to all interfaces:
+
+```bash
+npm run dev -- --hostname 0.0.0.0 --port 3000
+```
+
+Then open `http://130.251.6.30:3000`.
+
+If public clients cannot connect:
+
+- Ensure inbound TCP `3000` is allowed by the host firewall and any upstream network firewall.
+- Ensure `130.251.6.30` is included in `allowedDevOrigins` in `next.config.mjs`.
+- Restart the dev server after changing `allowedDevOrigins`.
+
 ## Type Check
 
 ```bash
