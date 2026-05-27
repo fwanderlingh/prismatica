@@ -2,6 +2,8 @@
 
 Open source PRISMA review platform built with Next.js, React, and TypeScript from `prisma_website_specifications.md`.
 
+![Dashboard](images/dashboard_1.png "Dashboard")
+
 ## What Is Included
 
 - Project dashboard with PRISMA counts and audit trail
