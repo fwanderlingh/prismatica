@@ -1,6 +1,12 @@
-# Prismatica
+<p align="center">
+    <img src="./app/icon.svg" alt="Logo" style="max-width:150px">
+</p>
+
+
+# PRISMATICA
 
 Open source PRISMA review platform built with Next.js, React, and TypeScript.
+
 
 ![Dashboard](images/dashboard_1.png "Dashboard")
 
