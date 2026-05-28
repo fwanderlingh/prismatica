@@ -14,7 +14,7 @@ Open source PRISMA review platform built with Next.js, React, and TypeScript.
 - New review project form with team membership, EU-format due date (`dd-mm-yyyy`), and screening policy controls
 - Project settings team management for adding existing users, inviting new users, and removing non-owner members
 - Empty/waiting states for newly created reviews before imports, deduplication, screening, and full-text work begin
-- Import batch/provenance view for RIS, BibTeX, EndNote XML, and CSV sources
+- Import batch/provenance view for RIS and BibTeX
 - Deduplication candidate review with side-by-side metadata and scoring
 - High-velocity title/abstract screening with append-only decision state
 - Full-text review workspace with PDF viewer mock, retrieval status, and exclusion reasons

@@ -44,6 +44,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Trash2,
   Upload,
   User,
   UserCircle,
@@ -73,6 +74,7 @@ import {
   type PrismaCounts,
   type ReviewProject,
   type Report,
+  type Study,
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
@@ -122,6 +124,21 @@ type NewProjectForm = {
   memberIds: string[];
 };
 
+type ImportDetailForm = {
+  sourceName: string;
+  filename: string;
+};
+
+type StudyEditForm = {
+  title: string;
+  authors: string;
+  journal: string;
+  year: string;
+  doi: string;
+  keywords: string;
+  abstract: string;
+};
+
 const exclusionReasons = Object.keys(prismaCounts.reportsExcludedWithReasons);
 
 const emptyProjectForm: NewProjectForm = {
@@ -135,6 +152,21 @@ const emptyProjectForm: NewProjectForm = {
   fullTextRequiredVotes: 2,
   maybePolicy: "advance_to_full_text",
   memberIds: []
+};
+
+const emptyImportDetailForm: ImportDetailForm = {
+  sourceName: "",
+  filename: ""
+};
+
+const emptyStudyEditForm: StudyEditForm = {
+  title: "",
+  authors: "",
+  journal: "",
+  year: "",
+  doi: "",
+  keywords: "",
+  abstract: ""
 };
 
 const guestUser: AppUser = {
@@ -169,10 +201,12 @@ function getErrorMessage(error: unknown) {
 
 export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
   const [imports, setImports] = useState<ImportBatch[]>([]);
+  const [studies, setStudies] = useState<Study[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
   const [authMode, setAuthMode] = useState<"signIn" | "register">("signIn");
@@ -210,6 +244,19 @@ export function PrismaReviewApp() {
   const [fullTextDecision, setFullTextDecision] = useState<DecisionValue | null>(null);
   const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
   const [importMessage, setImportMessage] = useState("");
+  const [selectedImportId, setSelectedImportId] = useState("");
+  const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
+  const [importDetailMessage, setImportDetailMessage] = useState("");
+  const [importDetailForm, setImportDetailForm] = useState<ImportDetailForm>(emptyImportDetailForm);
+  const [studyEditId, setStudyEditId] = useState("");
+  const [studyEditForm, setStudyEditForm] = useState<StudyEditForm>(emptyStudyEditForm);
+  const [accountMessage, setAccountMessage] = useState("");
+  const [accountForm, setAccountForm] = useState({
+    organization: "",
+    title: "",
+    currentPassword: "",
+    newPassword: ""
+  });
   const bibtexInputRef = useRef<HTMLInputElement>(null);
   const risInputRef = useRef<HTMLInputElement>(null);
 
@@ -224,7 +271,8 @@ export function PrismaReviewApp() {
   const hasProjectSeedData = selectedProject.id === "demo-review";
   const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
   const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
-  const projectScreeningStudies = hasProjectSeedData ? screeningStudies : [];
+  const importedProjectStudies = studies.filter((study) => study.projectId === selectedProject.id);
+  const projectScreeningStudies = hasProjectSeedData ? screeningStudies : importedProjectStudies;
   const projectReportQueue = hasProjectSeedData ? reportQueue : [];
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
   const projectEvents = hasProjectSeedData
@@ -301,6 +349,10 @@ export function PrismaReviewApp() {
         if (isMounted) {
           setIsAuthenticated(false);
         }
+      } finally {
+        if (isMounted) {
+          setIsAuthResolved(true);
+        }
       }
     }
 
@@ -363,10 +415,62 @@ export function PrismaReviewApp() {
     return () => window.removeEventListener("keydown", handleKeydown);
   }, [activeView, currentStudy.id, currentUserDecision, decisions, projectScreeningStudies.length, selectedProject.id]);
 
+  useEffect(() => {
+    setAccountForm((previous) => ({
+      ...previous,
+      organization: currentUser.organization,
+      title: currentUser.title,
+      currentPassword: "",
+      newPassword: ""
+    }));
+    setAccountMessage("");
+  }, [currentUser.id, currentUser.organization, currentUser.title]);
+
+  useEffect(() => {
+    const batch = imports.find((candidate) => candidate.id === selectedImportId && candidate.projectId === selectedProject.id);
+    if (!batch) {
+      if (isImportEditorOpen) {
+        setIsImportEditorOpen(false);
+      }
+      setImportDetailForm(emptyImportDetailForm);
+      setStudyEditId("");
+      setStudyEditForm(emptyStudyEditForm);
+      return;
+    }
+
+    setImportDetailForm({
+      sourceName: batch.sourceName,
+      filename: batch.filename
+    });
+  }, [imports, isImportEditorOpen, selectedImportId, selectedProject.id]);
+
+  if (!isAuthResolved) {
+    return (
+      <main className="loginShell" aria-busy="true" aria-live="polite">
+        <section className="loginPanel authLoadingPanel">
+          <div className="brandBlock loginBrand">
+            <div className="brandMark">
+              <FileSearch size={25} />
+            </div>
+            <div>
+              <strong>Prismatica</strong>
+              <span>Open source PRISMA review platform</span>
+            </div>
+          </div>
+          <div className="authLoadingBody">
+            <span className="authLoadingSpinner" aria-hidden="true" />
+            <p className="subtle">Loading your workspace...</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   function applyAppState(payload: AppStatePayload | AppMutationPayload) {
     setUsers(payload.users);
     setProjects(payload.projects);
     setImports(payload.imports);
+    setStudies(payload.studies);
     setDecisions(payload.decisions);
     setEvents(payload.events);
     setDedupCandidates(payload.dedupCandidates);
@@ -634,9 +738,156 @@ export function PrismaReviewApp() {
         })
       });
       applyAppState(payload);
+      const importedBatchId = payload.imports.find((batch) => batch.projectId === selectedProject.id)?.id ?? "";
+      setSelectedImportId(importedBatchId);
+      setIsImportEditorOpen(Boolean(importedBatchId));
+      setImportDetailMessage(`${file.name} imported and stored on the server.`);
       setImportMessage(`${file.name} imported and stored on the server.`);
     } catch (error) {
       setImportMessage(getErrorMessage(error));
+    }
+  }
+
+  function openImportEditor(importId: string) {
+    setSelectedImportId(importId);
+    setStudyEditId("");
+    setStudyEditForm(emptyStudyEditForm);
+    setImportDetailMessage("");
+    setIsImportEditorOpen(true);
+  }
+
+  function closeImportEditor() {
+    setIsImportEditorOpen(false);
+    setStudyEditId("");
+    setStudyEditForm(emptyStudyEditForm);
+    setImportDetailMessage("");
+  }
+
+  async function updateImportDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedImportId) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${selectedImportId}`, {
+        method: "PATCH",
+        body: JSON.stringify(importDetailForm)
+      });
+      applyAppState(payload);
+      setImportDetailMessage("Import details updated.");
+    } catch (error) {
+      setImportDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function reviewImportWarnings(importId: string) {
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${importId}/review`, {
+        method: "POST"
+      });
+      applyAppState(payload);
+      setImportDetailMessage("Parser warnings reviewed.");
+    } catch (error) {
+      setImportDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  function editImportStudy(study: Study) {
+    setStudyEditId(study.id);
+    setStudyEditForm({
+      title: study.title,
+      authors: study.authors.join("; "),
+      journal: study.journal,
+      year: study.year > 0 ? String(study.year) : "",
+      doi: study.doi,
+      keywords: study.keywords.join("; "),
+      abstract: study.abstract
+    });
+    setImportDetailMessage("");
+  }
+
+  async function updateImportStudy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedImportId || !studyEditId) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${studyEditId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(studyEditForm)
+        }
+      );
+      applyAppState(payload);
+      setStudyEditId("");
+      setStudyEditForm(emptyStudyEditForm);
+      setImportDetailMessage("Citation entry updated.");
+    } catch (error) {
+      setImportDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function deleteImportStudy(study: Study) {
+    if (!selectedImportId || !window.confirm(`Delete "${study.title}" from this import batch?`)) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${study.id}`,
+        {
+          method: "DELETE"
+        }
+      );
+      applyAppState(payload);
+      if (studyEditId === study.id) {
+        setStudyEditId("");
+        setStudyEditForm(emptyStudyEditForm);
+      }
+      setImportDetailMessage("Citation entry deleted.");
+    } catch (error) {
+      setImportDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function deleteImportBatch(importId: string) {
+    if (!window.confirm("Delete this import batch and all of its citation entries?")) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${importId}`, {
+        method: "DELETE"
+      });
+      applyAppState(payload);
+      setSelectedImportId("");
+      closeImportEditor();
+      setImportMessage("Import batch deleted.");
+    } catch (error) {
+      setImportDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function updateAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAccountMessage("");
+    try {
+      const payload = await apiRequest<AppStatePayload>("/api/me", {
+        method: "PATCH",
+        body: JSON.stringify(accountForm)
+      });
+      applyAppState(payload);
+      setAccountForm((previous) => ({
+        ...previous,
+        currentPassword: "",
+        newPassword: ""
+      }));
+      setAccountMessage("Account updated.");
+    } catch (error) {
+      setAccountMessage(getErrorMessage(error));
     }
   }
 
@@ -946,14 +1197,237 @@ export function PrismaReviewApp() {
     );
   }
 
+  function renderImportEditor(batch: ImportBatch, batchStudies: Study[], warningMessages: string[]) {
+    const messageIsSuccess = /imported|updated|deleted|reviewed/i.test(importDetailMessage);
+
+    return (
+      <div className="viewStack">
+        <section className="overviewBand compactBand">
+          <div>
+            <p className="eyebrow">Import review</p>
+            <h1>{batch.filename}</h1>
+            <p className="subtle">
+              {batch.format.toUpperCase()} · {batch.records} records · uploaded by {batch.uploadedBy} on {batch.uploadedAt}
+            </p>
+          </div>
+          <div className="toolbarCluster">
+            <button className="ghostButton" type="button" onClick={closeImportEditor}>
+              <ArrowLeft size={17} />
+              Imports
+            </button>
+            <button className="dangerButton" type="button" onClick={() => deleteImportBatch(batch.id)}>
+              <Trash2 size={17} />
+              Delete Batch
+            </button>
+            <button className="primaryButton" type="button" disabled={batchStudies.length === 0} onClick={() => setActiveView("screening")}>
+              <FileSearch size={17} />
+              Open Screening
+            </button>
+          </div>
+        </section>
+
+        {importDetailMessage ? (
+          <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+            {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{importDetailMessage}</span>
+          </div>
+        ) : null}
+
+        <section className="importEditorLayout">
+          <div className="panel">
+            <SectionTitle
+              icon={Database}
+              title="Batch Details"
+              action={batch.parserWarnings > 0 ? `${batch.parserWarnings} warnings` : "Ready"}
+            />
+            <form className="importDetailForm" onSubmit={updateImportDetails}>
+              <label>
+                <span>Source</span>
+                <input
+                  value={importDetailForm.sourceName}
+                  onChange={(event) => setImportDetailForm((previous) => ({ ...previous, sourceName: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>Filename</span>
+                <input
+                  value={importDetailForm.filename}
+                  onChange={(event) => setImportDetailForm((previous) => ({ ...previous, filename: event.target.value }))}
+                />
+              </label>
+              <div className="buttonRow">
+                <button className="primaryButton" type="submit">
+                  <Check size={17} />
+                  Save Details
+                </button>
+                {batch.parserWarnings > 0 ? (
+                  <button className="ghostButton" type="button" onClick={() => reviewImportWarnings(batch.id)}>
+                    <CheckCircle2 size={17} />
+                    Mark Reviewed
+                  </button>
+                ) : null}
+              </div>
+            </form>
+
+            <div className={batch.parserWarnings > 0 ? "warningBox importReviewBox" : "secureBox importReviewBox"}>
+              {batch.parserWarnings > 0 ? <AlertTriangle size={18} /> : <Check size={17} />}
+              <div>
+                <strong>{batch.status.replace("_", " ")}</strong>
+                {warningMessages.length > 0 ? (
+                  <ul className="plainList compactList">
+                    {warningMessages.slice(0, 10).map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span>No parser warnings are open for this batch.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="panel">
+            <SectionTitle icon={FileText} title="Citation Entries" action={`${batchStudies.length} records`} />
+            {batchStudies.length > 0 ? (
+              <div className="importEntryList">
+                {batchStudies.map((study) => (
+                  <article className={studyEditId === study.id ? "importEntryCard editing" : "importEntryCard"} key={study.id}>
+                    {studyEditId === study.id ? (
+                      <form className="studyEditForm" onSubmit={updateImportStudy}>
+                        <label className="wideField">
+                          <span>Title</span>
+                          <input
+                            value={studyEditForm.title}
+                            onChange={(event) => setStudyEditForm((previous) => ({ ...previous, title: event.target.value }))}
+                          />
+                        </label>
+                        <div className="formGrid">
+                          <label>
+                            <span>Authors</span>
+                            <input
+                              value={studyEditForm.authors}
+                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, authors: event.target.value }))}
+                            />
+                          </label>
+                          <label>
+                            <span>Journal</span>
+                            <input
+                              value={studyEditForm.journal}
+                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, journal: event.target.value }))}
+                            />
+                          </label>
+                          <label>
+                            <span>Year</span>
+                            <input
+                              inputMode="numeric"
+                              value={studyEditForm.year}
+                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, year: event.target.value }))}
+                            />
+                          </label>
+                          <label>
+                            <span>DOI</span>
+                            <input
+                              value={studyEditForm.doi}
+                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, doi: event.target.value }))}
+                            />
+                          </label>
+                        </div>
+                        <label className="wideField">
+                          <span>Keywords</span>
+                          <input
+                            value={studyEditForm.keywords}
+                            onChange={(event) => setStudyEditForm((previous) => ({ ...previous, keywords: event.target.value }))}
+                          />
+                        </label>
+                        <label className="wideField">
+                          <span>Abstract</span>
+                          <textarea
+                            value={studyEditForm.abstract}
+                            onChange={(event) => setStudyEditForm((previous) => ({ ...previous, abstract: event.target.value }))}
+                          />
+                        </label>
+                        <div className="buttonRow">
+                          <button className="primaryButton" type="submit">
+                            <Check size={17} />
+                            Save Entry
+                          </button>
+                          <button
+                            className="ghostButton"
+                            type="button"
+                            onClick={() => {
+                              setStudyEditId("");
+                              setStudyEditForm(emptyStudyEditForm);
+                            }}
+                          >
+                            <X size={17} />
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <div className="importEntryHeader">
+                          <div>
+                            <strong>{study.title}</strong>
+                            <span>
+                              {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} ·{" "}
+                              {study.year > 0 ? study.year : "Year needs review"}
+                            </span>
+                          </div>
+                          <div className="buttonRow">
+                            <button className="ghostButton" type="button" onClick={() => editImportStudy(study)}>
+                              <PenLine size={17} />
+                              Edit
+                            </button>
+                            <button className="dangerButton" type="button" onClick={() => deleteImportStudy(study)}>
+                              <Trash2 size={17} />
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        <p className="importAbstract">{study.abstract}</p>
+                        {study.parserWarnings && study.parserWarnings.length > 0 ? (
+                          <ul className="plainList compactList">
+                            {study.parserWarnings.map((warning) => (
+                              <li key={warning}>{warning}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </>
+                    )}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={FileText} title="No citation entries" description="This import batch does not contain screening records." />
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   function renderImports() {
+    const selectedReviewBatch =
+      projectImportBatches.find((batch) => batch.id === selectedImportId) ??
+      projectImportBatches.find((batch) => batch.parserWarnings > 0) ??
+      projectImportBatches[0];
+    const selectedImportStudies = selectedReviewBatch
+      ? studies.filter((study) => study.projectId === selectedProject.id && study.importBatchId === selectedReviewBatch.id)
+      : [];
+    const selectedBatchWarnings = selectedReviewBatch?.parserWarningMessages ?? [];
+
+    if (isImportEditorOpen && selectedReviewBatch) {
+      return renderImportEditor(selectedReviewBatch, selectedImportStudies, selectedBatchWarnings);
+    }
+
     return (
       <div className="viewStack">
         <section className="overviewBand">
           <div>
             <p className="eyebrow">Import and provenance</p>
             <h1>Record Intake</h1>
-            <p className="subtle">RIS, BibTeX, EndNote XML, and CSV batches remain traceable to the original payload.</p>
+            <p className="subtle">RIS and BibTeX batches remain traceable to the original payload.</p>
           </div>
           <div className="toolbarCluster">
             <input
@@ -970,13 +1444,13 @@ export function PrismaReviewApp() {
               accept=".ris,application/x-research-info-systems,text/plain"
               onChange={(event) => importCitationFile("ris", event)}
             />
-            <button className="ghostButton" type="button" title="Upload a BibTeX file" onClick={() => bibtexInputRef.current?.click()}>
-              <FileArchive size={17} />
-              BibTeX
-            </button>
             <button className="ghostButton" type="button" title="Upload an RIS file" onClick={() => risInputRef.current?.click()}>
               <Upload size={17} />
               RIS
+            </button>
+            <button className="ghostButton" type="button" title="Upload a BibTeX file" onClick={() => bibtexInputRef.current?.click()}>
+              <FileArchive size={17} />
+              BibTeX
             </button>
           </div>
         </section>
@@ -1000,11 +1474,12 @@ export function PrismaReviewApp() {
                       <th>Records</th>
                       <th>Warnings</th>
                       <th>Status</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {projectImportBatches.map((batch) => (
-                      <tr key={batch.id}>
+                      <tr className={batch.id === selectedReviewBatch?.id ? "activeImportRow" : undefined} key={batch.id}>
                         <td>
                           <strong>{batch.sourceName}</strong>
                           <span>{batch.filename}</span>
@@ -1015,6 +1490,12 @@ export function PrismaReviewApp() {
                         <td>
                           <Badge label={batch.status.replace("_", " ")} tone={batch.status === "needs_review" ? "warning" : "success"} />
                         </td>
+                        <td>
+                          <button className="ghostButton" type="button" onClick={() => openImportEditor(batch.id)}>
+                            <FileSearch size={17} />
+                            Review Import
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1024,7 +1505,7 @@ export function PrismaReviewApp() {
               <EmptyState
                 icon={Upload}
                 title="No imports yet"
-                description="Upload RIS, BibTeX, EndNote XML, or CSV files to populate records for this review."
+                description="Upload RIS and BibTeX files to populate records for this review."
               />
             )}
           </div>
@@ -1050,19 +1531,17 @@ export function PrismaReviewApp() {
                 <span>Full-text article or PDF associated with the study.</span>
               </div>
             </div>
-            {projectImportBatches.length > 0 ? (
-              <div className="warningBox">
-                <AlertTriangle size={18} />
-                <span>Scopus has 24 parser warnings: nested BibTeX braces and two missing years need review.</span>
-              </div>
-            ) : (
-              <div className="secureBox">
-                <Lock size={17} />
-                <span>Record provenance will appear here after the first committed import batch.</span>
-              </div>
-            )}
+            <div className="secureBox">
+              <Lock size={17} />
+              <span>
+                {projectImportBatches.length > 0
+                  ? "Parser warnings and parsed screening records are tracked per import batch."
+                  : "Record provenance will appear here after the first committed import batch."}
+              </span>
+            </div>
           </div>
         </section>
+
       </div>
     );
   }
@@ -1160,7 +1639,7 @@ export function PrismaReviewApp() {
             <EmptyState
               icon={FileSearch}
               title="No citations ready for screening"
-              description="Import records, run deduplication, and commit canonical studies to open this queue."
+              description="Import RIS or BibTeX records to populate the title and abstract screening queue."
             />
           </section>
         </div>
@@ -1217,7 +1696,8 @@ export function PrismaReviewApp() {
                 <p className="eyebrow">{currentStudy.source}</p>
                 <h2>{currentStudy.title}</h2>
                 <p className="subtle">
-                  {currentStudy.authors.join(", ")} · {currentStudy.journal} · {currentStudy.year}
+                  {currentStudy.authors.length > 0 ? currentStudy.authors.join(", ") : "No authors parsed"} · {currentStudy.journal} ·{" "}
+                  {currentStudy.year > 0 ? currentStudy.year : "Year needs review"}
                 </p>
               </div>
               <Badge label={stageEvaluation.label} tone={stageEvaluation.state === "conflict" ? "danger" : "info"} />
@@ -1999,11 +2479,52 @@ export function PrismaReviewApp() {
         <section className="settingsGrid">
           <div className="panel">
             <SectionTitle icon={UserCircle} title="Account" action="Server session" />
-            <div className="profileRows">
-              <StatusRow label="Organization" value={currentUser.organization} tone="info" />
-              <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
-              <StatusRow label="Owned reviews" value={ownedProjects.length.toString()} tone="warning" />
-            </div>
+            <form className="accountForm" onSubmit={updateAccount}>
+              <label>
+                <span>Organization</span>
+                <input
+                  value={accountForm.organization}
+                  onChange={(event) => setAccountForm((previous) => ({ ...previous, organization: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>Role title</span>
+                <input
+                  value={accountForm.title}
+                  onChange={(event) => setAccountForm((previous) => ({ ...previous, title: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>Current password</span>
+                <input
+                  type="password"
+                  value={accountForm.currentPassword}
+                  onChange={(event) => setAccountForm((previous) => ({ ...previous, currentPassword: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>New password</span>
+                <input
+                  type="password"
+                  value={accountForm.newPassword}
+                  onChange={(event) => setAccountForm((previous) => ({ ...previous, newPassword: event.target.value }))}
+                />
+              </label>
+              <div className="profileRows">
+                <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
+                <StatusRow label="Owned reviews" value={ownedProjects.length.toString()} tone="warning" />
+              </div>
+              {accountMessage ? (
+                <div className={accountMessage === "Account updated." ? "validationItem ok" : "validationItem blocked"}>
+                  {accountMessage === "Account updated." ? <Check size={17} /> : <AlertTriangle size={17} />}
+                  <span>{accountMessage}</span>
+                </div>
+              ) : null}
+              <button className="primaryButton" type="submit">
+                <Check size={17} />
+                Save Account
+              </button>
+            </form>
           </div>
 
           <div className="panel">

@@ -311,6 +311,33 @@ p {
   gap: 16px;
 }
 
+.authLoadingPanel {
+  gap: 24px;
+}
+
+.authLoadingBody {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 28px 0 8px;
+  text-align: center;
+}
+
+.authLoadingSpinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--teal-soft);
+  border-top-color: var(--teal);
+  border-radius: 999px;
+  animation: authSpin 0.9s linear infinite;
+}
+
+@keyframes authSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .loginForm h1 {
   margin-top: 5px;
   font-size: 1.7rem;
@@ -925,6 +952,15 @@ td span {
   font-size: 0.82rem;
 }
 
+.activeImportRow td {
+  background: #f4fbfa;
+  box-shadow: inset 0 1px 0 #c9dedc, inset 0 -1px 0 #c9dedc;
+}
+
+.activeImportRow td:first-child {
+  box-shadow: inset 3px 0 0 var(--teal), inset 0 1px 0 #c9dedc, inset 0 -1px 0 #c9dedc;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1032,6 +1068,115 @@ td span {
   border-color: #bedfdc;
   background: var(--teal-soft);
   color: #145f62;
+}
+
+.importReviewBox {
+  align-items: flex-start;
+}
+
+.importReviewBox > div {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.importReviewBox strong,
+.importReviewBox span {
+  display: block;
+}
+
+.compactList {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.importStudyList {
+  display: grid;
+  gap: 8px;
+}
+
+.importStudyList article {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid rgba(116, 71, 5, 0.18);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.importStudyList span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.importEditorLayout {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.importDetailForm,
+.studyEditForm {
+  display: grid;
+  gap: 12px;
+}
+
+.importDetailForm label,
+.studyEditForm label {
+  display: grid;
+  gap: 7px;
+}
+
+.importDetailForm label span,
+.studyEditForm label span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.importEntryList {
+  display: grid;
+  gap: 12px;
+}
+
+.importEntryCard {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fbfcfd;
+}
+
+.importEntryCard.editing {
+  border-color: #bedfdc;
+  background: #f4fbfa;
+}
+
+.importEntryHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.importEntryHeader strong,
+.importEntryHeader span {
+  display: block;
+}
+
+.importEntryHeader span {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.importAbstract {
+  color: #334048;
+  line-height: 1.5;
 }
 
 .segmented {
@@ -1598,6 +1743,23 @@ button:disabled {
   gap: 8px;
 }
 
+.accountForm {
+  display: grid;
+  gap: 12px;
+}
+
+.accountForm label {
+  display: grid;
+  gap: 7px;
+}
+
+.accountForm label span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .teamList,
 .addMemberBox,
 .inviteForm {
@@ -1805,6 +1967,7 @@ button:disabled {
 
   .dashboardGrid,
   .importGrid,
+  .importEditorLayout,
   .dedupGrid,
   .twoColumn,
   .settingsGrid,
@@ -1845,7 +2008,8 @@ button:disabled {
 
   .topbar,
   .overviewBand,
-  .citationHeader {
+  .citationHeader,
+  .importEntryHeader {
     align-items: stretch;
     flex-direction: column;
   }

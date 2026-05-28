@@ -8,6 +8,7 @@ import {
   type DedupCandidate,
   type ImportBatch,
   type ReviewProject,
+  type Study,
   type WorkflowEvent
 } from "./prismaData";
 import type { DecisionValue } from "./workflow";
@@ -24,6 +25,7 @@ type PersistedState = {
   users: StoredUser[];
   projects: ReviewProject[];
   imports: ImportBatch[];
+  studies: Study[];
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
@@ -40,6 +42,18 @@ type NewProjectInput = {
   fullTextRequiredVotes?: number;
   maybePolicy?: ReviewProject["maybePolicy"];
   memberIds?: string[];
+};
+
+type ParsedCitation = {
+  title: string;
+  abstract: string;
+  authors: string[];
+  journal: string;
+  year: number;
+  doi: string;
+  keywords: string[];
+  rawCitation: string;
+  warnings: string[];
 };
 
 const demoUserIds = new Set(["user-rivera", "user-chen", "user-patel", "user-okafor"]);
@@ -66,6 +80,7 @@ function createSeedState(): PersistedState {
     users: [],
     projects: [],
     imports: [],
+    studies: [],
     decisions: [],
     events: [],
     dedupCandidates: []
@@ -103,10 +118,68 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
         .filter((project) => userIds.has(project.ownerId))
         .map((project) => ({
           ...project,
-          memberIds: project.memberIds.filter((memberId) => userIds.has(memberId))
+          memberIds: Array.isArray(project.memberIds) ? project.memberIds.filter((memberId) => userIds.has(memberId)) : [project.ownerId]
         }))
     : [];
   const projectIds = new Set(projects.map((project) => project.id));
+  const imports = Array.isArray(state.imports)
+    ? state.imports
+        .filter((batch) => projectIds.has(batch.projectId))
+        .map((batch) => ({
+          ...batch,
+          parserWarningMessages:
+            Array.isArray(batch.parserWarningMessages) && batch.parserWarningMessages.length > 0
+              ? batch.parserWarningMessages
+              : batch.parserWarnings > 0
+                ? [`${batch.parserWarnings} parser warnings were recorded for this legacy import, but detailed parser messages are unavailable.`]
+                : []
+        }))
+    : [];
+  const importedStudies = Array.isArray(state.studies)
+    ? state.studies.filter((study) => study.projectId && projectIds.has(study.projectId))
+    : [];
+  const studies = [
+    ...importedStudies,
+    ...imports.flatMap((batch) => {
+      const hasBatchStudies = importedStudies.some((study) => study.projectId === batch.projectId && study.importBatchId === batch.id);
+      if (hasBatchStudies || batch.records <= 0) {
+        return [];
+      }
+
+      return Array.from({ length: batch.records }, (_, index): Study => ({
+        id: createId("study-legacy"),
+        projectId: batch.projectId,
+        importBatchId: batch.id,
+        title: `Imported record ${index + 1} from ${batch.filename}`,
+        abstract: "This citation was imported before record-level parsing was stored. Review the original import file if more metadata is needed.",
+        authors: [],
+        journal: batch.sourceName,
+        year: 0,
+        doi: "",
+        source: batch.sourceName,
+        stage: "title_abstract",
+        keywords: [],
+        parserWarnings: ["Legacy import record reconstructed for screening."]
+      }));
+    })
+  ];
+  const studyIds = new Set(studies.map((study) => study.id));
+  const projectsWithImportState = projects.map((project) => {
+    const importedRecordCount = imports
+      .filter((batch) => batch.projectId === project.id)
+      .reduce((total, batch) => total + batch.records, 0);
+    const hasScreeningRecords = studies.some((study) => study.projectId === project.id && study.stage === "title_abstract");
+    if (!importedRecordCount || !hasScreeningRecords) {
+      return project;
+    }
+
+    return {
+      ...project,
+      status: project.status === "draft" ? "active" : project.status,
+      stage: project.stage === "setup" || project.stage === "import" ? "screening" : project.stage,
+      recordsTotal: Math.max(project.recordsTotal, importedRecordCount)
+    };
+  });
 
   return {
     version: 1,
@@ -121,10 +194,11 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
         updatedAt: now
       } as StoredUser;
     }),
-    projects,
-    imports: Array.isArray(state.imports) ? state.imports.filter((batch) => projectIds.has(batch.projectId)) : [],
+    projects: projectsWithImportState,
+    imports,
+    studies,
     decisions: Array.isArray(state.decisions)
-      ? state.decisions.filter((decision) => projectIds.has(decision.projectId) && userIds.has(decision.userId))
+      ? state.decisions.filter((decision) => projectIds.has(decision.projectId) && studyIds.has(decision.studyId) && userIds.has(decision.userId))
       : [],
     events: Array.isArray(state.events) ? state.events.filter((event) => projectIds.has(event.entity)) : [],
     dedupCandidates: Array.isArray(state.dedupCandidates) ? state.dedupCandidates.filter(() => projectIds.has("demo-review")) : []
@@ -205,6 +279,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     users: state.users.map(publicUser),
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
+    studies: state.studies.filter((study) => study.projectId && projectIds.has(study.projectId)),
     decisions: state.decisions.filter((decision) => {
       const project = projectById.get(decision.projectId);
       if (!project) {
@@ -278,6 +353,56 @@ export function registerUser(input: {
   state.users.push(newUser);
   writeState(state);
   return buildPayload(state, newUser.id);
+}
+
+export function updateCurrentUserForUser(
+  userId: string,
+  input: {
+    organization?: string;
+    title?: string;
+    currentPassword?: string;
+    newPassword?: string;
+  }
+): AppStatePayload {
+  const state = readState();
+  const user = getUser(state, userId);
+  if (!user) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const organization = input.organization?.trim() ?? user.organization;
+  const title = input.title?.trim() ?? user.title;
+  const newPassword = input.newPassword?.trim() ?? "";
+
+  if (!organization || !title) {
+    throw new ApiError("Organization and role title are required.");
+  }
+
+  let passwordUpdate: Pick<StoredUser, "passwordHash" | "passwordSalt"> | undefined;
+  if (newPassword) {
+    const currentPassword = input.currentPassword?.trim() ?? "";
+    if (!currentPassword || !verifyPassword(currentPassword, user)) {
+      throw new ApiError("Enter your current password to set a new password.", 403);
+    }
+    if (newPassword.length < 8) {
+      throw new ApiError("New password must be at least 8 characters.");
+    }
+    passwordUpdate = hashPassword(newPassword);
+  }
+
+  state.users = state.users.map((candidate) =>
+    candidate.id === userId
+      ? {
+          ...candidate,
+          organization,
+          title,
+          ...(passwordUpdate ?? {}),
+          updatedAt: new Date().toISOString()
+        }
+      : candidate
+  );
+  writeState(state);
+  return buildPayload(state, userId);
 }
 
 export function createProjectForUser(userId: string, input: NewProjectInput): AppMutationPayload {
@@ -483,8 +608,15 @@ export function createImportBatchForUser(
 
   const filename = input.filename?.trim() || `${input.format}-import.${input.format === "bib" ? "bib" : "ris"}`;
   const content = input.content ?? "";
-  const records = countImportedRecords(input.format, content);
-  const parserWarnings = content.trim() ? 0 : 1;
+  const parsedCitations = parseCitationFile(input.format, content);
+  const records = parsedCitations.length;
+  const parserWarningMessages = parsedCitations.flatMap((citation, index) =>
+    citation.warnings.map((warning) => `Record ${index + 1}: ${warning}`)
+  );
+  if (!content.trim()) {
+    parserWarningMessages.push("File is empty or only contains whitespace.");
+  }
+  const parserWarnings = parserWarningMessages.length;
   const sourceName = input.format === "bib" ? "BibTeX upload" : "RIS upload";
   const now = new Date();
   const batch: ImportBatch = {
@@ -496,17 +628,35 @@ export function createImportBatchForUser(
     status: parserWarnings > 0 ? "needs_review" : "parsed",
     records,
     parserWarnings,
+    parserWarningMessages,
     uploadedBy: currentUser.name,
     uploadedAt: now.toISOString().slice(0, 16).replace("T", " ")
   };
+  const importedStudies: Study[] = parsedCitations.map((citation) => ({
+    id: createId("study"),
+    projectId,
+    importBatchId: batch.id,
+    title: citation.title,
+    abstract: citation.abstract,
+    authors: citation.authors,
+    journal: citation.journal,
+    year: citation.year,
+    doi: citation.doi,
+    source: sourceName,
+    stage: "title_abstract",
+    keywords: citation.keywords,
+    rawCitation: citation.rawCitation,
+    parserWarnings: citation.warnings
+  }));
 
   state.imports.unshift(batch);
+  state.studies.unshift(...importedStudies);
   state.projects = state.projects.map((candidate) =>
     candidate.id === projectId
       ? {
           ...candidate,
           status: candidate.status === "draft" ? "active" : candidate.status,
-          stage: candidate.stage === "setup" ? "import" : candidate.stage,
+          stage: records > 0 ? "screening" : candidate.stage === "setup" ? "import" : candidate.stage,
           recordsTotal: candidate.recordsTotal + records,
           updatedAt: toEuToday(),
           lastEvent: `Imported ${filename}`
@@ -516,6 +666,198 @@ export function createImportBatchForUser(
   appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}`, project.id);
   writeState(state);
 
+  return buildPayload(state, userId);
+}
+
+export function markImportBatchReviewedForUser(userId: string, projectId: string, importId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  let found = false;
+  state.imports = state.imports.map((batch) => {
+    if (batch.id !== importId || batch.projectId !== projectId) {
+      return batch;
+    }
+    found = true;
+    return {
+      ...batch,
+      status: "parsed",
+      parserWarnings: 0,
+      parserWarningMessages: []
+    };
+  });
+
+  if (!found) {
+    throw new ApiError("Import batch not found.", 404);
+  }
+
+  state.studies = state.studies.map((study) =>
+    study.projectId === projectId && study.importBatchId === importId ? { ...study, parserWarnings: [] } : study
+  );
+  appendEvent(state, currentUser.name, `Reviewed parser warnings for ${importId}`, projectId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function updateImportBatchForUser(
+  userId: string,
+  projectId: string,
+  importId: string,
+  input: { sourceName?: string; filename?: string }
+): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const sourceName = input.sourceName?.trim() ?? "";
+  const filename = input.filename?.trim() ?? "";
+  if (!sourceName || !filename) {
+    throw new ApiError("Source and filename are required.");
+  }
+
+  let found = false;
+  state.imports = state.imports.map((batch) => {
+    if (batch.id !== importId || batch.projectId !== projectId) {
+      return batch;
+    }
+    found = true;
+    return {
+      ...batch,
+      sourceName,
+      filename
+    };
+  });
+
+  if (!found) {
+    throw new ApiError("Import batch not found.", 404);
+  }
+
+  syncProjectAfterImportChange(state, projectId, `Updated import ${filename}`);
+  appendEvent(state, currentUser.name, `Updated import ${filename}`, projectId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function deleteImportBatchForUser(userId: string, projectId: string, importId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const batch = state.imports.find((candidate) => candidate.id === importId && candidate.projectId === projectId);
+  if (!batch) {
+    throw new ApiError("Import batch not found.", 404);
+  }
+
+  const removedStudyIds = new Set(
+    state.studies
+      .filter((study) => study.projectId === projectId && study.importBatchId === importId)
+      .map((study) => study.id)
+  );
+  state.imports = state.imports.filter((candidate) => candidate.id !== importId || candidate.projectId !== projectId);
+  state.studies = state.studies.filter((study) => study.projectId !== projectId || study.importBatchId !== importId);
+  state.decisions = state.decisions.filter((decision) => !removedStudyIds.has(decision.studyId));
+
+  syncProjectAfterImportChange(state, projectId, `Deleted import ${batch.filename}`);
+  appendEvent(state, currentUser.name, `Deleted import ${batch.filename}`, projectId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function updateImportStudyForUser(
+  userId: string,
+  projectId: string,
+  importId: string,
+  studyId: string,
+  input: {
+    title?: string;
+    abstract?: string;
+    authors?: string | string[];
+    journal?: string;
+    year?: string | number;
+    doi?: string;
+    keywords?: string | string[];
+  }
+): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const batch = state.imports.find((candidate) => candidate.id === importId && candidate.projectId === projectId);
+  if (!batch) {
+    throw new ApiError("Import batch not found.", 404);
+  }
+
+  const title = input.title?.trim() ?? "";
+  const abstract = input.abstract?.trim() || "No abstract was provided by the imported record.";
+  const journal = input.journal?.trim() || "Unspecified source";
+  const year = typeof input.year === "number" ? input.year : parseYear(String(input.year ?? ""));
+  if (!title) {
+    throw new ApiError("Citation title is required.");
+  }
+
+  let found = false;
+  state.studies = state.studies.map((study) => {
+    if (study.id !== studyId || study.projectId !== projectId || study.importBatchId !== importId) {
+      return study;
+    }
+    found = true;
+    return {
+      ...study,
+      title,
+      abstract,
+      authors: normalizeListInput(input.authors),
+      journal,
+      year,
+      doi: normalizeDoi(input.doi ?? ""),
+      keywords: normalizeListInput(input.keywords, true),
+      parserWarnings: collectCitationWarnings(title, year)
+    };
+  });
+
+  if (!found) {
+    throw new ApiError("Citation entry not found.", 404);
+  }
+
+  syncImportBatchAfterStudyChange(state, projectId, importId, true);
+  syncProjectAfterImportChange(state, projectId, `Updated imported citation in ${batch.filename}`);
+  appendEvent(state, currentUser.name, `Updated imported citation in ${batch.filename}`, studyId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function deleteImportStudyForUser(userId: string, projectId: string, importId: string, studyId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const batch = state.imports.find((candidate) => candidate.id === importId && candidate.projectId === projectId);
+  const study = state.studies.find((candidate) => candidate.id === studyId && candidate.projectId === projectId && candidate.importBatchId === importId);
+  if (!batch || !study) {
+    throw new ApiError("Citation entry not found.", 404);
+  }
+
+  state.studies = state.studies.filter((candidate) => candidate.id !== studyId);
+  state.decisions = state.decisions.filter((decision) => decision.studyId !== studyId);
+  syncImportBatchAfterStudyChange(state, projectId, importId, batch.parserWarnings > 0 || batch.status === "needs_review");
+  syncProjectAfterImportChange(state, projectId, `Deleted imported citation from ${batch.filename}`);
+  appendEvent(state, currentUser.name, `Deleted imported citation from ${batch.filename}`, studyId);
+  writeState(state);
   return buildPayload(state, userId);
 }
 
@@ -666,6 +1008,63 @@ export function updateDedupCandidateForUser(
   return buildPayload(state, userId);
 }
 
+function syncImportBatchAfterStudyChange(state: PersistedState, projectId: string, importId: string, refreshWarnings: boolean) {
+  const batchStudies = state.studies.filter((study) => study.projectId === projectId && study.importBatchId === importId);
+  state.imports = state.imports.map((batch) => {
+    if (batch.id !== importId || batch.projectId !== projectId) {
+      return batch;
+    }
+
+    const parserWarningMessages = refreshWarnings
+      ? batchStudies.flatMap((study, index) => (study.parserWarnings ?? []).map((warning) => `Record ${index + 1}: ${warning}`))
+      : batch.parserWarningMessages ?? [];
+    const parserWarnings = parserWarningMessages.length;
+    return {
+      ...batch,
+      records: batchStudies.length,
+      parserWarnings,
+      parserWarningMessages,
+      status: parserWarnings > 0 ? "needs_review" : "parsed"
+    };
+  });
+}
+
+function syncProjectAfterImportChange(state: PersistedState, projectId: string, lastEvent: string) {
+  const recordCount = state.imports
+    .filter((batch) => batch.projectId === projectId)
+    .reduce((total, batch) => total + batch.records, 0);
+
+  state.projects = state.projects.map((project) => {
+    if (project.id !== projectId) {
+      return project;
+    }
+
+    if (recordCount === 0) {
+      return {
+        ...project,
+        status: project.status === "archived" ? "archived" : "draft",
+        stage: "import",
+        recordsTotal: 0,
+        recordsScreened: 0,
+        conflicts: 0,
+        studiesIncluded: 0,
+        updatedAt: toEuToday(),
+        lastEvent
+      };
+    }
+
+    return {
+      ...project,
+      status: project.status === "draft" ? "active" : project.status,
+      stage: project.stage === "setup" || project.stage === "import" ? "screening" : project.stage,
+      recordsTotal: recordCount,
+      recordsScreened: Math.min(project.recordsScreened, recordCount),
+      updatedAt: toEuToday(),
+      lastEvent
+    };
+  });
+}
+
 function appendEvent(state: PersistedState, actor: string, action: string, entity: string) {
   const nextEvent: WorkflowEvent = {
     id: createId("evt"),
@@ -688,23 +1087,257 @@ function clampVoteCount(value: number | undefined) {
   return Math.min(Math.max(Math.trunc(value), 1), 4);
 }
 
-function countImportedRecords(format: ImportBatch["format"], content: string) {
+function parseCitationFile(format: ImportBatch["format"], content: string): ParsedCitation[] {
   const normalized = content.trim();
   if (!normalized) {
-    return 0;
+    return [];
   }
 
   if (format === "ris") {
-    const risStarts = normalized.match(/^TY\s+-/gim);
-    const risEnds = normalized.match(/^ER\s+-?/gim);
-    return Math.max(risStarts?.length ?? 0, risEnds?.length ?? 0, 1);
+    return parseRisCitations(normalized);
   }
 
   if (format === "bib") {
-    return normalized.match(/@\w+\s*[{(]/g)?.length ?? 1;
+    return parseBibtexCitations(normalized);
   }
 
-  return 1;
+  return [];
+}
+
+function parseRisCitations(content: string): ParsedCitation[] {
+  const chunks = content
+    .split(/^ER\s+-?.*$/gim)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  return (chunks.length > 0 ? chunks : [content]).map((chunk, index) => {
+    const fields = new Map<string, string[]>();
+    let currentTag = "";
+    for (const line of chunk.split(/\r?\n/)) {
+      const tagged = /^([A-Z0-9]{2})\s+-\s?(.*)$/.exec(line);
+      if (tagged) {
+        currentTag = tagged[1];
+        const existing = fields.get(currentTag) ?? [];
+        fields.set(currentTag, [...existing, tagged[2].trim()]);
+        continue;
+      }
+      if (currentTag && line.trim()) {
+        const existing = fields.get(currentTag) ?? [];
+        existing[existing.length - 1] = `${existing[existing.length - 1]} ${line.trim()}`.trim();
+        fields.set(currentTag, existing);
+      }
+    }
+
+    const title = firstField(fields, ["TI", "T1", "CT"]) || `Imported RIS record ${index + 1}`;
+    const year = parseYear(firstField(fields, ["PY", "Y1", "DA"]));
+    const warnings = collectCitationWarnings(title, year);
+    return {
+      title,
+      abstract: firstField(fields, ["AB", "N2"]) || "No abstract was provided by the imported record.",
+      authors: fields.get("AU") ?? fields.get("A1") ?? [],
+      journal: firstField(fields, ["T2", "JF", "JO", "JA"]) || "Unspecified source",
+      year,
+      doi: normalizeDoi(firstField(fields, ["DO"]) || ""),
+      keywords: fields.get("KW") ?? [],
+      rawCitation: chunk,
+      warnings
+    };
+  });
+}
+
+function parseBibtexCitations(content: string): ParsedCitation[] {
+  const chunks = splitBibtexEntries(content);
+
+  return chunks.map((chunk, index) => {
+    const title = cleanBibValue(extractBibField(chunk, "title")) || `Imported BibTeX record ${index + 1}`;
+    const authorValue = cleanBibValue(extractBibField(chunk, "author"));
+    const year = parseYear(cleanBibValue(extractBibField(chunk, "year")));
+    const warnings = collectCitationWarnings(title, year);
+    if (hasNestedBibtexBraces(chunk)) {
+      warnings.push("Nested braces were detected; review parsed fields.");
+    }
+
+    return {
+      title,
+      abstract: cleanBibValue(extractBibField(chunk, "abstract")) || "No abstract was provided by the imported record.",
+      authors: authorValue ? authorValue.split(/\s+and\s+/i).map((author) => author.trim()).filter(Boolean) : [],
+      journal: cleanBibValue(extractBibField(chunk, "journal")) || cleanBibValue(extractBibField(chunk, "booktitle")) || "Unspecified source",
+      year,
+      doi: normalizeDoi(cleanBibValue(extractBibField(chunk, "doi"))),
+      keywords: cleanBibValue(extractBibField(chunk, "keywords"))
+        .split(/[,;]/)
+        .map((keyword) => keyword.trim())
+        .filter(Boolean),
+      rawCitation: chunk,
+      warnings
+    };
+  });
+}
+
+function splitBibtexEntries(content: string) {
+  const entries: string[] = [];
+  const startExpression = /@\w+\s*[{(]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = startExpression.exec(content)) !== null) {
+    const start = match.index;
+    const openingIndex = startExpression.lastIndex - 1;
+    const opening = content[openingIndex];
+    const closing = opening === "{" ? "}" : ")";
+    let depth = 0;
+    let isQuoted = false;
+    let escaped = false;
+    let end = content.length;
+
+    for (let index = openingIndex; index < content.length; index += 1) {
+      const char = content[index];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "\"") {
+        isQuoted = !isQuoted;
+        continue;
+      }
+      if (isQuoted) {
+        continue;
+      }
+      if (char === opening) {
+        depth += 1;
+      }
+      if (char === closing) {
+        depth -= 1;
+        if (depth === 0) {
+          end = index + 1;
+          break;
+        }
+      }
+    }
+
+    entries.push(content.slice(start, end).trim());
+    startExpression.lastIndex = end;
+  }
+
+  return entries.length > 0 ? entries : [content.trim()];
+}
+
+function firstField(fields: Map<string, string[]>, keys: string[]) {
+  for (const key of keys) {
+    const value = fields.get(key)?.find(Boolean);
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function extractBibField(entry: string, field: string) {
+  const expression = new RegExp(`(?:^|[,\\r\\n])\\s*${field}\\s*=\\s*`, "i");
+  const match = expression.exec(entry);
+  if (!match) {
+    return "";
+  }
+
+  return readBibFieldValue(entry, match.index + match[0].length);
+}
+
+function readBibFieldValue(entry: string, start: number) {
+  let index = start;
+  while (/\s/.test(entry[index] ?? "")) {
+    index += 1;
+  }
+
+  const opening = entry[index];
+  if (opening === "{" || opening === "\"") {
+    const closing = opening === "{" ? "}" : "\"";
+    let depth = 0;
+    let escaped = false;
+    for (let cursor = index; cursor < entry.length; cursor += 1) {
+      const char = entry[cursor];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (opening === "{" && char === "{") {
+        depth += 1;
+      }
+      if (char === closing) {
+        if (opening === "\"") {
+          return entry.slice(index, cursor + 1);
+        }
+        depth -= 1;
+        if (depth === 0) {
+          return entry.slice(index, cursor + 1);
+        }
+      }
+    }
+    return entry.slice(index);
+  }
+
+  let end = index;
+  while (end < entry.length && ![",", "\r", "\n", "}", ")"].includes(entry[end])) {
+    end += 1;
+  }
+  return entry.slice(index, end);
+}
+
+function cleanBibValue(value: string) {
+  return value
+    .trim()
+    .replace(/^["{]|["}]$/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasNestedBibtexBraces(entry: string) {
+  return Array.from(entry.matchAll(/=\s*(\{(?:[^{}]|\{[^{}]*\})*\})/g)).some((match) => {
+    const value = match[1].trim().replace(/^\{|\}$/g, "");
+    return /[{}]/.test(value);
+  });
+}
+
+function normalizeListInput(value: string | string[] | undefined, splitCommas = false) {
+  if (Array.isArray(value)) {
+    return value.map((item) => item.trim()).filter(Boolean);
+  }
+  const separator = splitCommas ? /[;\n,]/ : /[;\n]/;
+  return (value ?? "")
+    .split(separator)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseYear(value: string | undefined) {
+  const match = value?.match(/\d{4}/);
+  return match ? Number(match[0]) : 0;
+}
+
+function collectCitationWarnings(title: string, year: number) {
+  const warnings: string[] = [];
+  if (!title || /^Imported .* record \d+$/.test(title)) {
+    warnings.push("Missing title.");
+  }
+  if (!Number.isFinite(year) || year <= 0) {
+    warnings.push("Missing or invalid publication year.");
+  }
+  return warnings;
+}
+
+function normalizeDoi(value: string) {
+  return value
+    .trim()
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
+    .replace(/^doi:/i, "")
+    .trim();
 }
 
 function isEuDate(value: string) {

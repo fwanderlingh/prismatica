@@ -62,12 +62,15 @@ export type ImportBatch = {
   status: "processing" | "parsed" | "committed" | "needs_review";
   records: number;
   parserWarnings: number;
+  parserWarningMessages?: string[];
   uploadedBy: string;
   uploadedAt: string;
 };
 
 export type Study = {
   id: string;
+  projectId?: string;
+  importBatchId?: string;
   title: string;
   abstract: string;
   authors: string[];
@@ -77,6 +80,8 @@ export type Study = {
   source: string;
   stage: "title_abstract" | "full_text" | "extraction";
   keywords: string[];
+  rawCitation?: string;
+  parserWarnings?: string[];
 };
 
 export type Report = {
