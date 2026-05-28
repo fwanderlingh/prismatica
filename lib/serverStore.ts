@@ -131,6 +131,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
         .filter((project) => userIds.has(project.ownerId))
         .map((project) => ({
           ...project,
+          fullTextRequiredVotes: clampFullTextVoteCount(project.fullTextRequiredVotes),
           ownerIds: normalizeOwnerIds(project, userIds),
           memberIds: normalizeMemberIds(project, userIds)
         }))
@@ -260,6 +261,29 @@ function publicUser(user: StoredUser): AppUser {
   };
 }
 
+function withReportWorkflowState(report: Report, project: ReviewProject | undefined, decisions: Decision[]): Report {
+  if (!project) {
+    return report;
+  }
+
+  const currentDecisions = decisions.filter(
+    (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
+  );
+  const evaluation = evaluateStage(
+    "full_text",
+    currentDecisions.map((decision) => decision.decisionValue),
+    project.fullTextRequiredVotes,
+    project.maybePolicy
+  );
+  return {
+    ...report,
+    fullTextStatus: evaluation.state,
+    fullTextStatusLabel: evaluation.label,
+    fullTextVoteCount: currentDecisions.length,
+    fullTextRequiredVotes: project.fullTextRequiredVotes
+  };
+}
+
 function getUser(state: PersistedState, userId: string) {
   return state.users.find((user) => user.id === userId);
 }
@@ -328,7 +352,9 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
     studies: state.studies.filter((study) => study.projectId && projectIds.has(study.projectId)),
-    reports: state.reports.filter((report) => projectIds.has(report.projectId)),
+    reports: state.reports
+      .filter((report) => projectIds.has(report.projectId))
+      .map((report) => withReportWorkflowState(report, projectById.get(report.projectId), state.decisions)),
     decisions: state.decisions.filter((decision) => {
       const project = projectById.get(decision.projectId);
       if (!project) {
@@ -585,7 +611,7 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     protocolId: input.protocolId?.trim() || "Draft protocol",
     blindMode: Boolean(input.blindMode ?? true),
     abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes),
-    fullTextRequiredVotes: clampVoteCount(input.fullTextRequiredVotes),
+    fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes),
     maybePolicy: input.maybePolicy ?? "advance_to_full_text",
     reviewers: memberIds.length,
     lastEvent: "Project created just now",
@@ -644,7 +670,7 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
           dueDate,
           blindMode: Boolean(input.blindMode ?? project.blindMode),
           abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes ?? project.abstractRequiredVotes),
-          fullTextRequiredVotes: clampVoteCount(input.fullTextRequiredVotes ?? project.fullTextRequiredVotes),
+          fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes ?? project.fullTextRequiredVotes),
           maybePolicy,
           updatedAt: toEuToday(),
           lastEvent: "Project settings updated"
@@ -1276,6 +1302,8 @@ export function uploadReportPdfForUser(
           size: buffer.length,
           checksum,
           storagePath,
+          uploadedByUserId: currentUser.id,
+          uploadedByUserName: currentUser.name,
           isPdfValidated: false,
           validationNotes: duplicate
             ? [`Duplicate PDF checksum also appears on ${duplicate.title}.`]
@@ -1517,7 +1545,12 @@ function syncStudyAfterFullTextDecision(state: PersistedState, project: ReviewPr
     state.studies = state.studies.map((study) =>
       study.id === report.studyId && study.projectId === project.id ? { ...study, stage: "extraction" } : study
     );
+    return;
   }
+
+  state.studies = state.studies.map((study) =>
+    study.id === report.studyId && study.projectId === project.id && study.stage === "extraction" ? { ...study, stage: "full_text" } : study
+  );
 }
 
 function upsertReportForStudy(state: PersistedState, projectId: string, study: Study, actor: string) {
@@ -1562,22 +1595,51 @@ function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
       return project;
     }
 
+    const conflictCount = countProjectWorkflowConflicts(state, project);
     return {
       ...project,
-      status: project.status === "draft" && (reports.length > 0 || screenedStudyIds.size > 0) ? "active" : project.status,
-      stage:
-        includedStudies > 0
-          ? "extraction"
-          : reports.length > 0
-            ? "full_text"
-            : project.stage === "setup" || project.stage === "import"
-              ? project.stage
-              : "screening",
+      status: project.status === "archived" ? "archived" : reports.length > 0 || screenedStudyIds.size > 0 || project.recordsTotal > 0 ? "active" : "draft",
+      stage: includedStudies > 0 ? "extraction" : reports.length > 0 ? "full_text" : project.recordsTotal > 0 ? "screening" : "import",
       recordsScreened: Math.min(Math.max(project.recordsScreened, screenedStudyIds.size), project.recordsTotal),
+      conflicts: conflictCount,
       studiesIncluded: includedStudies,
       updatedAt: toEuToday()
     };
   });
+}
+
+function countProjectWorkflowConflicts(state: PersistedState, project: ReviewProject) {
+  const projectStudies = state.studies.filter((study) => study.projectId === project.id);
+  const titleAbstractConflicts = projectStudies.filter((study) => {
+    const currentDecisions = state.decisions.filter(
+      (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
+    );
+    const evaluation = evaluateStage(
+      "title_abstract",
+      currentDecisions.map((decision) => decision.decisionValue),
+      project.abstractRequiredVotes,
+      project.maybePolicy
+    );
+    return evaluation.state === "conflict" || evaluation.state === "needs_third_vote";
+  }).length;
+
+  const fullTextConflicts = state.reports.filter((report) => {
+    if (report.projectId !== project.id) {
+      return false;
+    }
+    const currentDecisions = state.decisions.filter(
+      (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
+    );
+    const evaluation = evaluateStage(
+      "full_text",
+      currentDecisions.map((decision) => decision.decisionValue),
+      project.fullTextRequiredVotes,
+      project.maybePolicy
+    );
+    return evaluation.state === "conflict" || evaluation.state === "needs_third_vote";
+  }).length;
+
+  return titleAbstractConflicts + fullTextConflicts;
 }
 
 function syncImportBatchAfterStudyChange(state: PersistedState, projectId: string, importId: string, refreshWarnings: boolean) {
@@ -1725,6 +1787,8 @@ function normalizeReport(report: Partial<Report>): Report {
     size: typeof report.size === "number" && Number.isFinite(report.size) ? report.size : 0,
     checksum: report.checksum ?? "",
     storagePath: report.storagePath ?? "",
+    uploadedByUserId: report.uploadedByUserId ?? "",
+    uploadedByUserName: report.uploadedByUserName ?? "",
     isPdfValidated: Boolean(report.isPdfValidated),
     validationNotes: Array.isArray(report.validationNotes) ? report.validationNotes : [],
     notes: typeof report.notes === "number" && Number.isFinite(report.notes) ? report.notes : 0
@@ -1820,6 +1884,10 @@ function clampVoteCount(value: number | undefined) {
     return 2;
   }
   return Math.min(Math.max(Math.trunc(value), 1), 4);
+}
+
+function clampFullTextVoteCount(value: number | undefined) {
+  return Math.max(clampVoteCount(value), 2);
 }
 
 function parseCitationFile(format: ImportBatch["format"], content: string): ParsedCitation[] {

@@ -185,6 +185,36 @@ p {
   text-align: left;
 }
 
+.navItem.phase-current {
+  font-weight: 800;
+}
+
+.navItem.phase-done .navPhaseMarker {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.navItem.phase-current .navPhaseMarker {
+  border-color: var(--amber);
+  background: var(--surface);
+  /*box-shadow: inset 0 0 0 3px var(--teal);*/
+}
+
+.navItem.phase-pending .navPhaseMarker {
+  border-color: #b9c5ca;
+  background: transparent;
+}
+
+.navPhaseMarker {
+  display: block;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-left: auto;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+}
+
 .navItem span {
   overflow: hidden;
   text-overflow: ellipsis;

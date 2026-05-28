@@ -99,6 +99,12 @@ export type Report = {
   size?: number;
   checksum?: string;
   storagePath?: string;
+  uploadedByUserId?: string;
+  uploadedByUserName?: string;
+  fullTextStatus?: string;
+  fullTextStatusLabel?: string;
+  fullTextVoteCount?: number;
+  fullTextRequiredVotes?: number;
   isPdfValidated: boolean;
   validationNotes: string[];
   notes: number;

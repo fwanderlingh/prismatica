@@ -30,7 +30,7 @@ export function evaluateStage(
   const hasMaybe = decisions.includes("maybe");
 
   if (hasInclude && hasExclude) {
-    return { state: "conflict", label: "Conflict" };
+    return { state: "conflict", label: "Resolve conflict" };
   }
 
   if (stage === "title_abstract") {
@@ -49,7 +49,7 @@ export function evaluateStage(
       if (maybePolicy === "third_vote") {
         return { state: "needs_third_vote", label: "Third vote needed" };
       }
-      return { state: "conflict", label: "Conflict" };
+      return { state: "conflict", label: "Resolve conflict" };
     }
   }
 

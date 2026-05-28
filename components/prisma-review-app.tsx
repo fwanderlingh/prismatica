@@ -144,6 +144,16 @@ type StudyEditForm = {
   abstract: string;
 };
 
+type ProjectUserStats = {
+  user: AppUser;
+  screened: number;
+  uploadedPdf: number;
+  fullTextReviews: number;
+  extractions: number;
+};
+
+type PhaseNavState = "done" | "current" | "pending";
+
 const exclusionReasons = Object.keys(prismaCounts.reportsExcludedWithReasons);
 
 const emptyProjectForm: NewProjectForm = {
@@ -312,9 +322,12 @@ export function PrismaReviewApp() {
     [decisions, projectReportQueue, selectedProject]
   );
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
+  const projectStudyIds = new Set(projectScreeningStudies.map((study) => study.id));
+  const projectReportIds = new Set(projectReportQueue.map((report) => report.id));
   const projectEvents = hasProjectSeedData
     ? events.filter((event) => !projectIdSet.has(event.entity) || event.entity === selectedProject.id)
-    : events.filter((event) => event.entity === selectedProject.id);
+    : events.filter((event) => event.entity === selectedProject.id || projectStudyIds.has(event.entity) || projectReportIds.has(event.entity));
+  const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, projectEvents);
   const currentStudy = projectScreeningStudies[studyIndex] ?? screeningStudies[0];
   const currentUserDecision = useMemo(
     () =>
@@ -1265,7 +1278,7 @@ export function PrismaReviewApp() {
               <article className="panel projectCard" key={project.id}>
                 <div className="projectCardHeader">
                   <div>
-                    <Badge label={project.status} tone={project.status === "active" ? "success" : project.status === "draft" ? "warning" : "neutral"} />
+                    <Badge label={formatProjectPhase(project.stage)} tone={projectPhaseBadgeTone(project.stage)} />
                     <h2>{project.title}</h2>
                     <p>{project.description}</p>
                   </div>
@@ -1353,7 +1366,7 @@ export function PrismaReviewApp() {
             <p className="eyebrow">Project dashboard</p>
             <h1>{selectedProject.title}</h1>
             <p className="subtle">
-              {selectedProject.protocolId} · {selectedProject.organization}
+              {selectedProject.protocolId} · {selectedProject.organization} · {formatProjectPhase(selectedProject.stage)}
             </p>
           </div>
           <div className="toolbarCluster">
@@ -1380,11 +1393,11 @@ export function PrismaReviewApp() {
             <SectionTitle icon={Activity} title="Review Workflow" action="Live state machine" />
             <div className="workflowMap" aria-label="Review workflow">
               {[
-                ["Import", `${formatNumber(recordsIdentified)} records`, recordsIdentified > 0 ? "complete" : "pending"],
-                ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "active" : "pending"],
-                ["Screen", `${activeCounts.recordsScreened} records`, activeCounts.recordsScreened > 0 ? "active" : "pending"],
-                ["Full text", `${activeCounts.reportsSought} reports`, activeCounts.reportsSought > 0 ? "active" : "pending"],
-                ["Extract", `${activeStudies} items`, activeCounts.studiesIncluded > 0 ? "active" : "pending"],
+                ["Import", `${formatNumber(recordsIdentified)} records`, getWorkflowStepState("imports", selectedProject.stage)],
+                ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
+                ["Screen", `${activeCounts.recordsScreened} records`, getWorkflowStepState("screening", selectedProject.stage)],
+                ["Inclusion", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
+                ["Extract", `${activeStudies} items`, getWorkflowStepState("extraction", selectedProject.stage)],
                 ["Export", "PRISMA 2020", activeCounts.studiesIncluded > 0 ? "ready" : "pending"]
               ].map(([label, value, status]) => (
                 <div className={`workflowNode ${status}`} key={label}>
@@ -1394,6 +1407,7 @@ export function PrismaReviewApp() {
               ))}
             </div>
             <div className="stateRows">
+              <StatusRow label="Review phase" value={formatProjectPhase(selectedProject.stage)} tone={projectPhaseStatusTone(selectedProject.stage)} />
               <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Server-enforced visibility model" : "Disabled"} tone="secure" />
               <StatusRow label="Maybe policy" value={formatMaybePolicy(selectedProject.maybePolicy)} tone="info" />
               <StatusRow label="Unresolved conflicts" value={`${selectedProject.conflicts} open conflicts`} tone="warning" />
@@ -1423,6 +1437,37 @@ export function PrismaReviewApp() {
                 description="Imports, decisions, adjudications, and exports will create append-only audit events for this review."
               />
             )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <SectionTitle icon={Users} title="Reviewer Activity" action="Per-user project stats" />
+          <div className="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reviewer</th>
+                  <th>Screened</th>
+                  <th>Uploaded PDF</th>
+                  <th>Full Text Reviews</th>
+                  <th>Extractions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projectUserStats.map((row) => (
+                  <tr key={row.user.id}>
+                    <td>
+                      <strong>{row.user.name}</strong>
+                      <span>{row.user.title}</span>
+                    </td>
+                    <td>{row.screened}</td>
+                    <td>{row.uploadedPdf}</td>
+                    <td>{row.fullTextReviews}</td>
+                    <td>{row.extractions}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -1787,6 +1832,8 @@ export function PrismaReviewApp() {
 
   function renderDedup() {
     if (!latestPendingDedup) {
+      const hasImportedRecords = projectImportBatches.some((batch) => batch.records > 0) || projectScreeningStudies.length > 0 || recordsIdentified > 0;
+      const hasResolvedDedupCandidates = projectDedupCandidates.length > 0;
       return (
         <div className="viewStack">
           <section className="overviewBand">
@@ -1799,8 +1846,14 @@ export function PrismaReviewApp() {
           <section className="panel">
             <EmptyState
               icon={GitMerge}
-              title="No duplicate candidates"
-              description="This review is waiting for imported records before deduplication can generate candidate pairs."
+              title={hasResolvedDedupCandidates ? "Duplicate review complete" : "No duplicate candidates"}
+              description={
+                hasImportedRecords
+                  ? hasResolvedDedupCandidates
+                    ? "All generated duplicate candidates have been resolved."
+                    : "No duplicate candidates were generated for the imported records. Screening can continue with the current citations."
+                  : "This review is waiting for imported records before deduplication can generate candidate pairs."
+              }
             />
           </section>
         </div>
@@ -2031,11 +2084,29 @@ export function PrismaReviewApp() {
         decision.stage === "full_text" &&
         decision.isCurrent
     );
+    const visibleFullTextDecisions = decisions.filter(
+      (decision) =>
+        decision.projectId === selectedProject.id &&
+        decision.reportId === activeReport.id &&
+        decision.stage === "full_text" &&
+        decision.isCurrent
+    );
+    const visibleFullTextEvaluation = evaluateStage(
+      "full_text",
+      visibleFullTextDecisions.map((decision) => decision.decisionValue),
+      activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
+      selectedProject.maybePolicy
+    );
     const selectedDecision = activeFullTextDecision?.decisionValue;
     const canExclude = selectedDecision === "exclude";
     const pdfDisplayName = activeReport.fileName || activeReport.pdfName || "No PDF uploaded";
     const pdfStatus = activeReport.isPdfValidated ? "Validated" : activeReport.fileName ? "Uploaded, not validated" : "Missing PDF";
     const canInclude = activeReport.retrievalStatus === "retrieved" && activeReport.isPdfValidated;
+    const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
+    const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
+    const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
+    const fullTextStatusLabel = activeReport.fullTextStatusLabel ?? visibleFullTextEvaluation.label;
+    const hasFullTextConflict = fullTextStatus === "conflict" || fullTextStatus === "needs_third_vote";
     const messageIsSuccess = /updated|saved|uploaded|completed/i.test(fullTextMessage);
     const pdfViewerUrl = activeReport.fileName
       ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
@@ -2162,6 +2233,18 @@ export function PrismaReviewApp() {
 
             <div className="pdfStatusGrid">
               <StatusRow label="PDF" value={pdfStatus} tone={activeReport.isPdfValidated ? "secure" : activeReport.fileName ? "warning" : "danger"} />
+              <StatusRow
+                label="Full-text status"
+                value={fullTextStatusLabel}
+                tone={
+                  hasFullTextConflict || fullTextStatus === "excluded_full_text" || fullTextStatus === "report_not_retrieved"
+                    ? "danger"
+                    : fullTextStatus === "advance_extraction"
+                      ? "secure"
+                      : "warning"
+                }
+              />
+              <StatusRow label="Full-text votes" value={`${fullTextVoteCount}/${fullTextRequiredVotes}`} tone={fullTextVoteCount >= fullTextRequiredVotes ? "secure" : "warning"} />
               <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
             </div>
 
@@ -2178,6 +2261,11 @@ export function PrismaReviewApp() {
               <option value="retrieved">Retrieved</option>
               <option value="not_retrieved">Not retrieved</option>
             </select>
+
+            <div className="decisionState">
+              <span>My current full-text vote</span>
+              <strong>{selectedDecision ? formatDecision(selectedDecision) : "No vote"}</strong>
+            </div>
 
             <div className="decisionButtons compactButtons">
               <button
@@ -2210,10 +2298,12 @@ export function PrismaReviewApp() {
               ))}
             </select>
 
-            <div className={canInclude ? "validationBox ok" : "validationBox"}>
-              {canInclude ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <div className={canInclude && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
+              {canInclude && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
               <span>
-                {canInclude
+                {hasFullTextConflict
+                  ? "This report is in resolve-conflict state and cannot advance to extraction until the votes are reconciled."
+                  : canInclude
                   ? "Include is available for this retrieved and validated report."
                   : "Include requires retrieved status and a validated PDF."}
               </span>
@@ -2648,7 +2738,7 @@ export function PrismaReviewApp() {
                   <span>Full-text votes</span>
                   <input
                     type="number"
-                    min={1}
+                    min={2}
                     max={4}
                     value={projectSettingsForm.fullTextRequiredVotes}
                     onChange={(event) => updateProjectSettingsForm("fullTextRequiredVotes", Number(event.target.value))}
@@ -2895,7 +2985,7 @@ export function PrismaReviewApp() {
                   <span>Full-text votes</span>
                   <input
                     type="number"
-                    min={1}
+                    min={2}
                     max={4}
                     value={newProjectForm.fullTextRequiredVotes}
                     onChange={(event) => updateNewProjectForm("fullTextRequiredVotes", Number(event.target.value))}
@@ -3102,7 +3192,7 @@ export function PrismaReviewApp() {
                     </td>
                     <td>{project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id ? "Owner" : "Member"}</td>
                     <td>
-                      <Badge label={project.status} tone={project.status === "active" ? "success" : project.status === "draft" ? "warning" : "neutral"} />
+                      <Badge label={formatProjectPhase(project.stage)} tone={projectPhaseBadgeTone(project.stage)} />
                     </td>
                     <td>{formatEuDate(project.updatedAt)}</td>
                     <td>
@@ -3280,7 +3370,7 @@ export function PrismaReviewApp() {
               All Reviews
             </button>
             <div>
-              <Badge label={selectedProject.status} tone={selectedProject.status === "active" ? "success" : selectedProject.status === "draft" ? "warning" : "neutral"} />
+              <Badge label={formatProjectPhase(selectedProject.stage)} tone={projectPhaseBadgeTone(selectedProject.stage)} />
               <strong>{selectedProject.title}</strong>
               <span>{selectedProject.protocolId}</span>
             </div>
@@ -3291,22 +3381,29 @@ export function PrismaReviewApp() {
         ) : null}
 
         <nav className="navList">
-          {(isProjectView ? projectNavItems : globalNavItems).map(({ key, label, path, Icon }) => (
-            <button
-              className={activeView === key ? "navItem active" : "navItem"}
-              type="button"
-              key={key}
-              aria-current={activeView === key ? "page" : undefined}
-              onClick={() => {
-                setActiveView(key);
-                setIsMobileNavOpen(false);
-              }}
-              title={path}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </button>
-          ))}
+          {(isProjectView ? projectNavItems : globalNavItems).map(({ key, label, path, Icon }) => {
+            const phaseState = isProjectView ? getPhaseNavState(key, selectedProject.stage) : null;
+            const navClassName = ["navItem", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <button
+                className={navClassName}
+                type="button"
+                key={key}
+                aria-current={activeView === key ? "page" : undefined}
+                onClick={() => {
+                  setActiveView(key);
+                  setIsMobileNavOpen(false);
+                }}
+                title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+                {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="sidebarFooter">
@@ -3342,7 +3439,18 @@ function getCountsForProject(project: ReviewProject, projectReports: Report[] = 
   const fullTextCurrentDecisions = decisions.filter(
     (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
   );
-  const fullTextExcluded = fullTextCurrentDecisions.filter((decision) => decision.decisionValue === "exclude");
+  const fullTextDecisionsByReport = new Map<string, Decision[]>();
+  for (const decision of fullTextCurrentDecisions) {
+    const reportKey = decision.reportId ?? decision.studyId;
+    fullTextDecisionsByReport.set(reportKey, [...(fullTextDecisionsByReport.get(reportKey) ?? []), decision]);
+  }
+  const fullTextExcluded = Array.from(fullTextDecisionsByReport.values())
+    .filter(
+      (reportDecisions) =>
+        reportDecisions.length >= project.fullTextRequiredVotes &&
+        reportDecisions.every((decision) => decision.decisionValue === "exclude")
+    )
+    .map((reportDecisions) => reportDecisions[0]);
   const reportsExcludedWithReasons = {
     "Wrong population": 0,
     "Wrong intervention": 0,
@@ -3577,6 +3685,130 @@ function formatMaybePolicy(value: "advance_to_full_text" | "conflict" | "third_v
     return "Request third vote";
   }
   return "Treat as conflict";
+}
+
+function formatProjectPhase(stage: ReviewProject["stage"]) {
+  if (stage === "setup" || stage === "import") {
+    return "Import";
+  }
+  if (stage === "screening") {
+    return "Screening";
+  }
+  if (stage === "full_text") {
+    return "Inclusion";
+  }
+  if (stage === "extraction") {
+    return "Data Extraction";
+  }
+  return "Complete";
+}
+
+function projectPhaseBadgeTone(stage: ReviewProject["stage"]): "success" | "warning" | "danger" | "info" | "neutral" {
+  if (stage === "setup" || stage === "import") {
+    return "warning";
+  }
+  if (stage === "screening" || stage === "full_text") {
+    return "info";
+  }
+  if (stage === "extraction" || stage === "complete") {
+    return "success";
+  }
+  return "neutral";
+}
+
+function projectPhaseStatusTone(stage: ReviewProject["stage"]): "secure" | "info" | "warning" | "danger" {
+  if (stage === "setup" || stage === "import") {
+    return "warning";
+  }
+  if (stage === "extraction" || stage === "complete") {
+    return "secure";
+  }
+  return "info";
+}
+
+function getProjectPhaseIndex(stage: ReviewProject["stage"]) {
+  if (stage === "setup" || stage === "import") {
+    return 0;
+  }
+  if (stage === "screening") {
+    return 1;
+  }
+  if (stage === "full_text") {
+    return 2;
+  }
+  return 3;
+}
+
+function getPhaseNavState(key: ViewKey, stage: ReviewProject["stage"]): PhaseNavState | null {
+  const navPhaseIndex: Partial<Record<ViewKey, number>> = {
+    imports: 0,
+    screening: 1,
+    fullText: 2,
+    extraction: 3
+  };
+  const phaseIndex = navPhaseIndex[key];
+  if (phaseIndex === undefined) {
+    return null;
+  }
+
+  const currentIndex = getProjectPhaseIndex(stage);
+  if (phaseIndex < currentIndex) {
+    return "done";
+  }
+  if (phaseIndex === currentIndex) {
+    return "current";
+  }
+  return "pending";
+}
+
+function getWorkflowStepState(key: ViewKey, stage: ReviewProject["stage"]) {
+  const phaseState = getPhaseNavState(key, stage);
+  if (phaseState === "done") {
+    return "complete";
+  }
+  if (phaseState === "current") {
+    return "active";
+  }
+  return "pending";
+}
+
+function getProjectUserStats(
+  project: ReviewProject,
+  users: AppUser[],
+  decisions: Decision[],
+  reports: Report[],
+  events: WorkflowEvent[]
+): ProjectUserStats[] {
+  const memberIds = new Set([project.ownerId, ...project.ownerIds, ...project.memberIds]);
+  const projectReports = reports.filter((report) => report.projectId === project.id);
+  const projectReportIds = new Set(projectReports.map((report) => report.id));
+  return users
+    .filter((user) => memberIds.has(user.id))
+    .map((user) => {
+      const uploadedReportIds = new Set(
+        projectReports.filter((report) => report.uploadedByUserId === user.id).map((report) => report.id)
+      );
+      const legacyUploadEvents = events.filter(
+        (event) =>
+          event.actor === user.name &&
+          event.action.startsWith("Uploaded PDF") &&
+          projectReportIds.has(event.entity) &&
+          !uploadedReportIds.has(event.entity)
+      ).length;
+      return {
+        user,
+        screened: countCurrentDecisions(decisions, project.id, user.id, "title_abstract"),
+        uploadedPdf: uploadedReportIds.size + legacyUploadEvents,
+        fullTextReviews: countCurrentDecisions(decisions, project.id, user.id, "full_text"),
+        extractions: countCurrentDecisions(decisions, project.id, user.id, "extraction")
+      };
+    });
+}
+
+function countCurrentDecisions(decisions: Decision[], projectId: string, userId: string, stage: Decision["stage"]) {
+  return decisions.filter(
+    (decision) => decision.projectId === projectId && decision.userId === userId && decision.stage === stage && decision.isCurrent
+  ).length;
 }
 
 function formatDecision(value: DecisionValue) {
