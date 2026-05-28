@@ -44,6 +44,7 @@ export type ReviewProject = ProjectSummary & {
   status: "active" | "draft" | "archived";
   stage: "setup" | "import" | "screening" | "full_text" | "extraction" | "complete";
   ownerId: string;
+  ownerIds: string[];
   memberIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -177,6 +178,7 @@ export const reviewProjects: ReviewProject[] = [
     status: "active",
     stage: "screening",
     ownerId: "user-rivera",
+    ownerIds: ["user-rivera"],
     memberIds: ["user-rivera", "user-chen", "user-patel", "user-okafor"],
     createdAt: "2026-05-20",
     updatedAt: "2026-05-27",
@@ -201,6 +203,7 @@ export const reviewProjects: ReviewProject[] = [
     status: "active",
     stage: "import",
     ownerId: "user-patel",
+    ownerIds: ["user-patel"],
     memberIds: ["user-patel", "user-rivera", "user-okafor"],
     createdAt: "2026-05-10",
     updatedAt: "2026-05-27",
@@ -225,6 +228,7 @@ export const reviewProjects: ReviewProject[] = [
     status: "draft",
     stage: "setup",
     ownerId: "user-okafor",
+    ownerIds: ["user-okafor"],
     memberIds: ["user-okafor", "user-chen"],
     createdAt: "2026-05-26",
     updatedAt: "2026-05-26",

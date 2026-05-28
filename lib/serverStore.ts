@@ -126,7 +126,8 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
         .filter((project) => userIds.has(project.ownerId))
         .map((project) => ({
           ...project,
-          memberIds: Array.isArray(project.memberIds) ? project.memberIds.filter((memberId) => userIds.has(memberId)) : [project.ownerId]
+          ownerIds: normalizeOwnerIds(project, userIds),
+          memberIds: normalizeMemberIds(project, userIds)
         }))
     : [];
   const projectIds = new Set(projects.map((project) => project.id));
@@ -247,8 +248,16 @@ function getProject(state: PersistedState, projectId: string) {
   return state.projects.find((project) => project.id === projectId);
 }
 
+function getProjectOwnerIds(project: ReviewProject) {
+  return uniqueIds([project.ownerId, ...(Array.isArray(project.ownerIds) ? project.ownerIds : [])]);
+}
+
+function isProjectOwner(project: ReviewProject, userId: string) {
+  return getProjectOwnerIds(project).includes(userId);
+}
+
 function isProjectMember(project: ReviewProject, userId: string) {
-  return project.ownerId === userId || project.memberIds.includes(userId);
+  return isProjectOwner(project, userId) || project.memberIds.includes(userId);
 }
 
 function requireProjectMember(state: PersistedState, projectId: string, userId: string) {
@@ -269,7 +278,7 @@ function requireProjectMember(state: PersistedState, projectId: string, userId: 
 
 function requireProjectOwner(state: PersistedState, projectId: string, userId: string) {
   const project = requireProjectMember(state, projectId, userId);
-  if (project.ownerId !== userId) {
+  if (!isProjectOwner(project, userId)) {
     throw new ApiError("Only the project owner can change team membership.", 403);
   }
   return project;
@@ -302,7 +311,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
       if (!project) {
         return false;
       }
-      return !project.blindMode || project.ownerId === userId || decision.userId === userId;
+      return !project.blindMode || isProjectOwner(project, userId) || decision.userId === userId;
     }),
     events: state.events
       .filter((event) => projectIds.has(event.entity) || (demoProjectAccessible && !allProjectIds.has(event.entity)))
@@ -475,21 +484,27 @@ export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: s
   }
 
   const ownedProjectIds = new Set(state.projects.filter((project) => project.ownerId === targetUserId).map((project) => project.id));
+  const solelyOwnedProjectIds = new Set(
+    state.projects.filter((project) => isProjectOwner(project, targetUserId) && getProjectOwnerIds(project).length === 1).map((project) => project.id)
+  );
   const removedStudyIds = new Set(
     state.studies
-      .filter((study) => study.projectId && ownedProjectIds.has(study.projectId))
+      .filter((study) => study.projectId && solelyOwnedProjectIds.has(study.projectId))
       .map((study) => study.id)
   );
   const remainingProjects = state.projects
-    .filter((project) => !ownedProjectIds.has(project.id))
+    .filter((project) => !solelyOwnedProjectIds.has(project.id))
     .map((project) => {
-      if (!project.memberIds.includes(targetUserId)) {
+      if (!project.memberIds.includes(targetUserId) && !isProjectOwner(project, targetUserId)) {
         return project;
       }
 
       const nextMemberIds = project.memberIds.filter((memberId) => memberId !== targetUserId);
+      const nextOwnerIds = getProjectOwnerIds(project).filter((ownerId) => ownerId !== targetUserId);
       return {
         ...project,
+        ownerId: nextOwnerIds[0] ?? project.ownerId,
+        ownerIds: nextOwnerIds,
         memberIds: nextMemberIds,
         reviewers: nextMemberIds.length,
         updatedAt: toEuToday(),
@@ -499,14 +514,14 @@ export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: s
 
   state.users = state.users.filter((user) => user.id !== targetUserId);
   state.projects = remainingProjects;
-  state.imports = state.imports.filter((batch) => !ownedProjectIds.has(batch.projectId));
+  state.imports = state.imports.filter((batch) => !solelyOwnedProjectIds.has(batch.projectId));
   state.studies = state.studies.filter((study) => !removedStudyIds.has(study.id));
   state.decisions = state.decisions.filter(
-    (decision) => decision.userId !== targetUserId && !ownedProjectIds.has(decision.projectId) && !removedStudyIds.has(decision.studyId)
+    (decision) => decision.userId !== targetUserId && !solelyOwnedProjectIds.has(decision.projectId) && !removedStudyIds.has(decision.studyId)
   );
-  state.events = state.events.filter((event) => !ownedProjectIds.has(event.entity));
+  state.events = state.events.filter((event) => !solelyOwnedProjectIds.has(event.entity));
   state.dedupCandidates = state.dedupCandidates.filter(
-    (candidate) => !ownedProjectIds.has(candidate.recordA.projectId ?? "") && !ownedProjectIds.has(candidate.recordB.projectId ?? "")
+    (candidate) => !solelyOwnedProjectIds.has(candidate.recordA.projectId ?? "") && !solelyOwnedProjectIds.has(candidate.recordB.projectId ?? "")
   );
   appendEvent(state, adminUser.name, `Deleted account ${targetUser.name}`, targetUserId);
   writeState(state);
@@ -548,6 +563,7 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     status: "draft",
     stage: "setup",
     ownerId: userId,
+    ownerIds: [userId],
     memberIds,
     createdAt: today,
     updatedAt: today,
@@ -572,6 +588,7 @@ export function updateProjectMembersForUser(
   userId: string,
   projectId: string,
   memberIds: string[],
+  ownerIds: string[],
   eventLabel: string
 ): AppMutationPayload {
   const state = readState();
@@ -582,12 +599,19 @@ export function updateProjectMembersForUser(
   }
 
   const knownUserIds = new Set(state.users.map((user) => user.id));
-  const nextMemberIds = uniqueIds([project.ownerId, ...memberIds]).filter((id) => knownUserIds.has(id));
+  const nextMemberIds = uniqueIds([...memberIds, ...ownerIds]).filter((id) => knownUserIds.has(id));
+  const requestedOwnerIds = uniqueIds(ownerIds).filter((id) => nextMemberIds.includes(id));
+  if (!requestedOwnerIds.includes(userId)) {
+    throw new ApiError("At least one current owner must remain an owner.", 400);
+  }
+  const nextOwnerIds = requestedOwnerIds.length > 0 ? requestedOwnerIds : [project.ownerId];
 
   state.projects = state.projects.map((candidate) =>
     candidate.id === projectId
       ? {
           ...candidate,
+          ownerId: nextOwnerIds[0],
+          ownerIds: nextOwnerIds,
           memberIds: nextMemberIds,
           reviewers: nextMemberIds.length,
           updatedAt: toEuToday(),
@@ -628,6 +652,7 @@ export function inviteUserToProjectForUser(
       id: createId(`user-${slugify(email)}`),
       name,
       email,
+      isAdmin: false,
       initials: getInitials(name),
       organization: project.organization,
       title: input.title?.trim() || "Reviewer",
@@ -646,6 +671,7 @@ export function inviteUserToProjectForUser(
       candidate.id === projectId
         ? {
             ...candidate,
+            ownerIds: getProjectOwnerIds(project),
             memberIds: nextMemberIds,
             reviewers: nextMemberIds.length,
             updatedAt: toEuToday(),
@@ -674,16 +700,20 @@ export function removeProjectMemberForUser(userId: string, projectId: string, me
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
   }
 
-  if (memberId === project.ownerId) {
-    throw new ApiError("The project owner cannot be removed.");
+  const ownerIds = getProjectOwnerIds(project);
+  if (ownerIds.includes(memberId) && ownerIds.length === 1) {
+    throw new ApiError("The last project owner cannot be removed.");
   }
 
   const removedUser = getUser(state, memberId);
   const nextMemberIds = project.memberIds.filter((candidateId) => candidateId !== memberId);
+  const nextOwnerIds = ownerIds.filter((ownerId) => ownerId !== memberId);
   state.projects = state.projects.map((candidate) =>
     candidate.id === projectId
       ? {
           ...candidate,
+          ownerId: nextOwnerIds[0] ?? candidate.ownerId,
+          ownerIds: nextOwnerIds,
           memberIds: nextMemberIds,
           reviewers: nextMemberIds.length,
           updatedAt: toEuToday(),
@@ -1239,6 +1269,16 @@ function ensureAdminUser(users: StoredUser[], now: string) {
     },
     ...users
   ];
+}
+
+function normalizeOwnerIds(project: ReviewProject, userIds: Set<string>) {
+  const nextOwnerIds = uniqueIds([project.ownerId, ...(Array.isArray(project.ownerIds) ? project.ownerIds : [])]).filter((ownerId) => userIds.has(ownerId));
+  return nextOwnerIds.length > 0 ? nextOwnerIds : [project.ownerId];
+}
+
+function normalizeMemberIds(project: ReviewProject, userIds: Set<string>) {
+  const ownerIds = normalizeOwnerIds(project, userIds);
+  return uniqueIds([...(Array.isArray(project.memberIds) ? project.memberIds : []), ...ownerIds]).filter((memberId) => userIds.has(memberId));
 }
 
 function uniqueIds(ids: string[]) {

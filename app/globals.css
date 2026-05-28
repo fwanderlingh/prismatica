@@ -1828,7 +1828,7 @@ button:disabled {
 
 .teamMember {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto 38px;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   min-height: 62px;
@@ -1850,6 +1850,13 @@ button:disabled {
   font-size: 0.82rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.teamMemberActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .addMemberBox {

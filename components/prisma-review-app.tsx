@@ -266,7 +266,7 @@ export function PrismaReviewApp() {
 
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
   const userProjects = useMemo(
-    () => projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerId === currentUser.id),
+    () => projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id),
     [currentUser.id, projects]
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
@@ -604,11 +604,11 @@ export function PrismaReviewApp() {
     });
   }
 
-  async function updateProjectMembers(projectId: string, memberIds: string[], eventLabel: string) {
+  async function updateProjectMembers(projectId: string, memberIds: string[], ownerIds: string[], eventLabel: string) {
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${projectId}/members`, {
         method: "PATCH",
-        body: JSON.stringify({ memberIds, eventLabel })
+        body: JSON.stringify({ memberIds, ownerIds, eventLabel })
       });
       applyAppState(payload);
       return true;
@@ -635,7 +635,12 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const didUpdate = await updateProjectMembers(selectedProject.id, [...selectedProject.memberIds, user.id], `Added ${user.name} to project team`);
+    const didUpdate = await updateProjectMembers(
+      selectedProject.id,
+      [...selectedProject.memberIds, user.id],
+      selectedProject.ownerIds,
+      `Added ${user.name} to project team`
+    );
     if (didUpdate) {
       setTeamUserId("");
       setTeamMessage(`${user.name} added to ${selectedProject.title}.`);
@@ -681,8 +686,8 @@ export function PrismaReviewApp() {
       return;
     }
 
-    if (userId === selectedProject.ownerId) {
-      setTeamMessage("The project owner cannot be removed.");
+    if (selectedProject.ownerIds.includes(userId) && selectedProject.ownerIds.length === 1) {
+      setTeamMessage("The last project owner cannot be removed.");
       return;
     }
 
@@ -694,6 +699,32 @@ export function PrismaReviewApp() {
       setTeamMessage(`${user.name} removed from ${selectedProject.title}.`);
     } catch (error) {
       setTeamMessage(getErrorMessage(error));
+    }
+  }
+
+  async function toggleProjectOwner(userId: string) {
+    const user = users.find((candidate) => candidate.id === userId);
+    if (!user) {
+      return;
+    }
+
+    const nextOwnerIds = selectedProject.ownerIds.includes(userId)
+      ? selectedProject.ownerIds.filter((ownerId) => ownerId !== userId)
+      : [...selectedProject.ownerIds, userId];
+
+    if (nextOwnerIds.length === 0) {
+      setTeamMessage("A project must have at least one owner.");
+      return;
+    }
+
+    const didUpdate = await updateProjectMembers(
+      selectedProject.id,
+      selectedProject.memberIds,
+      nextOwnerIds,
+      `${nextOwnerIds.includes(userId) ? "Promoted" : "Demoted"} ${user.name} ${nextOwnerIds.includes(userId) ? "to owner" : "to reviewer"}`
+    );
+    if (didUpdate) {
+      setTeamMessage(nextOwnerIds.includes(userId) ? `${user.name} is now an owner.` : `${user.name} is now a reviewer.`);
     }
   }
 
@@ -1055,7 +1086,9 @@ export function PrismaReviewApp() {
         {userProjects.length > 0 ? (
         <section className="reviewGrid">
           {userProjects.map((project) => {
-            const owner = users.find((user) => user.id === project.ownerId);
+            const ownerNames = project.ownerIds
+              .map((ownerId) => users.find((user) => user.id === ownerId)?.name)
+              .filter((name): name is string => Boolean(name));
             const progress = project.recordsTotal > 0 ? Math.round((project.recordsScreened / project.recordsTotal) * 100) : 0;
             return (
               <article className="panel projectCard" key={project.id}>
@@ -1076,7 +1109,7 @@ export function PrismaReviewApp() {
                   </span>
                   <span>
                     <User size={15} />
-                    {owner?.name ?? "Unassigned owner"}
+                    {ownerNames.length > 0 ? ownerNames.join(", ") : "Unassigned owner"}
                   </span>
                   <span>
                     <CalendarClock size={15} />
@@ -1130,6 +1163,7 @@ export function PrismaReviewApp() {
                   <strong>{user.name}</strong>
                   <span>{user.title}</span>
                   <small>{projects.filter((project) => project.memberIds.includes(user.id) || project.ownerId === user.id).length} reviews</small>
+                  <small>{projects.filter((project) => project.memberIds.includes(user.id) || project.ownerIds.includes(user.id) || project.ownerId === user.id).length} reviews</small>
                 </div>
               </article>
             ))}
@@ -2231,16 +2265,27 @@ export function PrismaReviewApp() {
                     <strong>{member.name}</strong>
                     <span>{member.title} · {member.email}</span>
                   </div>
-                  <Badge label={member.id === selectedProject.ownerId ? "owner" : "reviewer"} tone={member.id === selectedProject.ownerId ? "info" : "neutral"} />
-                  <button
-                    className="ghostButton iconOnly"
-                    type="button"
-                    title={member.id === selectedProject.ownerId ? "Project owner cannot be removed" : "Remove member"}
-                    disabled={member.id === selectedProject.ownerId}
-                    onClick={() => removeUserFromProject(member.id)}
-                  >
-                    <X size={16} />
-                  </button>
+                  <Badge label={selectedProject.ownerIds.includes(member.id) ? "owner" : "reviewer"} tone={selectedProject.ownerIds.includes(member.id) ? "info" : "neutral"} />
+                  <div className="teamMemberActions">
+                    <button
+                      className="ghostButton"
+                      type="button"
+                      title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "At least one owner is required" : selectedProject.ownerIds.includes(member.id) ? "Change role to reviewer" : "Change role to owner"}
+                      disabled={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1}
+                      onClick={() => toggleProjectOwner(member.id)}
+                    >
+                      {selectedProject.ownerIds.includes(member.id) ? "Make reviewer" : "Make owner"}
+                    </button>
+                    <button
+                      className="ghostButton iconOnly"
+                      type="button"
+                      title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "Last owner cannot be removed" : "Remove member"}
+                      disabled={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1}
+                      onClick={() => removeUserFromProject(member.id)}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -2301,8 +2346,8 @@ export function PrismaReviewApp() {
               <thead>
                 <tr>
                   <th>Role</th>
-                  <th>Members</th>
-                  <th>Capabilities</th>
+                  {hasProjectSeedData ? <th>Members</th> : null}
+                  <th>{hasProjectSeedData ? "Capabilities" : "User"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -2322,9 +2367,8 @@ export function PrismaReviewApp() {
                   return (
                     <tr key={member.id}>
                       <td>
-                        <strong>{member.id === selectedProject.ownerId ? "Owner" : "Reviewer"}</strong>
+                        <strong>{selectedProject.ownerIds.includes(member.id) ? "Owner" : "Reviewer"}</strong>
                       </td>
-                      <td>1</td>
                       <td>{member.name} · {member.email}</td>
                     </tr>
                   );
@@ -2491,7 +2535,7 @@ export function PrismaReviewApp() {
   }
 
   function renderProfile() {
-    const ownedProjects = projects.filter((project) => project.ownerId === currentUser.id);
+    const ownedProjects = projects.filter((project) => project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id);
 
     return (
       <div className="viewStack">
@@ -2635,7 +2679,7 @@ export function PrismaReviewApp() {
                       <strong>{project.title}</strong>
                       <span>{project.organization}</span>
                     </td>
-                    <td>{project.ownerId === currentUser.id ? "Owner" : "Member"}</td>
+                    <td>{project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id ? "Owner" : "Member"}</td>
                     <td>
                       <Badge label={project.status} tone={project.status === "active" ? "success" : project.status === "draft" ? "warning" : "neutral"} />
                     </td>

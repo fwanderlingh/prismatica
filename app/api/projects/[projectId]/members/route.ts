@@ -7,8 +7,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ proje
     const { projectId } = await context.params;
     const body = await readJsonBody(request);
     const memberIds = Array.isArray(body.memberIds) ? body.memberIds.map(String) : [];
+    const ownerIds = Array.isArray(body.ownerIds) ? body.ownerIds.map(String) : [];
     const eventLabel = String(body.eventLabel ?? "Updated project team");
-    return jsonOk(updateProjectMembersForUser(userId, projectId, memberIds, eventLabel));
+    return jsonOk(updateProjectMembersForUser(userId, projectId, memberIds, ownerIds, eventLabel));
   } catch (error) {
     return jsonError(error);
   }
