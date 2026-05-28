@@ -126,6 +126,8 @@ type NewProjectForm = {
   memberIds: string[];
 };
 
+type ProjectSettingsForm = Omit<NewProjectForm, "memberIds">;
+
 type ImportDetailForm = {
   sourceName: string;
   filename: string;
@@ -154,6 +156,18 @@ const emptyProjectForm: NewProjectForm = {
   fullTextRequiredVotes: 2,
   maybePolicy: "advance_to_full_text",
   memberIds: []
+};
+
+const emptyProjectSettingsForm: ProjectSettingsForm = {
+  title: "",
+  organization: "",
+  protocolId: "",
+  description: "",
+  dueDate: "",
+  blindMode: true,
+  abstractRequiredVotes: 2,
+  fullTextRequiredVotes: 2,
+  maybePolicy: "advance_to_full_text"
 };
 
 const emptyImportDetailForm: ImportDetailForm = {
@@ -214,6 +228,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -247,6 +262,8 @@ export function PrismaReviewApp() {
     ...emptyProjectForm,
     memberIds: []
   });
+  const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsForm>(emptyProjectSettingsForm);
+  const [projectSettingsMessage, setProjectSettingsMessage] = useState("");
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>(seedDedupCandidates);
@@ -446,6 +463,32 @@ export function PrismaReviewApp() {
   }, [currentUser.id, currentUser.organization, currentUser.title]);
 
   useEffect(() => {
+    setProjectSettingsForm({
+      title: selectedProject.title,
+      organization: selectedProject.organization,
+      protocolId: selectedProject.protocolId,
+      description: selectedProject.description,
+      dueDate: selectedProject.dueDate,
+      blindMode: selectedProject.blindMode,
+      abstractRequiredVotes: selectedProject.abstractRequiredVotes,
+      fullTextRequiredVotes: selectedProject.fullTextRequiredVotes,
+      maybePolicy: selectedProject.maybePolicy
+    });
+    setProjectSettingsMessage("");
+  }, [
+    selectedProject.abstractRequiredVotes,
+    selectedProject.blindMode,
+    selectedProject.description,
+    selectedProject.dueDate,
+    selectedProject.fullTextRequiredVotes,
+    selectedProject.id,
+    selectedProject.maybePolicy,
+    selectedProject.organization,
+    selectedProject.protocolId,
+    selectedProject.title
+  ]);
+
+  useEffect(() => {
     if (projectReportQueue.length === 0) {
       return;
     }
@@ -616,6 +659,7 @@ export function PrismaReviewApp() {
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
     setSelectedProjectId(projectId);
     setActiveView(view);
+    setIsMobileNavOpen(false);
     setStudyIndex(0);
     setActiveReportId(reportQueue[0].id);
     setFullTextMessage("");
@@ -623,6 +667,13 @@ export function PrismaReviewApp() {
 
   function updateNewProjectForm<Key extends keyof NewProjectForm>(key: Key, value: NewProjectForm[Key]) {
     setNewProjectForm((previous) => ({
+      ...previous,
+      [key]: value
+    }));
+  }
+
+  function updateProjectSettingsForm<Key extends keyof ProjectSettingsForm>(key: Key, value: ProjectSettingsForm[Key]) {
+    setProjectSettingsForm((previous) => ({
       ...previous,
       [key]: value
     }));
@@ -786,6 +837,26 @@ export function PrismaReviewApp() {
       setActiveView("projectDashboard");
     } catch (error) {
       setLoginError(getErrorMessage(error));
+    }
+  }
+
+  async function updateProjectSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const title = projectSettingsForm.title.trim();
+    if (!title || !isEuDate(projectSettingsForm.dueDate)) {
+      setProjectSettingsMessage("Enter a review title and a due date in dd-mm-yyyy format.");
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(projectSettingsForm)
+      });
+      applyAppState(payload);
+      setProjectSettingsMessage("Project settings saved.");
+    } catch (error) {
+      setProjectSettingsMessage(getErrorMessage(error));
     }
   }
 
@@ -2131,6 +2202,10 @@ export function PrismaReviewApp() {
   }
 
   function renderExtraction() {
+    const extractionStudyIds = new Set(projectScreeningStudies.filter((study) => study.stage === "extraction").map((study) => study.id));
+    const includedReportFiles = projectReportQueue.filter((report) => extractionStudyIds.has(report.studyId));
+    const validatedPdfCount = projectReportQueue.filter((report) => report.fileName && report.isPdfValidated).length;
+
     if (activeCounts.studiesIncluded === 0) {
       return (
         <div className="viewStack">
@@ -2141,12 +2216,46 @@ export function PrismaReviewApp() {
               <p className="subtle">Extraction forms and assignments become available after studies are included.</p>
             </div>
           </section>
-          <section className="panel">
-            <EmptyState
-              icon={ClipboardCheck}
-              title="No included studies yet"
-              description="Complete screening and full-text eligibility before creating extraction assignments."
-            />
+          <section className="settingsGrid">
+            <div className="panel">
+              <EmptyState
+                icon={ClipboardCheck}
+                title="No included studies yet"
+                description="Files appear here after a report is retrieved, its PDF is validated, and the full-text decision reaches Include."
+              />
+            </div>
+            <div className="panel">
+              <SectionTitle icon={BookOpen} title="File Readiness" action="Full-text gate" />
+              <div className="stateRows">
+                <StatusRow label="Full-text reports" value={projectReportQueue.length.toString()} tone={projectReportQueue.length > 0 ? "info" : "warning"} />
+                <StatusRow label="Validated PDFs" value={validatedPdfCount.toString()} tone={validatedPdfCount > 0 ? "secure" : "warning"} />
+                <StatusRow label="Included for extraction" value={activeCounts.studiesIncluded.toString()} tone="danger" />
+              </div>
+              {projectReportQueue.length > 0 ? (
+                <div className="tableWrap compactTableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Report</th>
+                        <th>PDF</th>
+                        <th>Extraction gate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projectReportQueue.map((report) => (
+                        <tr key={report.id}>
+                          <td>
+                            <strong>{report.title}</strong>
+                          </td>
+                          <td>{report.fileName ? (report.isPdfValidated ? "Validated" : "Needs validation") : "Missing"}</td>
+                          <td>{extractionStudyIds.has(report.studyId) ? "Visible" : "Awaiting Include"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
           </section>
         </div>
       );
@@ -2164,6 +2273,41 @@ export function PrismaReviewApp() {
             <FileCheck2 size={17} />
             New Version
           </button>
+        </section>
+
+        <section className="panel">
+          <SectionTitle icon={BookOpen} title="Included Report Files" action={`${includedReportFiles.length} visible`} />
+          {includedReportFiles.length > 0 ? (
+            <div className="reportFileList">
+              {includedReportFiles.map((report) => (
+                <article className="reportFileCard" key={report.id}>
+                  <FileCheck2 size={20} />
+                  <div>
+                    <strong>{report.title}</strong>
+                    <span>{report.fileName || report.pdfName || "No PDF uploaded"}</span>
+                  </div>
+                  <Badge label={report.isPdfValidated ? "validated PDF" : "needs validation"} tone={report.isPdfValidated ? "success" : "warning"} />
+                  <button
+                    className="ghostButton"
+                    type="button"
+                    onClick={() => {
+                      setActiveReportId(report.id);
+                      setActiveView("fullText");
+                    }}
+                  >
+                    Open
+                    <ChevronRight size={17} />
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={BookOpen}
+              title="No files are visible yet"
+              description="Included studies without report files will appear after their full-text PDF is uploaded and validated."
+            />
+          )}
         </section>
 
         <section className="twoColumn">
@@ -2365,6 +2509,8 @@ export function PrismaReviewApp() {
       .map((memberId) => users.find((user) => user.id === memberId))
       .filter((user): user is AppUser => Boolean(user));
     const availableUsers = users.filter((user) => !selectedProject.memberIds.includes(user.id));
+    const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
+    const settingsMessageIsSuccess = projectSettingsMessage === "Project settings saved.";
 
     return (
       <div className="viewStack">
@@ -2374,45 +2520,129 @@ export function PrismaReviewApp() {
             <h1>Review Controls</h1>
             <p className="subtle">Authorization, blind-mode visibility, and transition policy are separate controls.</p>
           </div>
-          <button className="primaryButton" type="button" title="Save settings">
+          <button className="primaryButton" type="submit" form="project-settings-form" title="Save settings" disabled={!canManageProject}>
             <Check size={17} />
             Save
           </button>
         </section>
 
-        <section className="settingsGrid">
-          <div className="panel">
-            <SectionTitle icon={Lock} title="Blind Mode" action={selectedProject.blindMode ? "Enabled" : "Disabled"} />
-            <label className="toggleRow">
-              <input type="checkbox" checked={selectedProject.blindMode} readOnly />
-              <span />
-              <strong>Reviewer endpoints hide other votes</strong>
+        <form className="projectForm" id="project-settings-form" onSubmit={updateProjectSettings}>
+          <section className="panel">
+            <SectionTitle icon={FileText} title="Review Details" action={canManageProject ? "Editable" : "Owner only"} />
+            <div className="formGrid">
+              <label>
+                <span>Review title</span>
+                <input
+                  value={projectSettingsForm.title}
+                  onChange={(event) => updateProjectSettingsForm("title", event.target.value)}
+                  disabled={!canManageProject}
+                />
+              </label>
+              <label>
+                <span>Organization</span>
+                <input
+                  value={projectSettingsForm.organization}
+                  onChange={(event) => updateProjectSettingsForm("organization", event.target.value)}
+                  disabled={!canManageProject}
+                />
+              </label>
+              <label>
+                <span>Protocol ID</span>
+                <input
+                  value={projectSettingsForm.protocolId}
+                  onChange={(event) => updateProjectSettingsForm("protocolId", event.target.value)}
+                  disabled={!canManageProject}
+                />
+              </label>
+              <label>
+                <span>Due date (dd-mm-yyyy)</span>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}"
+                  value={projectSettingsForm.dueDate}
+                  onChange={(event) => updateProjectSettingsForm("dueDate", event.target.value)}
+                  disabled={!canManageProject}
+                />
+              </label>
+            </div>
+            <label className="wideField">
+              <span>Description</span>
+              <textarea
+                value={projectSettingsForm.description}
+                onChange={(event) => updateProjectSettingsForm("description", event.target.value)}
+                disabled={!canManageProject}
+              />
             </label>
-            <div className="stateRows">
-              <StatusRow label="Reviewer API" value="Own decision only" tone="secure" />
-              <StatusRow label="Admin API" value="Aggregate progress counts" tone="info" />
-              <StatusRow label="Adjudication API" value="Role-gated vote disclosure" tone="warning" />
-            </div>
-          </div>
+            {projectSettingsMessage ? (
+              <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+                {settingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{projectSettingsMessage}</span>
+              </div>
+            ) : null}
+          </section>
 
-          <div className="panel">
-            <SectionTitle icon={Settings} title="State Machine" action="Project policy" />
-            <div className="settingList">
-              <div>
-                <span>Title/abstract votes</span>
-                <strong>{selectedProject.abstractRequiredVotes}</strong>
-              </div>
-              <div>
-                <span>Full-text votes</span>
-                <strong>{selectedProject.fullTextRequiredVotes}</strong>
-              </div>
-              <div>
-                <span>Maybe policy</span>
-                <strong>Advance to full text</strong>
+          <section className="settingsGrid">
+            <div className="panel">
+              <SectionTitle icon={Lock} title="Blind Mode" action={projectSettingsForm.blindMode ? "Enabled" : "Disabled"} />
+              <label className="toggleRow">
+                <input
+                  type="checkbox"
+                  checked={projectSettingsForm.blindMode}
+                  onChange={(event) => updateProjectSettingsForm("blindMode", event.target.checked)}
+                  disabled={!canManageProject}
+                />
+                <span />
+                <strong>Reviewer endpoints hide other votes</strong>
+              </label>
+              <div className="stateRows">
+                <StatusRow label="Reviewer API" value="Own decision only" tone="secure" />
+                <StatusRow label="Admin API" value="Aggregate progress counts" tone="info" />
+                <StatusRow label="Adjudication API" value="Role-gated vote disclosure" tone="warning" />
               </div>
             </div>
-          </div>
-        </section>
+
+            <div className="panel">
+              <SectionTitle icon={Settings} title="State Machine" action="Project policy" />
+              <div className="formGrid compactFormGrid">
+                <label>
+                  <span>Title/abstract votes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={projectSettingsForm.abstractRequiredVotes}
+                    onChange={(event) => updateProjectSettingsForm("abstractRequiredVotes", Number(event.target.value))}
+                    disabled={!canManageProject}
+                  />
+                </label>
+                <label>
+                  <span>Full-text votes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={projectSettingsForm.fullTextRequiredVotes}
+                    onChange={(event) => updateProjectSettingsForm("fullTextRequiredVotes", Number(event.target.value))}
+                    disabled={!canManageProject}
+                  />
+                </label>
+              </div>
+              <label className="fieldLabel" htmlFor="project-settings-maybe-policy">
+                Maybe policy
+              </label>
+              <select
+                id="project-settings-maybe-policy"
+                value={projectSettingsForm.maybePolicy}
+                onChange={(event) => updateProjectSettingsForm("maybePolicy", event.target.value as ProjectSettingsForm["maybePolicy"])}
+                disabled={!canManageProject}
+              >
+                <option value="advance_to_full_text">Advance to full text</option>
+                <option value="third_vote">Request third vote</option>
+                <option value="conflict">Treat as conflict</option>
+              </select>
+            </div>
+          </section>
+        </form>
 
         <section className="settingsGrid">
           <div className="panel">
@@ -2985,20 +3215,38 @@ export function PrismaReviewApp() {
 
   return (
     <div className="appFrame">
-      <aside className="sidebar" aria-label="Project navigation">
-        <div className="brandBlock">
-          <div className="brandMark brandMarkImage">
-            <img src="/icon.svg" alt="PRISMATICA logo" width={30} height={30} />
+      <aside className={isMobileNavOpen ? "sidebar open" : "sidebar"} aria-label="Project navigation">
+        <div className="sidebarHeader">
+          <div className="brandBlock">
+            <div className="brandMark brandMarkImage">
+              <img src="/icon.svg" alt="PRISMATICA logo" width={30} height={30} />
+            </div>
+            <div>
+              <strong>PRISMATICA</strong>
+              <span>Open source PRISMA review platform</span>
+            </div>
           </div>
-          <div>
-            <strong>PRISMATICA</strong>
-            <span>Open source PRISMA review platform</span>
-          </div>
+          <button
+            className="ghostButton iconOnly mobileNavToggle"
+            type="button"
+            title={isMobileNavOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={isMobileNavOpen}
+            onClick={() => setIsMobileNavOpen((open) => !open)}
+          >
+            <PanelRight size={18} />
+          </button>
         </div>
 
         {isProjectView ? (
           <div className="projectContext">
-            <button className="ghostButton" type="button" onClick={() => setActiveView("dashboard")}>
+            <button
+              className="ghostButton"
+              type="button"
+              onClick={() => {
+                setActiveView("dashboard");
+                setIsMobileNavOpen(false);
+              }}
+            >
               <ArrowLeft size={16} />
               All Reviews
             </button>
@@ -3020,7 +3268,10 @@ export function PrismaReviewApp() {
               type="button"
               key={key}
               aria-current={activeView === key ? "page" : undefined}
-              onClick={() => setActiveView(key)}
+              onClick={() => {
+                setActiveView(key);
+                setIsMobileNavOpen(false);
+              }}
               title={path}
             >
               <Icon size={18} />

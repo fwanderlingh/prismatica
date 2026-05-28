@@ -46,6 +46,8 @@ type NewProjectInput = {
   memberIds?: string[];
 };
 
+type UpdateProjectInput = Omit<NewProjectInput, "memberIds">;
+
 type ParsedCitation = {
   title: string;
   abstract: string;
@@ -297,7 +299,7 @@ function requireProjectMember(state: PersistedState, projectId: string, userId: 
 function requireProjectOwner(state: PersistedState, projectId: string, userId: string) {
   const project = requireProjectMember(state, projectId, userId);
   if (!isProjectOwner(project, userId)) {
-    throw new ApiError("Only the project owner can change team membership.", 403);
+    throw new ApiError("Only project owners can change this project.", 403);
   }
   return project;
 }
@@ -610,6 +612,49 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     ...buildPayload(state, userId),
     selectedProjectId: project.id
   };
+}
+
+export function updateProjectForUser(userId: string, projectId: string, input: UpdateProjectInput): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  const project = requireProjectOwner(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const title = input.title?.trim() ?? "";
+  const dueDate = input.dueDate?.trim() ?? "";
+  if (!title || !isEuDate(dueDate)) {
+    throw new ApiError("A project title and dd-mm-yyyy due date are required.");
+  }
+
+  const maybePolicy = input.maybePolicy ?? project.maybePolicy;
+  if (!["advance_to_full_text", "conflict", "third_vote"].includes(maybePolicy)) {
+    throw new ApiError("Choose a valid maybe policy.");
+  }
+
+  state.projects = state.projects.map((candidate) =>
+    candidate.id === projectId
+      ? {
+          ...candidate,
+          title,
+          organization: input.organization?.trim() || project.organization,
+          protocolId: input.protocolId?.trim() || project.protocolId,
+          description: input.description?.trim() || project.description,
+          dueDate,
+          blindMode: Boolean(input.blindMode ?? project.blindMode),
+          abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes ?? project.abstractRequiredVotes),
+          fullTextRequiredVotes: clampVoteCount(input.fullTextRequiredVotes ?? project.fullTextRequiredVotes),
+          maybePolicy,
+          updatedAt: toEuToday(),
+          lastEvent: "Project settings updated"
+        }
+      : candidate
+  );
+  appendEvent(state, currentUser.name, "Updated project settings", projectId);
+  writeState(state);
+
+  return buildPayload(state, userId);
 }
 
 export function updateProjectMembersForUser(

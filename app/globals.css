@@ -110,6 +110,18 @@ p {
   backdrop-filter: blur(14px);
 }
 
+.sidebarHeader {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.mobileNavToggle {
+  display: none;
+}
+
 .brandBlock {
   display: flex;
   align-items: center;
@@ -1061,11 +1073,14 @@ td span {
   grid-template-columns: 1fr 22px 1fr 22px 1fr;
   gap: 10px;
   align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .provenanceStack div {
   display: grid;
   gap: 8px;
+  min-width: 0;
   min-height: 150px;
   padding: 14px;
   border: 1px solid var(--border);
@@ -1074,6 +1089,7 @@ td span {
 }
 
 .provenanceStack span {
+  overflow-wrap: anywhere;
   color: var(--muted);
   line-height: 1.45;
 }
@@ -1885,12 +1901,14 @@ button:disabled {
 
 .teamList,
 .addMemberBox,
-.inviteForm {
+.inviteForm,
+.reportFileList {
   display: grid;
   gap: 10px;
 }
 
-.teamMember {
+.teamMember,
+.reportFileCard {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto auto;
   gap: 10px;
@@ -1902,16 +1920,29 @@ button:disabled {
   background: #fbfcfd;
 }
 
+.reportFileCard {
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+}
+
 .teamMember strong,
-.teamMember span:not(.avatar) {
+.teamMember span:not(.avatar),
+.reportFileCard strong,
+.reportFileCard span {
   display: block;
 }
 
-.teamMember span:not(.avatar) {
+.teamMember span:not(.avatar),
+.reportFileCard span {
   margin-top: 2px;
   overflow: hidden;
   color: var(--muted);
   font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reportFileCard strong {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1946,6 +1977,10 @@ button:disabled {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+}
+
+.compactTableWrap {
+  margin-top: 14px;
 }
 
 .schemaList div {
@@ -2110,6 +2145,15 @@ button:disabled {
   .comparisonGrid {
     grid-template-columns: 1fr;
   }
+
+  .provenanceStack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .provenanceStack > svg {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
 }
 
 @media (max-width: 860px) {
@@ -2123,13 +2167,31 @@ button:disabled {
   }
 
   .sidebar {
-    position: static;
+    position: sticky;
+    z-index: 20;
     height: auto;
+    gap: 12px;
     padding: 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar.open {
+    box-shadow: 0 12px 30px rgba(30, 45, 55, 0.12);
+  }
+
+  .mobileNavToggle {
+    display: inline-flex;
+  }
+
+  .sidebar:not(.open) .projectContext,
+  .sidebar:not(.open) .navList,
+  .sidebar:not(.open) .sidebarFooter {
+    display: none;
   }
 
   .navList {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .mainArea {
@@ -2171,17 +2233,18 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .provenanceStack {
-    grid-template-columns: 1fr;
-  }
-
-  .provenanceStack > svg {
-    transform: rotate(90deg);
-    justify-self: center;
-  }
-
   .prismaFlow {
     grid-template-columns: minmax(230px, 1fr);
+  }
+
+  .reportFileCard {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .reportFileCard .badge,
+  .reportFileCard button {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 
