@@ -93,6 +93,8 @@ type DecisionAction = {
   previousDecisionId?: string;
 };
 
+const numberFormatter = new Intl.NumberFormat("en-US");
+
 const globalNavItems: NavItem[] = [
   { key: "dashboard", label: "All Reviews", path: "/dashboard", Icon: Home },
   { key: "newProject", label: "New Review", path: "/projects/new", Icon: FolderPlus },
@@ -449,8 +451,8 @@ export function PrismaReviewApp() {
       <main className="loginShell" aria-busy="true" aria-live="polite">
         <section className="loginPanel authLoadingPanel">
           <div className="brandBlock loginBrand">
-            <div className="brandMark">
-              <FileSearch size={25} />
+            <div className="brandMark brandMarkImage">
+              <img src="/icon.svg" alt="Prismatica logo" width={30} height={30} />
             </div>
             <div>
               <strong>Prismatica</strong>
@@ -1015,7 +1017,7 @@ export function PrismaReviewApp() {
 
         <section className="metricGrid" aria-label="Portfolio metrics">
           <Metric label="Accessible reviews" value={userProjects.length.toString()} tone="blue" detail={`${activeReviews} active review projects`} />
-          <Metric label="Records across reviews" value={totalRecords.toLocaleString()} tone="teal" detail="Counts visible by membership" />
+          <Metric label="Records across reviews" value={formatNumber(totalRecords)} tone="teal" detail="Counts visible by membership" />
           <Metric label="Open conflicts" value={totalConflicts.toString()} tone="amber" detail="Title/abstract and full-text queues" />
           <Metric label="Team members" value={users.length.toString()} tone="green" detail="Users with review-specific access" />
         </section>
@@ -1052,7 +1054,7 @@ export function PrismaReviewApp() {
                   </span>
                 </div>
                 <div className="progressBlock">
-                  <span>{progress}% screened · {project.recordsScreened.toLocaleString()} of {project.recordsTotal.toLocaleString()} records</span>
+                  <span>{progress}% screened · {formatNumber(project.recordsScreened)} of {formatNumber(project.recordsTotal)} records</span>
                   <div className="progressTrack">
                     <i style={{ width: `${progress}%` }} />
                   </div>
@@ -1132,7 +1134,7 @@ export function PrismaReviewApp() {
         </section>
 
         <section className="metricGrid" aria-label="Project metrics">
-          <Metric label="Records identified" value={recordsIdentified.toLocaleString()} tone="blue" detail="Database, register, and manual sources" />
+          <Metric label="Records identified" value={formatNumber(recordsIdentified)} tone="blue" detail="Database, register, and manual sources" />
           <Metric label="Duplicates removed" value={activeCounts.duplicateRecordsRemoved.toString()} tone="teal" detail="Preserved for PRISMA provenance" />
           <Metric label="Records screened" value={activeCounts.recordsScreened.toString()} tone="amber" detail={`${activeCounts.recordsExcluded} excluded at title/abstract`} />
           <Metric label="Studies included" value={activeCounts.studiesIncluded.toString()} tone="green" detail={`${activeCounts.studiesIncludedMetaAnalysis} in meta-analysis`} />
@@ -1143,7 +1145,7 @@ export function PrismaReviewApp() {
             <SectionTitle icon={Activity} title="Review Workflow" action="Live state machine" />
             <div className="workflowMap" aria-label="Review workflow">
               {[
-                ["Import", `${recordsIdentified.toLocaleString()} records`, recordsIdentified > 0 ? "complete" : "pending"],
+                ["Import", `${formatNumber(recordsIdentified)} records`, recordsIdentified > 0 ? "complete" : "pending"],
                 ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "active" : "pending"],
                 ["Screen", `${activeCounts.recordsScreened} records`, activeCounts.recordsScreened > 0 ? "active" : "pending"],
                 ["Full text", `${activeCounts.reportsSought} reports`, activeCounts.reportsSought > 0 ? "active" : "pending"],
@@ -1290,10 +1292,11 @@ export function PrismaReviewApp() {
             <SectionTitle icon={FileText} title="Citation Entries" action={`${batchStudies.length} records`} />
             {batchStudies.length > 0 ? (
               <div className="importEntryList">
-                {batchStudies.map((study) => (
+                {batchStudies.map((study, index) => (
                   <article className={studyEditId === study.id ? "importEntryCard editing" : "importEntryCard"} key={study.id}>
                     {studyEditId === study.id ? (
                       <form className="studyEditForm" onSubmit={updateImportStudy}>
+                        <span className="entryReference">Record {index + 1}</span>
                         <label className="wideField">
                           <span>Title</span>
                           <input
@@ -1368,6 +1371,7 @@ export function PrismaReviewApp() {
                       <>
                         <div className="importEntryHeader">
                           <div>
+                            <span className="entryReference">Record {index + 1}</span>
                             <strong>{study.title}</strong>
                             <span>
                               {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} ·{" "}
@@ -1704,7 +1708,9 @@ export function PrismaReviewApp() {
             </div>
             <div className="metaStrip">
               <span>DOI {currentStudy.doi}</span>
-              <span>{currentStudy.keywords.join(" · ")}</span>
+              <span className={currentStudy.keywords.length > 0 ? undefined : "emptyMetaValue"}>
+                {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
+              </span>
             </div>
             <p className="abstractText">{highlightText(currentStudy.abstract)}</p>
             <textarea
@@ -2594,8 +2600,8 @@ export function PrismaReviewApp() {
       <main className="loginShell">
         <section className="loginPanel">
           <div className="brandBlock loginBrand">
-            <div className="brandMark">
-              <FileSearch size={25} />
+            <div className="brandMark brandMarkImage">
+              <img src="/icon.svg" alt="Prismatica logo" width={30} height={30} />
             </div>
             <div>
               <strong>Prismatica</strong>
@@ -2714,8 +2720,8 @@ export function PrismaReviewApp() {
     <div className="appFrame">
       <aside className="sidebar" aria-label="Project navigation">
         <div className="brandBlock">
-          <div className="brandMark">
-            <FileSearch size={24} />
+          <div className="brandMark brandMarkImage">
+            <img src="/icon.svg" alt="Prismatica logo" width={30} height={30} />
           </div>
           <div>
             <strong>Prismatica</strong>
@@ -2952,7 +2958,7 @@ function FlowBox({
     <div className={`flowBox ${tone}`}>
       <Icon size={18} />
       <span>{label}</span>
-      <strong>{value.toLocaleString()}</strong>
+      <strong>{formatNumber(value)}</strong>
     </div>
   );
 }
@@ -2981,6 +2987,10 @@ function escapeRegExp(value: string) {
 
 function sumObject(values: Record<string, number>) {
   return Object.values(values).reduce((total, value) => total + value, 0);
+}
+
+function formatNumber(value: number) {
+  return numberFormatter.format(value);
 }
 
 function isEuDate(value: string) {

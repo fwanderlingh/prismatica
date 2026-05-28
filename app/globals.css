@@ -114,14 +114,25 @@ p {
 }
 
 .brandMark {
-  display: grid;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  color: #ffffff;
-  border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--teal), var(--blue));
+  display: flex;
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.brandMarkImage {
+  overflow: visible;
+  background: transparent;
+  border: 0;
+}
+
+.brandMarkImage img {
+  display: block;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
 }
 
 .navList {
@@ -1174,6 +1185,20 @@ td span {
   line-height: 1.4;
 }
 
+.entryReference {
+  display: inline-flex;
+  width: fit-content;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #eef2f4;
+  color: #44525c;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .importAbstract {
   color: #334048;
   line-height: 1.5;
@@ -1396,6 +1421,10 @@ td span {
   color: #435059;
   background: #fbfcfd;
   font-size: 0.82rem;
+
+.metaStrip .emptyMetaValue {
+  font-style: italic;
+}
 }
 
 .abstractText {
