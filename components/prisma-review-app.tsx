@@ -1601,7 +1601,7 @@ export function PrismaReviewApp() {
               <ScoreBar label="First author" value={latestPendingDedup.explanation.author} />
               <ScoreBar label="Year" value={latestPendingDedup.explanation.year} />
             </div>
-            <p className="doiNote">{latestPendingDedup.explanation.doi}</p>
+            <p className="doiNote">{renderDoiLink(latestPendingDedup.explanation.doi, latestPendingDedup.explanation.doi)}</p>
             <ul className="plainList">
               {latestPendingDedup.explanation.notes.map((note) => (
                 <li key={note}>{note}</li>
@@ -1707,7 +1707,9 @@ export function PrismaReviewApp() {
               <Badge label={stageEvaluation.label} tone={stageEvaluation.state === "conflict" ? "danger" : "info"} />
             </div>
             <div className="metaStrip">
-              <span>DOI {currentStudy.doi}</span>
+              <span>
+                DOI {renderDoiLink(currentStudy.doi, currentStudy.doi || "Missing")}
+              </span>
               <span className={currentStudy.keywords.length > 0 ? undefined : "emptyMetaValue"}>
                 {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
               </span>
@@ -2778,13 +2780,6 @@ export function PrismaReviewApp() {
             </div>
           ) : null}
           <div className="topbarActions">
-            <button className="ghostButton iconOnly" type="button" title="Search records">
-              <Search size={17} />
-            </button>
-            <button className="ghostButton" type="button" title="Open audit log">
-              <History size={17} />
-              Audit
-            </button>
             <button className="userPill" type="button" onClick={() => setActiveView("profile")} title="Open profile">
               <span style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>
               <strong>{currentUser.name}</strong>
@@ -2908,10 +2903,23 @@ function RecordComparison({ title, source, study }: { title: string; source: str
         </div>
         <div>
           <dt>DOI</dt>
-          <dd>{study.doi || "Missing"}</dd>
+          <dd>{renderDoiLink(study.doi, study.doi || "Missing")}</dd>
         </div>
       </dl>
     </article>
+  );
+}
+
+function renderDoiLink(value: string, label?: string) {
+  const normalizedValue = value.trim().replace(/^https?:\/\/doi\.org\//i, "").replace(/^doi:\s*/i, "");
+  if (!normalizedValue) {
+    return label ?? "Missing";
+  }
+
+  return (
+    <a href={`https://doi.org/${normalizedValue}`} target="_blank" rel="noreferrer">
+      {label ?? normalizedValue}
+    </a>
   );
 }
 
