@@ -118,7 +118,7 @@ p {
   min-width: 0;
 }
 
-.mobileNavToggle {
+.ghostButton.mobileNavToggle {
   display: none;
 }
 
@@ -237,6 +237,7 @@ p {
   line-height: 1.25;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .projectContext span:not(.badge) {
@@ -1485,6 +1486,7 @@ td span {
   line-height: 1.28;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .citationPanel {
@@ -2234,7 +2236,7 @@ button:disabled {
     box-shadow: 0 12px 30px rgba(30, 45, 55, 0.12);
   }
 
-  .mobileNavToggle {
+  .ghostButton.mobileNavToggle {
     display: inline-flex;
   }
 
