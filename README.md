@@ -24,14 +24,29 @@ Open source PRISMA review platform built with Next.js, React, and TypeScript.
 - Import batch/provenance view for RIS and BibTeX
 - Deduplication candidate review with side-by-side metadata and scoring
 - High-velocity title/abstract screening with append-only decision state
-- Full-text review workspace with PDF viewer mock, retrieval status, and exclusion reasons
-- Extraction consensus and risk-of-bias workspaces
+- Full-text review workspace with real PDF streaming, upload/validation controls, DOI links, retrieval status, exclusion reasons, and dual-review vote state
+- Extraction workflow with owner-created data templates, included-report queue, PDF viewer, reviewer form submission, and two-reviewer submission tracking
+- Data template fields for multiline text, single choice, and multiple choice extraction questions
+- Per-user project statistics for screened records, uploaded PDFs, full-text reviews, and submitted extractions
+- Risk-of-bias workspace scaffold
 - PRISMA export preview with validation checks
 - Role, blind-mode, and state-machine settings views
 
-Registered users, the seeded administrator account, newly created reviews, team membership, screening decisions, duplicate-candidate statuses, and workflow events are stored server-side. By default the Node server writes a JSON data file at `data/prismatica-state.json`; set `PRISMATICA_DATA_FILE` to place it somewhere durable.
+Registered users, the seeded administrator account, newly created reviews, team membership, screening decisions, duplicate-candidate statuses, extraction templates, extraction responses, report metadata, and workflow events are stored server-side. By default the Node server writes a JSON data file at `data/prismatica-state.json`; set `PRISMATICA_DATA_FILE` to place it somewhere durable.
 
 This is the Node storage adapter for the current Next.js app. The API routes keep project, user, decision, and audit mutations behind server boundaries so a PostgreSQL/NestJS adapter from `prisma_website_specifications.md` can replace the JSON file later.
+
+## Workflow
+
+1. Create an account, sign in, and create a review project with owners, reviewers, vote thresholds, blind-mode visibility, and maybe-vote policy.
+2. Import records from RIS or BibTeX files. Each batch keeps provenance, parser warnings, and editable citation entries.
+3. Review deduplication candidates when generated. If no duplicate candidates are produced, screening can continue with the imported citations.
+4. Screen titles and abstracts. Reviewers vote include, maybe, or exclude; blind mode hides other reviewers' votes from non-owners while aggregate workflow state is tracked.
+5. Advance included studies to full-text review. Upload and validate PDFs, use DOI links for retrieval, set retrieval status, and record full-text include/exclude votes with exclusion reasons.
+6. Resolve full-text outcomes. Unanimous include votes advance the report to extraction, unanimous exclude votes exclude it at full text, and mixed include/exclude votes enter conflict resolution.
+7. Create the extraction data template. A project owner defines reusable fields as multiline text, single choice, or multiple choice questions.
+8. Extract data from included reports. Reviewers work with the PDF viewer on the left and the active extraction template on the right; at least two submitted extractions are tracked for each report.
+9. Export and validate PRISMA outputs from the accumulated import, screening, full-text, extraction, and audit state.
 
 ## System Dependencies
 
@@ -105,6 +120,8 @@ export PRISMATICA_SECURE_COOKIES="true"
 Use `PRISMATICA_SECURE_COOKIES=true` only when the app is served over HTTPS.
 
 For any environment beyond local development, set `PRISMATICA_ADMIN_PASSWORD` explicitly instead of relying on the built-in default.
+
+Uploaded PDFs are stored on disk next to the configured data file, under a `pdfs/` directory. For example, if `PRISMATICA_DATA_FILE` is `/var/lib/prismatica/prismatica-state.json`, uploaded report PDFs are saved under `/var/lib/prismatica/pdfs/<project-id>/`.
 
 ## Subnetwork Development Access
 
