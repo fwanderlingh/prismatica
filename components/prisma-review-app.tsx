@@ -16,6 +16,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  ChevronDown,
   ClipboardCheck,
   Database,
   Download,
@@ -1754,15 +1755,15 @@ export function PrismaReviewApp() {
               <div>
                 <Database size={22} />
                 <strong>Imported record</strong>
-                <span>One citation from PubMed, Embase, Scopus, or manual entry.</span>
+                <span>One citation from Scopus, IEEE, PubMed, etc.</span>
               </div>
-              <ChevronRight size={18} />
+              <ChevronDown size={18} />
               <div>
                 <GitMerge size={22} />
                 <strong>Study candidate</strong>
                 <span>Canonical review unit created after deduplication.</span>
               </div>
-              <ChevronRight size={18} />
+              <ChevronDown size={18} />
               <div>
                 <BookOpen size={22} />
                 <strong>Report</strong>
