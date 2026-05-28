@@ -1656,6 +1656,13 @@ textarea {
   min-height: 660px;
 }
 
+.extractionWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 16px;
+  min-height: 760px;
+}
+
 .pdfPane {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1867,6 +1874,72 @@ select:disabled {
   border-color: #bedfc8;
   background: var(--green-soft);
   color: #165a33;
+}
+
+.templateBuilder {
+  display: grid;
+  gap: 14px;
+}
+
+.templateFieldList,
+.extractionForm {
+  display: grid;
+  gap: 14px;
+}
+
+.templateFieldEditor,
+.extractionField {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fbfcfd;
+}
+
+.templateFieldHeader {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.extractionFormPanel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.extractionFormPanel h2 {
+  overflow-wrap: anywhere;
+  font-size: 1.08rem;
+  line-height: 1.28;
+}
+
+.extractionField {
+  display: grid;
+  gap: 10px;
+}
+
+.extractionField legend {
+  padding: 0;
+  font-weight: 800;
+}
+
+.choiceList {
+  display: grid;
+  gap: 8px;
+}
+
+.choiceList label {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #ffffff;
 }
 
 .projectForm {
@@ -2183,6 +2256,7 @@ button:disabled {
   grid-template-columns: 0 48px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
+  cursor: pointer;
 }
 
 .toggleRow input {
@@ -2194,18 +2268,39 @@ button:disabled {
   width: 48px;
   height: 28px;
   border-radius: 999px;
-  background: var(--teal);
+  background: #cfd8dc;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .toggleRow span::after {
   position: absolute;
   top: 4px;
-  right: 4px;
+  left: 4px;
   width: 20px;
   height: 20px;
   border-radius: 999px;
   background: #ffffff;
+  box-shadow: 0 2px 6px rgba(23, 33, 38, 0.18);
   content: "";
+  transition: transform 0.18s ease;
+}
+
+.toggleRow input:checked + span {
+  background: var(--teal);
+}
+
+.toggleRow input:checked + span::after {
+  transform: translateX(20px);
+}
+
+.toggleRow input:focus-visible + span {
+  box-shadow: 0 0 0 3px rgba(24, 95, 99, 0.18);
+}
+
+.toggleRow input:disabled + span,
+.toggleRow input:disabled ~ strong {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 @media (max-width: 1180px) {
@@ -2224,7 +2319,8 @@ button:disabled {
   .settingsGrid,
   .exportLayout,
   .screeningLayout,
-  .fullTextLayout {
+  .fullTextLayout,
+  .extractionWorkspace {
     grid-template-columns: 1fr;
   }
 

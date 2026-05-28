@@ -126,6 +126,45 @@ export type Decision = {
   createdAt: string;
 };
 
+export type ExtractionFieldType = "multiline_text" | "single_choice" | "multiple_choice";
+
+export type ExtractionTemplateField = {
+  id: string;
+  title: string;
+  type: ExtractionFieldType;
+  options: string[];
+};
+
+export type ExtractionTemplate = {
+  id: string;
+  projectId: string;
+  title: string;
+  version: number;
+  fields: ExtractionTemplateField[];
+  createdByUserId: string;
+  createdByUserName: string;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
+};
+
+export type ExtractionResponseValue = string | string[];
+
+export type ExtractionResponse = {
+  id: string;
+  projectId: string;
+  studyId: string;
+  reportId: string;
+  templateId: string;
+  userId: string;
+  userName: string;
+  values: Record<string, ExtractionResponseValue>;
+  isSubmitted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  submittedAt?: string;
+};
+
 export type DedupCandidate = {
   id: string;
   recordA: Study;

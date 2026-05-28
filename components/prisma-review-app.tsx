@@ -57,7 +57,6 @@ import {
 } from "lucide-react";
 import {
   dedupCandidates as seedDedupCandidates,
-  extractionRows,
   highlightRules,
   initialDecisions,
   initialWorkflowEvents,
@@ -71,6 +70,10 @@ import {
   screeningStudies,
   type DedupCandidate,
   type Decision,
+  type ExtractionFieldType,
+  type ExtractionResponse,
+  type ExtractionResponseValue,
+  type ExtractionTemplate,
   type ImportBatch,
   type PrismaCounts,
   type ReviewProject,
@@ -144,6 +147,18 @@ type StudyEditForm = {
   abstract: string;
 };
 
+type ExtractionTemplateFieldForm = {
+  id: string;
+  title: string;
+  type: ExtractionFieldType;
+  optionsText: string;
+};
+
+type ExtractionTemplateForm = {
+  title: string;
+  fields: ExtractionTemplateFieldForm[];
+};
+
 type ProjectUserStats = {
   user: AppUser;
   screened: number;
@@ -194,6 +209,24 @@ const emptyStudyEditForm: StudyEditForm = {
   doi: "",
   keywords: "",
   abstract: ""
+};
+
+function createClientId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createBlankExtractionField(type: ExtractionFieldType = "multiline_text"): ExtractionTemplateFieldForm {
+  return {
+    id: createClientId("field"),
+    title: "",
+    type,
+    optionsText: type === "multiline_text" ? "" : "Yes\nNo"
+  };
+}
+
+const emptyExtractionTemplateForm: ExtractionTemplateForm = {
+  title: "Data Template",
+  fields: [createBlankExtractionField()]
 };
 
 const guestUser: AppUser = {
@@ -247,6 +280,8 @@ export function PrismaReviewApp() {
   const [imports, setImports] = useState<ImportBatch[]>([]);
   const [studies, setStudies] = useState<Study[]>([]);
   const [reports, setReports] = useState<Report[]>(reportQueue);
+  const [extractionTemplates, setExtractionTemplates] = useState<ExtractionTemplate[]>([]);
+  const [extractionResponses, setExtractionResponses] = useState<ExtractionResponse[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
   const [authMode, setAuthMode] = useState<"signIn" | "register">("signIn");
@@ -282,6 +317,10 @@ export function PrismaReviewApp() {
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [screeningNote, setScreeningNote] = useState("");
   const [activeReportId, setActiveReportId] = useState(reportQueue[0].id);
+  const [activeExtractionReportId, setActiveExtractionReportId] = useState("");
+  const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
+  const [extractionFormValues, setExtractionFormValues] = useState<Record<string, ExtractionResponseValue>>({});
+  const [extractionMessage, setExtractionMessage] = useState("");
   const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
   const [fullTextMessage, setFullTextMessage] = useState("");
   const [importMessage, setImportMessage] = useState("");
@@ -316,6 +355,22 @@ export function PrismaReviewApp() {
   const importedProjectStudies = studies.filter((study) => study.projectId === selectedProject.id);
   const projectScreeningStudies = hasProjectSeedData ? screeningStudies : importedProjectStudies;
   const projectReportQueue = hasProjectSeedData ? reportQueue : reports.filter((report) => report.projectId === selectedProject.id);
+  const projectExtractionStudyIds = new Set(projectScreeningStudies.filter((study) => study.stage === "extraction").map((study) => study.id));
+  const projectExtractionReports = projectReportQueue.filter((report) => projectExtractionStudyIds.has(report.studyId));
+  const projectExtractionReportKey = projectExtractionReports.map((report) => report.id).join("|");
+  const activeExtractionReport = projectExtractionReports.find((report) => report.id === activeExtractionReportId) ?? projectExtractionReports[0];
+  const activeExtractionTemplate =
+    extractionTemplates.find((template) => template.projectId === selectedProject.id && template.isActive) ??
+    extractionTemplates.find((template) => template.projectId === selectedProject.id);
+  const activeExtractionResponse = activeExtractionReport && activeExtractionTemplate
+    ? extractionResponses.find(
+        (response) =>
+          response.projectId === selectedProject.id &&
+          response.reportId === activeExtractionReport.id &&
+          response.templateId === activeExtractionTemplate.id &&
+          response.userId === currentUser.id
+      )
+    : undefined;
   const activeReport = projectReportQueue.find((report) => report.id === activeReportId) ?? projectReportQueue[0] ?? reportQueue[0];
   const activeCounts = useMemo(
     () => getCountsForProject(selectedProject, projectReportQueue, decisions),
@@ -327,7 +382,7 @@ export function PrismaReviewApp() {
   const projectEvents = hasProjectSeedData
     ? events.filter((event) => !projectIdSet.has(event.entity) || event.entity === selectedProject.id)
     : events.filter((event) => event.entity === selectedProject.id || projectStudyIds.has(event.entity) || projectReportIds.has(event.entity));
-  const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, projectEvents);
+  const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, extractionResponses, projectEvents);
   const currentStudy = projectScreeningStudies[studyIndex] ?? screeningStudies[0];
   const currentUserDecision = useMemo(
     () =>
@@ -503,6 +558,12 @@ export function PrismaReviewApp() {
   ]);
 
   useEffect(() => {
+    setExtractionTemplateForm({ title: "Data Template", fields: [createBlankExtractionField()] });
+    setExtractionFormValues({});
+    setExtractionMessage("");
+  }, [selectedProject.id]);
+
+  useEffect(() => {
     if (projectReportQueue.length === 0) {
       return;
     }
@@ -510,6 +571,21 @@ export function PrismaReviewApp() {
       setActiveReportId(projectReportQueue[0].id);
     }
   }, [activeReportId, projectReportQueue]);
+
+  useEffect(() => {
+    if (projectExtractionReports.length === 0) {
+      setActiveExtractionReportId("");
+      return;
+    }
+    if (!projectExtractionReports.some((report) => report.id === activeExtractionReportId)) {
+      setActiveExtractionReportId(projectExtractionReports[0].id);
+    }
+  }, [activeExtractionReportId, projectExtractionReportKey, projectExtractionReports]);
+
+  useEffect(() => {
+    setExtractionFormValues(activeExtractionResponse?.values ?? {});
+    setExtractionMessage("");
+  }, [activeExtractionReport?.id, activeExtractionResponse?.id, activeExtractionTemplate?.id, currentUser.id]);
 
   useEffect(() => {
     const decision = decisions.find(
@@ -569,6 +645,8 @@ export function PrismaReviewApp() {
     setImports(payload.imports);
     setStudies(payload.studies);
     setReports(payload.reports);
+    setExtractionTemplates(payload.extractionTemplates);
+    setExtractionResponses(payload.extractionResponses);
     setDecisions(payload.decisions);
     setEvents(payload.events);
     setDedupCandidates(payload.dedupCandidates);
@@ -871,6 +949,100 @@ export function PrismaReviewApp() {
       setProjectSettingsMessage("Project settings saved.");
     } catch (error) {
       setProjectSettingsMessage(getErrorMessage(error));
+    }
+  }
+
+  function addExtractionTemplateField(type: ExtractionFieldType) {
+    setExtractionTemplateForm((previous) => ({
+      ...previous,
+      fields: [...previous.fields, createBlankExtractionField(type)]
+    }));
+  }
+
+  function updateExtractionTemplateField(fieldId: string, updates: Partial<ExtractionTemplateFieldForm>) {
+    setExtractionTemplateForm((previous) => ({
+      ...previous,
+      fields: previous.fields.map((field) => {
+        if (field.id !== fieldId) {
+          return field;
+        }
+        const nextType = updates.type ?? field.type;
+        return {
+          ...field,
+          ...updates,
+          optionsText: nextType === "multiline_text" ? "" : (updates.optionsText ?? field.optionsText) || "Yes\nNo"
+        };
+      })
+    }));
+  }
+
+  function removeExtractionTemplateField(fieldId: string) {
+    setExtractionTemplateForm((previous) => ({
+      ...previous,
+      fields: previous.fields.length > 1 ? previous.fields.filter((field) => field.id !== fieldId) : previous.fields
+    }));
+  }
+
+  async function createExtractionTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setExtractionMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/extraction-template`, {
+        method: "POST",
+        body: JSON.stringify({
+          title: extractionTemplateForm.title,
+          fields: extractionTemplateForm.fields.map((field) => ({
+            id: field.id,
+            title: field.title,
+            type: field.type,
+            options: field.optionsText
+              .split(/\r?\n/)
+              .map((option) => option.trim())
+              .filter(Boolean)
+          }))
+        })
+      });
+      applyAppState(payload);
+      setExtractionMessage("Data template created.");
+    } catch (error) {
+      setExtractionMessage(getErrorMessage(error));
+    }
+  }
+
+  function updateExtractionValue(fieldId: string, value: ExtractionResponseValue) {
+    setExtractionFormValues((previous) => ({
+      ...previous,
+      [fieldId]: value
+    }));
+  }
+
+  function toggleExtractionChoice(fieldId: string, option: string, checked: boolean) {
+    const currentValue = extractionFormValues[fieldId];
+    const currentChoices = Array.isArray(currentValue) ? currentValue : [];
+    updateExtractionValue(fieldId, checked ? [...currentChoices, option] : currentChoices.filter((choice) => choice !== option));
+  }
+
+  async function submitExtractionResponse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeExtractionTemplate || !activeExtractionReport) {
+      return;
+    }
+
+    setExtractionMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/extractions`, {
+        method: "POST",
+        body: JSON.stringify({
+          templateId: activeExtractionTemplate.id,
+          reportId: activeExtractionReport.id,
+          studyId: activeExtractionReport.studyId,
+          values: extractionFormValues
+        })
+      });
+      applyAppState(payload);
+      setExtractionMessage("Extraction submitted.");
+    } catch (error) {
+      setExtractionMessage(getErrorMessage(error));
     }
   }
 
@@ -1358,7 +1530,6 @@ export function PrismaReviewApp() {
   }
 
   function renderProjectDashboard() {
-    const activeStudies = activeCounts.reportsSought + activeCounts.studiesIncluded;
     return (
       <div className="viewStack">
         <section className="overviewBand">
@@ -1397,7 +1568,11 @@ export function PrismaReviewApp() {
                 ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
                 ["Screen", `${activeCounts.recordsScreened} records`, getWorkflowStepState("screening", selectedProject.stage)],
                 ["Inclusion", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
-                ["Extract", `${activeStudies} items`, getWorkflowStepState("extraction", selectedProject.stage)],
+                [
+                  "Extract",
+                  `${activeCounts.studiesIncluded} item${activeCounts.studiesIncluded === 1 ? "" : "s"}`,
+                  getWorkflowStepState("extraction", selectedProject.stage)
+                ],
                 ["Export", "PRISMA 2020", activeCounts.studiesIncluded > 0 ? "ready" : "pending"]
               ].map(([label, value, status]) => (
                 <div className={`workflowNode ${status}`} key={label}>
@@ -2321,9 +2496,9 @@ export function PrismaReviewApp() {
   }
 
   function renderExtraction() {
-    const extractionStudyIds = new Set(projectScreeningStudies.filter((study) => study.stage === "extraction").map((study) => study.id));
-    const includedReportFiles = projectReportQueue.filter((report) => extractionStudyIds.has(report.studyId));
     const validatedPdfCount = projectReportQueue.filter((report) => report.fileName && report.isPdfValidated).length;
+    const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
+    const extractionMessageIsSuccess = /created|submitted|saved/i.test(extractionMessage);
 
     if (activeCounts.studiesIncluded === 0) {
       return (
@@ -2367,7 +2542,7 @@ export function PrismaReviewApp() {
                             <strong>{report.title}</strong>
                           </td>
                           <td>{report.fileName ? (report.isPdfValidated ? "Validated" : "Needs validation") : "Missing"}</td>
-                          <td>{extractionStudyIds.has(report.studyId) ? "Visible" : "Awaiting Include"}</td>
+                          <td>{projectExtractionStudyIds.has(report.studyId) ? "Visible" : "Awaiting Include"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2380,113 +2555,276 @@ export function PrismaReviewApp() {
       );
     }
 
+    if (!activeExtractionTemplate) {
+      return (
+        <div className="viewStack">
+          <section className="overviewBand">
+            <div>
+              <p className="eyebrow">Data extraction</p>
+              <h1>Data Template</h1>
+              <p className="subtle">Project owners define the extraction fields before reviewers extract data from included reports.</p>
+            </div>
+          </section>
+
+          {extractionMessage ? (
+            <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+              {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>{extractionMessage}</span>
+            </div>
+          ) : null}
+
+          {canManageProject ? (
+            <form className="panel templateBuilder" onSubmit={createExtractionTemplate}>
+              <SectionTitle icon={ClipboardCheck} title="Create Data Template" action={`${extractionTemplateForm.fields.length} fields`} />
+              <label>
+                <span>Template title</span>
+                <input
+                  value={extractionTemplateForm.title}
+                  onChange={(event) => setExtractionTemplateForm((previous) => ({ ...previous, title: event.target.value }))}
+                />
+              </label>
+
+              <div className="templateFieldList">
+                {extractionTemplateForm.fields.map((field, index) => (
+                  <div className="templateFieldEditor" key={field.id}>
+                    <div className="templateFieldHeader">
+                      <strong>Field {index + 1}</strong>
+                      <button className="ghostButton iconOnly" type="button" title="Remove field" onClick={() => removeExtractionTemplateField(field.id)}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div className="formGrid compactFormGrid">
+                      <label>
+                        <span>Title</span>
+                        <input
+                          value={field.title}
+                          onChange={(event) => updateExtractionTemplateField(field.id, { title: event.target.value })}
+                          placeholder="Population characteristics"
+                        />
+                      </label>
+                      <label>
+                        <span>Type</span>
+                        <select
+                          value={field.type}
+                          onChange={(event) => updateExtractionTemplateField(field.id, { type: event.target.value as ExtractionFieldType })}
+                        >
+                          <option value="multiline_text">Multiline Text</option>
+                          <option value="single_choice">Single Choice</option>
+                          <option value="multiple_choice">Multiple Choice</option>
+                        </select>
+                      </label>
+                    </div>
+                    {field.type !== "multiline_text" ? (
+                      <label>
+                        <span>Choices</span>
+                        <textarea
+                          value={field.optionsText}
+                          onChange={(event) => updateExtractionTemplateField(field.id, { optionsText: event.target.value })}
+                          placeholder={"Option A\nOption B"}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <div className="buttonRow">
+                <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("multiline_text")}>
+                  <Plus size={17} />
+                  Text
+                </button>
+                <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("single_choice")}>
+                  <Plus size={17} />
+                  Single Choice
+                </button>
+                <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("multiple_choice")}>
+                  <Plus size={17} />
+                  Multiple Choice
+                </button>
+                <button className="primaryButton" type="submit">
+                  <Check size={17} />
+                  Create Template
+                </button>
+              </div>
+            </form>
+          ) : (
+            <section className="panel">
+              <EmptyState
+                icon={ClipboardCheck}
+                title="No data template"
+                description="A project owner needs to create the extraction template before reviewers can extract data."
+              />
+            </section>
+          )}
+        </div>
+      );
+    }
+
+    const activeReportForExtraction = activeExtractionReport ?? projectExtractionReports[0];
+    const activeStudyForExtraction = activeReportForExtraction
+      ? projectScreeningStudies.find((study) => study.id === activeReportForExtraction.studyId)
+      : undefined;
+    const extractionPdfUrl = activeReportForExtraction?.fileName
+      ? `/api/projects/${selectedProject.id}/reports/${activeReportForExtraction.id}?pdf=1&checksum=${encodeURIComponent(activeReportForExtraction.checksum ?? "")}`
+      : "";
+    const submittedResponsesForActiveReport = activeReportForExtraction
+      ? extractionResponses.filter(
+          (response) =>
+            response.projectId === selectedProject.id &&
+            response.reportId === activeReportForExtraction.id &&
+            response.templateId === activeExtractionTemplate.id &&
+            response.isSubmitted
+        )
+      : [];
+    const hasMyExtraction = Boolean(activeExtractionResponse?.isSubmitted);
+
     return (
       <div className="viewStack">
-        <section className="overviewBand">
+        <section className="overviewBand compactBand">
           <div>
             <p className="eyebrow">Data extraction</p>
             <h1>Consensus Workspace</h1>
-            <p className="subtle">Versioned form schemas keep historic responses reproducible.</p>
+            <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
           </div>
-          <button className="primaryButton" type="button" title="Create a form version">
-            <FileCheck2 size={17} />
-            New Version
-          </button>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={BookOpen} title="Included Report Files" action={`${includedReportFiles.length} visible`} />
-          {includedReportFiles.length > 0 ? (
-            <div className="reportFileList">
-              {includedReportFiles.map((report) => (
-                <article className="reportFileCard" key={report.id}>
-                  <FileCheck2 size={20} />
-                  <div>
-                    <strong>{report.title}</strong>
-                    <span>{report.fileName || report.pdfName || "No PDF uploaded"}</span>
-                  </div>
-                  <Badge label={report.isPdfValidated ? "validated PDF" : "needs validation"} tone={report.isPdfValidated ? "success" : "warning"} />
-                  <button
-                    className="ghostButton"
-                    type="button"
-                    onClick={() => {
-                      setActiveReportId(report.id);
-                      setActiveView("fullText");
-                    }}
-                  >
-                    Open
-                    <ChevronRight size={17} />
-                  </button>
-                </article>
-              ))}
+          <div className="reportPicker">
+            <div>
+              <p className="eyebrow">Included reports</p>
+              <strong>{projectExtractionReports.length} report{projectExtractionReports.length === 1 ? "" : "s"}</strong>
+              <p className="subtle">At least two submitted extractions are required.</p>
             </div>
-          ) : (
-            <EmptyState
-              icon={BookOpen}
-              title="No files are visible yet"
-              description="Included studies without report files will appear after their full-text PDF is uploaded and validated."
-            />
-          )}
+            <label className="fieldLabel" htmlFor="extraction-report-picker">
+              Jump to report
+            </label>
+            <select
+              id="extraction-report-picker"
+              value={activeReportForExtraction?.id ?? ""}
+              onChange={(event) => setActiveExtractionReportId(event.target.value)}
+            >
+              {projectExtractionReports.map((report) => (
+                <option key={report.id} value={report.id}>
+                  {report.title}
+                </option>
+              ))}
+            </select>
+          </div>
         </section>
 
-        <section className="twoColumn">
-          <div className="panel">
-            <SectionTitle icon={ClipboardCheck} title="Form Schema" action="Version 3 active" />
-            <div className="schemaList">
-              {[
-                ["Study characteristics", "Country, sample size, design"],
-                ["Intervention details", "Mode, duration, personnel"],
-                ["Outcomes", "Primary endpoint, time point, effect size"],
-                ["Implementation", "Setting, fidelity, attrition"]
-              ].map(([title, fields]) => (
-                <div key={title}>
-                  <strong>{title}</strong>
-                  <span>{fields}</span>
+        {extractionMessage ? (
+          <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+            {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{extractionMessage}</span>
+          </div>
+        ) : null}
+
+        <section className="extractionWorkspace">
+          <div className="pdfPane">
+            <div className="pdfToolbar">
+              <strong className="pdfTitle" title={activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}>
+                {activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}
+              </strong>
+              {activeReportForExtraction ? (
+                <button
+                  className="ghostButton"
+                  type="button"
+                  onClick={() => {
+                    setActiveReportId(activeReportForExtraction.id);
+                    setActiveView("fullText");
+                  }}
+                >
+                  <BookOpen size={16} />
+                  Full Text
+                </button>
+              ) : null}
+            </div>
+            <div className={extractionPdfUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="Extraction PDF review pane">
+              {extractionPdfUrl ? (
+                <iframe className="pdfViewer" src={extractionPdfUrl} title={`${activeReportForExtraction?.title ?? "Included report"} PDF`} />
+              ) : (
+                <div className="paperPage emptyPdfPage">
+                  <p className="paperEyebrow">PDF unavailable</p>
+                  <h2>{activeReportForExtraction?.title ?? "No included report selected"}</h2>
+                  <div className="paperLine wide" />
+                  <div className="paperLine" />
+                  <div className="paperLine short" />
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
-          <div className="panel">
-            <SectionTitle icon={UserRoundCheck} title="Assignment Status" action="Dual extraction" />
-            <div className="assignmentBars">
-              <ScoreBar label="Assigned" value={0.84} />
-              <ScoreBar label="Submitted" value={0.63} />
-              <ScoreBar label="Consensus" value={0.41} />
+          <aside className="panel extractionFormPanel">
+            <SectionTitle icon={ClipboardCheck} title="Extraction Form" action={`${submittedResponsesForActiveReport.length}/2 submitted`} />
+            <h2>{activeReportForExtraction?.title ?? "Included report"}</h2>
+            <p className="subtle">
+              {activeStudyForExtraction
+                ? `${activeStudyForExtraction.authors.join(", ") || "No authors parsed"} · ${activeStudyForExtraction.journal} · ${
+                    activeStudyForExtraction.year > 0 ? activeStudyForExtraction.year : "Year needs review"
+                  }`
+                : "Select an included report to extract data."}
+            </p>
+            <div className="stateRows">
+              <StatusRow label="Template" value={`${activeExtractionTemplate.fields.length} fields`} tone="info" />
+              <StatusRow
+                label="Dual extraction"
+                value={submittedResponsesForActiveReport.length >= 2 ? "Ready for comparison" : `${submittedResponsesForActiveReport.length}/2 submitted`}
+                tone={submittedResponsesForActiveReport.length >= 2 ? "secure" : "warning"}
+              />
+              <StatusRow label="My extraction" value={hasMyExtraction ? "Submitted" : "Open"} tone={hasMyExtraction ? "secure" : "warning"} />
             </div>
-          </div>
-        </section>
 
-        <section className="panel">
-          <SectionTitle icon={ListChecks} title="Consensus Table" action="Field comparison" />
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  <th>Reviewer A</th>
-                  <th>Reviewer B</th>
-                  <th>Consensus</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {extractionRows.map((row) => (
-                  <tr key={row.field}>
-                    <td>{row.field}</td>
-                    <td>{row.reviewerA}</td>
-                    <td>{row.reviewerB}</td>
-                    <td>
-                      <strong>{row.consensus}</strong>
-                    </td>
-                    <td>
-                      <Badge label={row.status} tone={row.status === "matched" ? "success" : "info"} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <form className="extractionForm" onSubmit={submitExtractionResponse}>
+              {activeExtractionTemplate.fields.map((field) => {
+                const value = extractionFormValues[field.id];
+                return (
+                  <fieldset className="extractionField" key={field.id}>
+                    <legend>{field.title}</legend>
+                    {field.type === "multiline_text" ? (
+                      <textarea
+                        value={typeof value === "string" ? value : ""}
+                        onChange={(event) => updateExtractionValue(field.id, event.target.value)}
+                      />
+                    ) : null}
+                    {field.type === "single_choice" ? (
+                      <div className="choiceList">
+                        {field.options.map((option) => (
+                          <label key={option}>
+                            <input
+                              type="radio"
+                              name={field.id}
+                              checked={value === option}
+                              onChange={() => updateExtractionValue(field.id, option)}
+                            />
+                            <span>{option}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                    {field.type === "multiple_choice" ? (
+                      <div className="choiceList">
+                        {field.options.map((option) => {
+                          const checked = Array.isArray(value) && value.includes(option);
+                          return (
+                            <label key={option}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => toggleExtractionChoice(field.id, option, event.target.checked)}
+                              />
+                              <span>{option}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </fieldset>
+                );
+              })}
+
+              <button className="primaryButton" type="submit" disabled={!activeReportForExtraction}>
+                <Check size={17} />
+                Submit Extraction
+              </button>
+            </form>
+          </aside>
         </section>
       </div>
     );
@@ -3777,6 +4115,7 @@ function getProjectUserStats(
   users: AppUser[],
   decisions: Decision[],
   reports: Report[],
+  extractionResponses: ExtractionResponse[],
   events: WorkflowEvent[]
 ): ProjectUserStats[] {
   const memberIds = new Set([project.ownerId, ...project.ownerIds, ...project.memberIds]);
@@ -3800,7 +4139,9 @@ function getProjectUserStats(
         screened: countCurrentDecisions(decisions, project.id, user.id, "title_abstract"),
         uploadedPdf: uploadedReportIds.size + legacyUploadEvents,
         fullTextReviews: countCurrentDecisions(decisions, project.id, user.id, "full_text"),
-        extractions: countCurrentDecisions(decisions, project.id, user.id, "extraction")
+        extractions: extractionResponses.filter(
+          (response) => response.projectId === project.id && response.userId === user.id && response.isSubmitted
+        ).length
       };
     });
 }

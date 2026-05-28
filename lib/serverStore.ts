@@ -6,6 +6,11 @@ import {
   type AppUser,
   type Decision,
   type DedupCandidate,
+  type ExtractionFieldType,
+  type ExtractionResponse,
+  type ExtractionResponseValue,
+  type ExtractionTemplate,
+  type ExtractionTemplateField,
   type ImportBatch,
   type Report,
   type ReviewProject,
@@ -28,6 +33,8 @@ type PersistedState = {
   imports: ImportBatch[];
   studies: Study[];
   reports: Report[];
+  extractionTemplates: ExtractionTemplate[];
+  extractionResponses: ExtractionResponse[];
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
@@ -47,6 +54,23 @@ type NewProjectInput = {
 };
 
 type UpdateProjectInput = Omit<NewProjectInput, "memberIds">;
+
+type ExtractionTemplateInput = {
+  title?: string;
+  fields?: Array<{
+    id?: string;
+    title?: string;
+    type?: string;
+    options?: string[];
+  }>;
+};
+
+type ExtractionResponseInput = {
+  templateId?: string;
+  reportId?: string;
+  studyId?: string;
+  values?: Record<string, unknown>;
+};
 
 type ParsedCitation = {
   title: string;
@@ -87,6 +111,8 @@ function createSeedState(): PersistedState {
     imports: [],
     studies: [],
     reports: [],
+    extractionTemplates: [],
+    extractionResponses: [],
     decisions: [],
     events: [],
     dedupCandidates: []
@@ -185,6 +211,24 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
         .map((report) => normalizeReport(report))
     : [];
   const reportIds = new Set(reports.map((report) => report.id));
+  const extractionTemplates = Array.isArray(state.extractionTemplates)
+    ? state.extractionTemplates
+        .filter((template) => projectIds.has(template.projectId))
+        .map((template) => normalizeExtractionTemplate(template))
+    : [];
+  const extractionTemplateIds = new Set(extractionTemplates.map((template) => template.id));
+  const extractionResponses = Array.isArray(state.extractionResponses)
+    ? state.extractionResponses
+        .filter(
+          (response) =>
+            projectIds.has(response.projectId) &&
+            studyIds.has(response.studyId) &&
+            reportIds.has(response.reportId) &&
+            extractionTemplateIds.has(response.templateId) &&
+            userIds.has(response.userId)
+        )
+        .map((response) => normalizeExtractionResponse(response))
+    : [];
   const projectsWithImportState = projects.map((project) => {
     const importedRecordCount = imports
       .filter((batch) => batch.projectId === project.id)
@@ -219,6 +263,8 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     imports,
     studies,
     reports,
+    extractionTemplates,
+    extractionResponses,
     decisions: Array.isArray(state.decisions)
       ? state.decisions.filter(
           (decision) =>
@@ -355,6 +401,10 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     reports: state.reports
       .filter((report) => projectIds.has(report.projectId))
       .map((report) => withReportWorkflowState(report, projectById.get(report.projectId), state.decisions)),
+    extractionTemplates: state.extractionTemplates.filter((template) => projectIds.has(template.projectId)),
+    extractionResponses: state.extractionResponses.filter(
+      (response) => projectIds.has(response.projectId) && studyIds.has(response.studyId) && reportIds.has(response.reportId)
+    ),
     decisions: state.decisions.filter((decision) => {
       const project = projectById.get(decision.projectId);
       if (!project) {
@@ -823,6 +873,105 @@ export function removeProjectMemberForUser(userId: string, projectId: string, me
   appendEvent(state, currentUser.name, `Removed ${removedUser?.name ?? "user"} from project team`, projectId);
   writeState(state);
 
+  return buildPayload(state, userId);
+}
+
+export function createExtractionTemplateForUser(userId: string, projectId: string, input: ExtractionTemplateInput): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectOwner(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const title = input.title?.trim() || "Data Template";
+  const fields = sanitizeExtractionTemplateFields(input.fields ?? []);
+  if (fields.length === 0) {
+    throw new ApiError("Add at least one data extraction field.");
+  }
+
+  const now = new Date().toISOString();
+  const version =
+    state.extractionTemplates.filter((template) => template.projectId === projectId).reduce((highest, template) => Math.max(highest, template.version), 0) + 1;
+  const template: ExtractionTemplate = {
+    id: createId("template"),
+    projectId,
+    title,
+    version,
+    fields,
+    createdByUserId: currentUser.id,
+    createdByUserName: currentUser.name,
+    createdAt: now,
+    updatedAt: now,
+    isActive: true
+  };
+
+  state.extractionTemplates = [
+    template,
+    ...state.extractionTemplates.map((candidate) =>
+      candidate.projectId === projectId && candidate.isActive ? { ...candidate, isActive: false, updatedAt: now } : candidate
+    )
+  ];
+  appendEvent(state, currentUser.name, `Created data template ${title}`, projectId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function saveExtractionResponseForUser(userId: string, projectId: string, input: ExtractionResponseInput): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const template = state.extractionTemplates.find(
+    (candidate) => candidate.id === input.templateId && candidate.projectId === projectId && candidate.isActive
+  );
+  if (!template) {
+    throw new ApiError("Create an active data template before extracting study data.", 404);
+  }
+
+  const report = state.reports.find((candidate) => candidate.id === input.reportId && candidate.projectId === projectId);
+  const study = state.studies.find((candidate) => candidate.id === (input.studyId || report?.studyId) && candidate.projectId === projectId);
+  if (!report || !study || report.studyId !== study.id) {
+    throw new ApiError("Choose an included report before submitting extraction data.", 404);
+  }
+  if (study.stage !== "extraction") {
+    throw new ApiError("Data extraction is available only after full-text inclusion.");
+  }
+
+  const values = validateExtractionValues(template, input.values ?? {});
+  const now = new Date().toISOString();
+  const existingResponse = state.extractionResponses.find(
+    (response) =>
+      response.projectId === projectId &&
+      response.reportId === report.id &&
+      response.templateId === template.id &&
+      response.userId === userId
+  );
+  const nextResponse: ExtractionResponse = {
+    id: existingResponse?.id ?? createId("extraction"),
+    projectId,
+    studyId: study.id,
+    reportId: report.id,
+    templateId: template.id,
+    userId,
+    userName: currentUser.name,
+    values,
+    isSubmitted: true,
+    createdAt: existingResponse?.createdAt ?? now,
+    updatedAt: now,
+    submittedAt: now
+  };
+
+  state.extractionResponses = [
+    ...state.extractionResponses.filter((response) => response.id !== existingResponse?.id),
+    nextResponse
+  ];
+  appendEvent(state, currentUser.name, `Submitted data extraction for ${report.title}`, report.id);
+  syncProjectWorkflowCounts(state, projectId);
+  writeState(state);
   return buildPayload(state, userId);
 }
 
@@ -1795,8 +1944,64 @@ function normalizeReport(report: Partial<Report>): Report {
   };
 }
 
+function normalizeExtractionTemplate(template: Partial<ExtractionTemplate>): ExtractionTemplate {
+  return {
+    id: template.id || createId("template"),
+    projectId: template.projectId || "",
+    title: template.title?.trim() || "Data Template",
+    version: typeof template.version === "number" && Number.isFinite(template.version) ? template.version : 1,
+    fields: normalizeExtractionFields(template.fields),
+    createdByUserId: template.createdByUserId || "",
+    createdByUserName: template.createdByUserName || "Unknown user",
+    createdAt: template.createdAt || new Date().toISOString(),
+    updatedAt: template.updatedAt || new Date().toISOString(),
+    isActive: template.isActive !== false
+  };
+}
+
+function normalizeExtractionResponse(response: Partial<ExtractionResponse>): ExtractionResponse {
+  const values =
+    response.values && typeof response.values === "object" && !Array.isArray(response.values)
+      ? Object.fromEntries(
+          Object.entries(response.values).map(([fieldId, value]) => [
+            fieldId,
+            Array.isArray(value) ? value.map(String) : String(value ?? "")
+          ])
+        )
+      : {};
+  return {
+    id: response.id || createId("extraction"),
+    projectId: response.projectId || "",
+    studyId: response.studyId || "",
+    reportId: response.reportId || "",
+    templateId: response.templateId || "",
+    userId: response.userId || "",
+    userName: response.userName || "Unknown user",
+    values,
+    isSubmitted: Boolean(response.isSubmitted),
+    createdAt: response.createdAt || new Date().toISOString(),
+    updatedAt: response.updatedAt || new Date().toISOString(),
+    submittedAt: response.submittedAt || undefined
+  };
+}
+
+function normalizeExtractionFields(fields: ExtractionTemplate["fields"] | undefined) {
+  return Array.isArray(fields)
+    ? fields.map((field) => ({
+        id: field.id || createId("field"),
+        title: field.title?.trim() || "Untitled field",
+        type: isExtractionFieldType(field.type) ? field.type : "multiline_text",
+        options: Array.isArray(field.options) ? uniqueIds(field.options.map((option) => option.trim())).filter(Boolean) : []
+      }))
+    : [];
+}
+
 function isRetrievalStatus(value: unknown): value is Report["retrievalStatus"] {
   return ["not_sought", "sought", "retrieved", "not_retrieved"].includes(String(value));
+}
+
+function isExtractionFieldType(value: unknown): value is ExtractionFieldType {
+  return ["multiline_text", "single_choice", "multiple_choice"].includes(String(value));
 }
 
 function formatRetrievalStatus(value: Report["retrievalStatus"]) {
@@ -1826,6 +2031,57 @@ function validatePdfBuffer(buffer: Buffer, declaredSize?: number) {
   if (buffer.subarray(0, 5).toString("utf8") !== "%PDF-") {
     throw new ApiError("PDF header is not readable.");
   }
+}
+
+function sanitizeExtractionTemplateFields(inputFields: ExtractionTemplateInput["fields"]): ExtractionTemplateField[] {
+  return (inputFields ?? []).map((field, index) => {
+    const type = isExtractionFieldType(field.type) ? field.type : "multiline_text";
+    const title = field.title?.trim() || `Field ${index + 1}`;
+    const options =
+      type === "multiline_text"
+        ? []
+        : uniqueIds((field.options ?? []).map((option) => option.trim()).filter(Boolean));
+    if (type !== "multiline_text" && options.length < 2) {
+      throw new ApiError(`${title} needs at least two choices.`);
+    }
+    return {
+      id: field.id || createId("field"),
+      title,
+      type,
+      options
+    };
+  });
+}
+
+function validateExtractionValues(template: ExtractionTemplate, inputValues: Record<string, unknown>) {
+  const values: Record<string, ExtractionResponseValue> = {};
+  for (const field of template.fields) {
+    const value = inputValues[field.id];
+    if (field.type === "multiline_text") {
+      const text = typeof value === "string" ? value.trim() : "";
+      if (!text) {
+        throw new ApiError(`${field.title} is required.`);
+      }
+      values[field.id] = text;
+      continue;
+    }
+
+    if (field.type === "single_choice") {
+      const choice = typeof value === "string" ? value : "";
+      if (!field.options.includes(choice)) {
+        throw new ApiError(`Choose one option for ${field.title}.`);
+      }
+      values[field.id] = choice;
+      continue;
+    }
+
+    const choices = Array.isArray(value) ? value.map(String).filter((choice) => field.options.includes(choice)) : [];
+    if (choices.length === 0) {
+      throw new ApiError(`Choose at least one option for ${field.title}.`);
+    }
+    values[field.id] = uniqueIds(choices);
+  }
+  return values;
 }
 
 function reportPdfStorageDirectory(projectId: string) {
