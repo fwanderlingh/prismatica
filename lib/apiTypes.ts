@@ -1,4 +1,4 @@
-import type { AppUser, Decision, DedupCandidate, ImportBatch, ReviewProject, Study, WorkflowEvent } from "./prismaData";
+import type { AppUser, Decision, DedupCandidate, ImportBatch, Report, ReviewProject, Study, WorkflowEvent } from "./prismaData";
 
 export type DecisionActionPayload = {
   studyId: string;
@@ -11,6 +11,7 @@ export type AppStatePayload = {
   projects: ReviewProject[];
   imports: ImportBatch[];
   studies: Study[];
+  reports: Report[];
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];

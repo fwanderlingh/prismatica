@@ -202,6 +202,16 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The server request failed.";
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.slice(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
 export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
   const [isAuthResolved, setIsAuthResolved] = useState(false);
@@ -210,6 +220,7 @@ export function PrismaReviewApp() {
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
   const [imports, setImports] = useState<ImportBatch[]>([]);
   const [studies, setStudies] = useState<Study[]>([]);
+  const [reports, setReports] = useState<Report[]>(reportQueue);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
   const [authMode, setAuthMode] = useState<"signIn" | "register">("signIn");
@@ -242,10 +253,9 @@ export function PrismaReviewApp() {
   const [studyIndex, setStudyIndex] = useState(0);
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [screeningNote, setScreeningNote] = useState("");
-  const [activeReport, setActiveReport] = useState<Report>(reportQueue[0]);
-  const [retrievalStatus, setRetrievalStatus] = useState<Report["retrievalStatus"]>(reportQueue[0].retrievalStatus);
-  const [fullTextDecision, setFullTextDecision] = useState<DecisionValue | null>(null);
+  const [activeReportId, setActiveReportId] = useState(reportQueue[0].id);
   const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
+  const [fullTextMessage, setFullTextMessage] = useState("");
   const [importMessage, setImportMessage] = useState("");
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
@@ -263,6 +273,7 @@ export function PrismaReviewApp() {
   });
   const bibtexInputRef = useRef<HTMLInputElement>(null);
   const risInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
   const userProjects = useMemo(
@@ -270,14 +281,18 @@ export function PrismaReviewApp() {
     [currentUser.id, projects]
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
-  const activeCounts = useMemo(() => getCountsForProject(selectedProject), [selectedProject]);
   const isProjectView = activeView !== "dashboard" && activeView !== "newProject" && activeView !== "profile";
   const hasProjectSeedData = selectedProject.id === "demo-review";
   const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
   const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
   const importedProjectStudies = studies.filter((study) => study.projectId === selectedProject.id);
   const projectScreeningStudies = hasProjectSeedData ? screeningStudies : importedProjectStudies;
-  const projectReportQueue = hasProjectSeedData ? reportQueue : [];
+  const projectReportQueue = hasProjectSeedData ? reportQueue : reports.filter((report) => report.projectId === selectedProject.id);
+  const activeReport = projectReportQueue.find((report) => report.id === activeReportId) ?? projectReportQueue[0] ?? reportQueue[0];
+  const activeCounts = useMemo(
+    () => getCountsForProject(selectedProject, projectReportQueue, decisions),
+    [decisions, projectReportQueue, selectedProject]
+  );
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
   const projectEvents = hasProjectSeedData
     ? events.filter((event) => !projectIdSet.has(event.entity) || event.entity === selectedProject.id)
@@ -431,6 +446,27 @@ export function PrismaReviewApp() {
   }, [currentUser.id, currentUser.organization, currentUser.title]);
 
   useEffect(() => {
+    if (projectReportQueue.length === 0) {
+      return;
+    }
+    if (!projectReportQueue.some((report) => report.id === activeReportId)) {
+      setActiveReportId(projectReportQueue[0].id);
+    }
+  }, [activeReportId, projectReportQueue]);
+
+  useEffect(() => {
+    const decision = decisions.find(
+      (candidate) =>
+        candidate.projectId === selectedProject.id &&
+        candidate.reportId === activeReportId &&
+        candidate.userId === currentUser.id &&
+        candidate.stage === "full_text" &&
+        candidate.isCurrent
+    );
+    setFullTextReason(decision?.exclusionReasonId ?? exclusionReasons[0]);
+  }, [activeReportId, currentUser.id, decisions, selectedProject.id]);
+
+  useEffect(() => {
     const batch = imports.find((candidate) => candidate.id === selectedImportId && candidate.projectId === selectedProject.id);
     if (!batch) {
       if (isImportEditorOpen) {
@@ -475,6 +511,7 @@ export function PrismaReviewApp() {
     setProjects(payload.projects);
     setImports(payload.imports);
     setStudies(payload.studies);
+    setReports(payload.reports);
     setDecisions(payload.decisions);
     setEvents(payload.events);
     setDedupCandidates(payload.dedupCandidates);
@@ -580,9 +617,8 @@ export function PrismaReviewApp() {
     setSelectedProjectId(projectId);
     setActiveView(view);
     setStudyIndex(0);
-    setActiveReport(reportQueue[0]);
-    setRetrievalStatus(reportQueue[0].retrievalStatus);
-    setFullTextDecision(null);
+    setActiveReportId(reportQueue[0].id);
+    setFullTextMessage("");
   }
 
   function updateNewProjectForm<Key extends keyof NewProjectForm>(key: Key, value: NewProjectForm[Key]) {
@@ -1015,6 +1051,69 @@ export function PrismaReviewApp() {
       applyAppState(payload);
     } catch (error) {
       setLoginError(getErrorMessage(error));
+    }
+  }
+
+  async function updateFullTextReport(input: {
+    retrievalStatus?: Report["retrievalStatus"];
+    decisionValue?: DecisionValue;
+    exclusionReasonId?: string;
+  }) {
+    if (!activeReport?.id) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input)
+      });
+      applyAppState(payload);
+      setFullTextMessage(input.decisionValue ? "Full-text decision saved." : "Retrieval status updated.");
+    } catch (error) {
+      setFullTextMessage(getErrorMessage(error));
+    }
+  }
+
+  async function uploadReportPdf(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !activeReport?.id) {
+      return;
+    }
+
+    setFullTextMessage(`Uploading ${file.name}...`);
+    try {
+      const contentBase64 = arrayBufferToBase64(await file.arrayBuffer());
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}/pdf`, {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: file.name,
+          mimeType: file.type || "application/pdf",
+          size: file.size,
+          contentBase64
+        })
+      });
+      applyAppState(payload);
+      setFullTextMessage(`${file.name} uploaded. Run validation before including the study.`);
+    } catch (error) {
+      setFullTextMessage(getErrorMessage(error));
+    }
+  }
+
+  async function validateReportPdf() {
+    if (!activeReport?.id) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}/validate`, {
+        method: "POST"
+      });
+      applyAppState(payload);
+      setFullTextMessage("PDF validation completed.");
+    } catch (error) {
+      setFullTextMessage(getErrorMessage(error));
     }
   }
 
@@ -1851,8 +1950,20 @@ export function PrismaReviewApp() {
       );
     }
 
-    const currentReportStudy = projectScreeningStudies.find((study) => study.id === activeReport.studyId) ?? screeningStudies[0];
-    const canExclude = fullTextDecision === "exclude";
+    const currentReportStudy = (hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === activeReport.studyId) ?? screeningStudies[0];
+    const activeFullTextDecision = decisions.find(
+      (decision) =>
+        decision.projectId === selectedProject.id &&
+        decision.reportId === activeReport.id &&
+        decision.userId === currentUser.id &&
+        decision.stage === "full_text" &&
+        decision.isCurrent
+    );
+    const selectedDecision = activeFullTextDecision?.decisionValue;
+    const canExclude = selectedDecision === "exclude";
+    const pdfStatus = activeReport.isPdfValidated ? "Validated" : activeReport.fileName ? "Uploaded, not validated" : "Missing PDF";
+    const canInclude = activeReport.retrievalStatus === "retrieved" && activeReport.isPdfValidated;
+    const messageIsSuccess = /updated|saved|uploaded|completed/i.test(fullTextMessage);
 
     return (
       <div className="viewStack">
@@ -1869,22 +1980,37 @@ export function PrismaReviewApp() {
                 type="button"
                 key={report.id}
                 onClick={() => {
-                  setActiveReport(report);
-                  setRetrievalStatus(report.retrievalStatus);
-                  setFullTextDecision(null);
+                  setActiveReportId(report.id);
+                  setFullTextMessage("");
                 }}
               >
-                {report.id.replace("report-", "Report ")}
+                {report.title}
               </button>
             ))}
           </div>
         </section>
 
+        {fullTextMessage ? (
+          <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+            {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{fullTextMessage}</span>
+          </div>
+        ) : null}
+
         <section className="fullTextLayout">
           <div className="pdfPane">
             <div className="pdfToolbar">
-              <strong>{activeReport.pdfName}</strong>
+              <strong>{activeReport.fileName || activeReport.pdfName || "No PDF uploaded"}</strong>
               <div className="toolbarCluster">
+                <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
+                <button className="ghostButton" type="button" title="Upload PDF" onClick={() => pdfInputRef.current?.click()}>
+                  <Upload size={16} />
+                  PDF
+                </button>
+                <button className="ghostButton" type="button" title="Validate PDF" disabled={!activeReport.fileName} onClick={validateReportPdf}>
+                  <FileCheck2 size={16} />
+                  Validate
+                </button>
                 <button className="ghostButton iconOnly" type="button" title="Search PDF">
                   <Search size={16} />
                 </button>
@@ -1896,10 +2022,17 @@ export function PrismaReviewApp() {
                 </button>
               </div>
             </div>
-            <div className="pdfCanvas" aria-label="PDF viewer mock">
+            <div className="pdfCanvas" aria-label="PDF review pane">
               <div className="paperPage">
-                <p className="paperEyebrow">Journal article</p>
+                <p className="paperEyebrow">{pdfStatus}</p>
                 <h2>{currentReportStudy.title}</h2>
+                {activeReport.validationNotes.length > 0 ? (
+                  <div className="pdfValidationNotes">
+                    {activeReport.validationNotes.slice(0, 4).map((note) => (
+                      <span key={note}>{note}</span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="paperLine wide" />
                 <div className="paperLine" />
                 <div className="paperLine short" />
@@ -1926,10 +2059,19 @@ export function PrismaReviewApp() {
             <h2>{activeReport.title}</h2>
             <p className="subtle">{activeReport.citation}</p>
 
+            <div className="pdfStatusGrid">
+              <StatusRow label="PDF" value={pdfStatus} tone={activeReport.isPdfValidated ? "secure" : activeReport.fileName ? "warning" : "danger"} />
+              <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
+            </div>
+
             <label className="fieldLabel" htmlFor="retrieval-status">
               Retrieval status
             </label>
-            <select id="retrieval-status" value={retrievalStatus} onChange={(event) => setRetrievalStatus(event.target.value as Report["retrievalStatus"])}>
+            <select
+              id="retrieval-status"
+              value={activeReport.retrievalStatus}
+              onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
+            >
               <option value="not_sought">Not sought</option>
               <option value="sought">Sought</option>
               <option value="retrieved">Retrieved</option>
@@ -1937,11 +2079,20 @@ export function PrismaReviewApp() {
             </select>
 
             <div className="decisionButtons compactButtons">
-              <button className={fullTextDecision === "include" ? "includeButton active" : "includeButton"} type="button" onClick={() => setFullTextDecision("include")}>
+              <button
+                className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
+                type="button"
+                disabled={!canInclude}
+                onClick={() => updateFullTextReport({ retrievalStatus: "retrieved", decisionValue: "include" })}
+              >
                 <CheckCircle2 size={18} />
                 Include
               </button>
-              <button className={fullTextDecision === "exclude" ? "excludeButton active" : "excludeButton"} type="button" onClick={() => setFullTextDecision("exclude")}>
+              <button
+                className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
+                type="button"
+                onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
+              >
                 <XCircle size={18} />
                 Exclude
               </button>
@@ -1950,7 +2101,7 @@ export function PrismaReviewApp() {
             <label className="fieldLabel" htmlFor="exclusion-reason">
               Exclusion reason
             </label>
-            <select id="exclusion-reason" value={fullTextReason} disabled={!canExclude} onChange={(event) => setFullTextReason(event.target.value)}>
+            <select id="exclusion-reason" value={fullTextReason} onChange={(event) => setFullTextReason(event.target.value)}>
               {exclusionReasons.map((reason) => (
                 <option value={reason} key={reason}>
                   {reason}
@@ -1958,10 +2109,20 @@ export function PrismaReviewApp() {
               ))}
             </select>
 
-            <div className={canExclude ? "validationBox ok" : "validationBox"}>
-              {canExclude ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{canExclude ? `Exclusion will be exported as ${fullTextReason}.` : "A full-text exclusion requires a reason."}</span>
+            <div className={canInclude ? "validationBox ok" : "validationBox"}>
+              {canInclude ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>
+                {canInclude
+                  ? "Include is available for this retrieved and validated report."
+                  : "Include requires retrieved status and a validated PDF."}
+              </span>
             </div>
+            {canExclude ? (
+              <div className="validationBox ok">
+                <Check size={17} />
+                <span>{`Current exclusion reason: ${activeFullTextDecision?.exclusionReasonId ?? fullTextReason}.`}</span>
+              </div>
+            ) : null}
           </aside>
         </section>
       </div>
@@ -2896,7 +3057,25 @@ export function PrismaReviewApp() {
   );
 }
 
-function getCountsForProject(project: ReviewProject): PrismaCounts {
+function getCountsForProject(project: ReviewProject, projectReports: Report[] = [], decisions: Decision[] = []): PrismaCounts {
+  const fullTextCurrentDecisions = decisions.filter(
+    (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
+  );
+  const fullTextExcluded = fullTextCurrentDecisions.filter((decision) => decision.decisionValue === "exclude");
+  const reportsExcludedWithReasons = {
+    "Wrong population": 0,
+    "Wrong intervention": 0,
+    "Wrong comparator": 0,
+    "Wrong outcome": 0,
+    "Wrong study design": 0,
+    "Full text unavailable": 0
+  };
+  for (const decision of fullTextExcluded) {
+    const reason = decision.exclusionReasonId ?? "Wrong study design";
+    reportsExcludedWithReasons[reason as keyof typeof reportsExcludedWithReasons] =
+      (reportsExcludedWithReasons[reason as keyof typeof reportsExcludedWithReasons] ?? 0) + 1;
+  }
+
   return (
     seedProjectCounts[project.id] ?? {
       recordsIdentifiedDatabase: project.recordsTotal,
@@ -2906,18 +3085,11 @@ function getCountsForProject(project: ReviewProject): PrismaCounts {
       automationRemoved: 0,
       removedOtherReasons: 0,
       recordsScreened: project.recordsScreened,
-      recordsExcluded: Math.max(project.recordsScreened - project.studiesIncluded, 0),
-      reportsSought: project.studiesIncluded,
-      reportsNotRetrieved: 0,
-      reportsAssessed: 0,
-      reportsExcludedWithReasons: {
-        "Wrong population": 0,
-        "Wrong intervention": 0,
-        "Wrong comparator": 0,
-        "Wrong outcome": 0,
-        "Wrong study design": 0,
-        "Full text unavailable": 0
-      },
+      recordsExcluded: Math.max(project.recordsScreened - projectReports.length, 0),
+      reportsSought: projectReports.length,
+      reportsNotRetrieved: projectReports.filter((report) => report.retrievalStatus === "not_retrieved").length,
+      reportsAssessed: new Set(fullTextCurrentDecisions.map((decision) => decision.reportId ?? decision.studyId)).size,
+      reportsExcludedWithReasons,
       studiesIncluded: project.studiesIncluded,
       studiesIncludedMetaAnalysis: 0
     }
@@ -2946,7 +3118,7 @@ function Metric({ label, value, detail, tone }: { label: string; value: string; 
   );
 }
 
-function StatusRow({ label, value, tone }: { label: string; value: string; tone: "secure" | "info" | "warning" }) {
+function StatusRow({ label, value, tone }: { label: string; value: string; tone: "secure" | "info" | "warning" | "danger" }) {
   return (
     <div className={`statusRow ${tone}`}>
       <span>{label}</span>

@@ -62,9 +62,3 @@ A practical implementation plan:
         3. PDF validation result
         4. full-text include/exclude and reason
     2. Surface in existing Audit Trail panel.
-
-7. Rollout strategy
-    1. Phase 1: persist reports + full-text decisions (no hard PDF requirement yet).
-    2. Phase 2: add upload + validation checks.
-    3. Phase 3: enforce “included requires validated PDF” behind a project setting.
-

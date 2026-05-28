@@ -7,11 +7,12 @@ import {
   type Decision,
   type DedupCandidate,
   type ImportBatch,
+  type Report,
   type ReviewProject,
   type Study,
   type WorkflowEvent
 } from "./prismaData";
-import type { DecisionValue } from "./workflow";
+import { evaluateStage, type DecisionValue } from "./workflow";
 
 type StoredUser = AppUser & {
   passwordHash: string;
@@ -26,6 +27,7 @@ type PersistedState = {
   projects: ReviewProject[];
   imports: ImportBatch[];
   studies: Study[];
+  reports: Report[];
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
@@ -82,6 +84,7 @@ function createSeedState(): PersistedState {
     projects: [],
     imports: [],
     studies: [],
+    reports: [],
     decisions: [],
     events: [],
     dedupCandidates: []
@@ -173,6 +176,12 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     })
   ];
   const studyIds = new Set(studies.map((study) => study.id));
+  const reports = Array.isArray(state.reports)
+    ? state.reports
+        .filter((report) => projectIds.has(report.projectId) && studyIds.has(report.studyId))
+        .map((report) => normalizeReport(report))
+    : [];
+  const reportIds = new Set(reports.map((report) => report.id));
   const projectsWithImportState = projects.map((project) => {
     const importedRecordCount = imports
       .filter((batch) => batch.projectId === project.id)
@@ -206,10 +215,19 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     projects: projectsWithImportState,
     imports,
     studies,
+    reports,
     decisions: Array.isArray(state.decisions)
-      ? state.decisions.filter((decision) => projectIds.has(decision.projectId) && studyIds.has(decision.studyId) && userIds.has(decision.userId))
+      ? state.decisions.filter(
+          (decision) =>
+            projectIds.has(decision.projectId) &&
+            studyIds.has(decision.studyId) &&
+            userIds.has(decision.userId) &&
+            (!decision.reportId || reportIds.has(decision.reportId))
+        )
       : [],
-    events: Array.isArray(state.events) ? state.events.filter((event) => projectIds.has(event.entity)) : [],
+    events: Array.isArray(state.events)
+      ? state.events.filter((event) => projectIds.has(event.entity) || studyIds.has(event.entity) || reportIds.has(event.entity))
+      : [],
     dedupCandidates: Array.isArray(state.dedupCandidates) ? state.dedupCandidates.filter(() => projectIds.has("demo-review")) : []
   };
 }
@@ -296,6 +314,8 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
 
   const projects = accessibleProjects(state, userId);
   const projectIds = new Set(projects.map((project) => project.id));
+  const studyIds = new Set(state.studies.filter((study) => study.projectId && projectIds.has(study.projectId)).map((study) => study.id));
+  const reportIds = new Set(state.reports.filter((report) => projectIds.has(report.projectId)).map((report) => report.id));
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const allProjectIds = new Set(state.projects.map((project) => project.id));
   const demoProjectAccessible = projectIds.has("demo-review");
@@ -306,6 +326,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
     studies: state.studies.filter((study) => study.projectId && projectIds.has(study.projectId)),
+    reports: state.reports.filter((report) => projectIds.has(report.projectId)),
     decisions: state.decisions.filter((decision) => {
       const project = projectById.get(decision.projectId);
       if (!project) {
@@ -314,7 +335,13 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
       return !project.blindMode || isProjectOwner(project, userId) || decision.userId === userId;
     }),
     events: state.events
-      .filter((event) => projectIds.has(event.entity) || (demoProjectAccessible && !allProjectIds.has(event.entity)))
+      .filter(
+        (event) =>
+          projectIds.has(event.entity) ||
+          studyIds.has(event.entity) ||
+          reportIds.has(event.entity) ||
+          (demoProjectAccessible && !allProjectIds.has(event.entity))
+      )
       .slice(0, 50),
     dedupCandidates: demoProjectAccessible ? state.dedupCandidates : []
   };
@@ -516,6 +543,7 @@ export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: s
   state.projects = remainingProjects;
   state.imports = state.imports.filter((batch) => !solelyOwnedProjectIds.has(batch.projectId));
   state.studies = state.studies.filter((study) => !removedStudyIds.has(study.id));
+  state.reports = state.reports.filter((report) => !solelyOwnedProjectIds.has(report.projectId) && !removedStudyIds.has(report.studyId));
   state.decisions = state.decisions.filter(
     (decision) => decision.userId !== targetUserId && !solelyOwnedProjectIds.has(decision.projectId) && !removedStudyIds.has(decision.studyId)
   );
@@ -907,6 +935,7 @@ export function deleteImportBatchForUser(userId: string, projectId: string, impo
   );
   state.imports = state.imports.filter((candidate) => candidate.id !== importId || candidate.projectId !== projectId);
   state.studies = state.studies.filter((study) => study.projectId !== projectId || study.importBatchId !== importId);
+  state.reports = state.reports.filter((report) => !removedStudyIds.has(report.studyId));
   state.decisions = state.decisions.filter((decision) => !removedStudyIds.has(decision.studyId));
 
   syncProjectAfterImportChange(state, projectId, `Deleted import ${batch.filename}`);
@@ -995,6 +1024,7 @@ export function deleteImportStudyForUser(userId: string, projectId: string, impo
   }
 
   state.studies = state.studies.filter((candidate) => candidate.id !== studyId);
+  state.reports = state.reports.filter((report) => report.studyId !== studyId);
   state.decisions = state.decisions.filter((decision) => decision.studyId !== studyId);
   syncImportBatchAfterStudyChange(state, projectId, importId, batch.parserWarnings > 0 || batch.status === "needs_review");
   syncProjectAfterImportChange(state, projectId, `Deleted imported citation from ${batch.filename}`);
@@ -1020,7 +1050,7 @@ export function addScreeningDecisionForUser(
 
   const projectId = input.projectId ?? "";
   const studyId = input.studyId ?? "";
-  requireProjectMember(state, projectId, userId);
+  const project = requireProjectMember(state, projectId, userId);
 
   if (!studyId || !["include", "exclude", "maybe"].includes(input.decisionValue ?? "")) {
     throw new ApiError("A title/abstract decision must be include, exclude, or maybe.");
@@ -1055,6 +1085,7 @@ export function addScreeningDecisionForUser(
     nextDecision
   ];
   appendEvent(state, currentUser.name, `Voted ${formatDecision(nextDecision.decisionValue)}`, studyId);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
   writeState(state);
 
   return {
@@ -1064,6 +1095,205 @@ export function addScreeningDecisionForUser(
       previousDecisionId: previousDecision?.id
     }
   };
+}
+
+export function getReportsForProjectForUser(userId: string, projectId: string) {
+  const state = readState();
+  requireProjectMember(state, projectId, userId);
+  return state.reports.filter((report) => report.projectId === projectId);
+}
+
+export function updateReportForUser(
+  userId: string,
+  projectId: string,
+  reportId: string,
+  input: {
+    retrievalStatus?: Report["retrievalStatus"];
+    decisionValue?: DecisionValue;
+    exclusionReasonId?: string;
+    note?: string;
+  }
+): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  const project = requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) {
+    throw new ApiError("Report not found.", 404);
+  }
+
+  const nextRetrievalStatus = input.retrievalStatus && isRetrievalStatus(input.retrievalStatus) ? input.retrievalStatus : report.retrievalStatus;
+  const decisionValue = input.decisionValue;
+  if (decisionValue && !["include", "exclude", "not_retrieved"].includes(decisionValue)) {
+    throw new ApiError("A full-text decision must be include, exclude, or not retrieved.");
+  }
+  if (decisionValue === "include" && (nextRetrievalStatus !== "retrieved" || !report.isPdfValidated)) {
+    throw new ApiError("A full-text include requires retrieved status and a validated PDF.");
+  }
+  if (decisionValue === "exclude" && !input.exclusionReasonId?.trim()) {
+    throw new ApiError("Choose an exclusion reason for a full-text exclusion.");
+  }
+
+  state.reports = state.reports.map((candidate) =>
+    candidate.id === reportId && candidate.projectId === projectId
+      ? {
+          ...candidate,
+          retrievalStatus: decisionValue === "not_retrieved" ? "not_retrieved" : nextRetrievalStatus
+        }
+      : candidate
+  );
+
+  if (decisionValue) {
+    const previousDecision = state.decisions.find(
+      (decision) =>
+        decision.projectId === projectId &&
+        decision.reportId === reportId &&
+        decision.userId === userId &&
+        decision.stage === "full_text" &&
+        decision.isCurrent
+    );
+    const nextDecision: Decision = {
+      id: createId("dec"),
+      projectId,
+      studyId: report.studyId,
+      reportId,
+      stage: "full_text",
+      userId,
+      userName: currentUser.name,
+      decisionValue,
+      exclusionReasonId: decisionValue === "exclude" ? input.exclusionReasonId?.trim() : undefined,
+      note: input.note?.trim() || undefined,
+      isCurrent: true,
+      supersedesDecisionId: previousDecision?.id,
+      createdAt: new Date().toLocaleString()
+    };
+    state.decisions = [
+      ...state.decisions.map((decision) =>
+        previousDecision && decision.id === previousDecision.id ? { ...decision, isCurrent: false } : decision
+      ),
+      nextDecision
+    ];
+    appendEvent(state, currentUser.name, `Full-text ${formatDecision(decisionValue)}`, reportId);
+    syncStudyAfterFullTextDecision(state, project, reportId);
+  } else {
+    appendEvent(state, currentUser.name, `Updated retrieval status to ${formatRetrievalStatus(nextRetrievalStatus)}`, reportId);
+  }
+
+  syncProjectWorkflowCounts(state, projectId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function uploadReportPdfForUser(
+  userId: string,
+  projectId: string,
+  reportId: string,
+  input: { fileName?: string; mimeType?: string; size?: number; contentBase64?: string }
+): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) {
+    throw new ApiError("Report not found.", 404);
+  }
+
+  const fileName = input.fileName?.trim() ?? "";
+  const mimeType = input.mimeType?.trim() ?? "";
+  if (!fileName || mimeType !== "application/pdf") {
+    throw new ApiError("Upload a PDF file.");
+  }
+
+  const buffer = Buffer.from(input.contentBase64 ?? "", "base64");
+  validatePdfBuffer(buffer, input.size);
+  const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+  const storagePath = reportPdfStoragePath(projectId, reportId, checksum, fileName);
+  fs.mkdirSync(/*turbopackIgnore: true*/ path.dirname(storagePath), { recursive: true });
+  fs.writeFileSync(/*turbopackIgnore: true*/ storagePath, buffer);
+
+  const duplicate = findDuplicateReportChecksum(state, projectId, reportId, checksum);
+  state.reports = state.reports.map((candidate) =>
+    candidate.id === reportId && candidate.projectId === projectId
+      ? {
+          ...candidate,
+          retrievalStatus: "retrieved",
+          pdfName: fileName,
+          fileName,
+          mimeType,
+          size: buffer.length,
+          checksum,
+          storagePath,
+          isPdfValidated: false,
+          validationNotes: duplicate
+            ? [`Duplicate PDF checksum also appears on ${duplicate.title}.`]
+            : ["PDF uploaded; validation pending."]
+        }
+      : candidate
+  );
+
+  appendEvent(state, currentUser.name, `Uploaded PDF ${fileName}`, reportId);
+  syncProjectWorkflowCounts(state, projectId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function validateReportPdfForUser(userId: string, projectId: string, reportId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) {
+    throw new ApiError("Report not found.", 404);
+  }
+
+  const validationNotes: string[] = [];
+  if (!report.storagePath || !fs.existsSync(/*turbopackIgnore: true*/ report.storagePath)) {
+    validationNotes.push("PDF file is missing from storage.");
+  } else {
+    const buffer = fs.readFileSync(/*turbopackIgnore: true*/ report.storagePath);
+    try {
+      validatePdfBuffer(buffer, report.size);
+    } catch (error) {
+      validationNotes.push(error instanceof Error ? error.message : "PDF validation failed.");
+    }
+    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+    if (report.checksum && checksum !== report.checksum) {
+      validationNotes.push("PDF checksum no longer matches the uploaded file.");
+    }
+    const duplicate = report.checksum ? findDuplicateReportChecksum(state, projectId, reportId, report.checksum) : undefined;
+    if (duplicate) {
+      validationNotes.push(`Duplicate PDF checksum also appears on ${duplicate.title}.`);
+    }
+  }
+  if (report.mimeType !== "application/pdf") {
+    validationNotes.push("Stored MIME type is not application/pdf.");
+  }
+
+  state.reports = state.reports.map((candidate) =>
+    candidate.id === reportId && candidate.projectId === projectId
+      ? {
+          ...candidate,
+          isPdfValidated: validationNotes.length === 0,
+          validationNotes: validationNotes.length > 0 ? validationNotes : ["PDF header, size, MIME type, and checksum validated."]
+        }
+      : candidate
+  );
+
+  appendEvent(state, currentUser.name, validationNotes.length === 0 ? "Validated report PDF" : "PDF validation needs review", reportId);
+  writeState(state);
+  return buildPayload(state, userId);
 }
 
 export function undoScreeningDecisionForUser(
@@ -1107,6 +1337,8 @@ export function undoScreeningDecisionForUser(
   }
 
   appendEvent(state, currentUser.name, "Undid latest screening vote", studyId);
+  const project = requireProjectMember(state, projectId, userId);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
   writeState(state);
   return buildPayload(state, userId);
 }
@@ -1148,6 +1380,130 @@ export function updateDedupCandidateForUser(
   );
   writeState(state);
   return buildPayload(state, userId);
+}
+
+function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: ReviewProject, studyId: string, actor: string) {
+  const currentDecisions = state.decisions.filter(
+    (decision) => decision.projectId === project.id && decision.studyId === studyId && decision.stage === "title_abstract" && decision.isCurrent
+  );
+  const evaluation = evaluateStage(
+    "title_abstract",
+    currentDecisions.map((decision) => decision.decisionValue),
+    project.abstractRequiredVotes,
+    project.maybePolicy
+  );
+
+  if (evaluation.state === "advance_full_text") {
+    let advancedStudy: Study | undefined;
+    state.studies = state.studies.map((study) => {
+      if (study.id !== studyId || study.projectId !== project.id) {
+        return study;
+      }
+      advancedStudy = { ...study, stage: "full_text" };
+      return advancedStudy;
+    });
+    if (advancedStudy) {
+      upsertReportForStudy(state, project.id, advancedStudy, actor);
+      appendEvent(state, actor, "Advanced study to full-text review", studyId);
+    }
+  } else {
+    const existingReport = state.reports.find((report) => report.projectId === project.id && report.studyId === studyId);
+    const hasFullTextWork = existingReport
+      ? state.decisions.some((decision) => decision.reportId === existingReport.id && decision.stage === "full_text")
+      : false;
+    if (existingReport && !hasFullTextWork) {
+      state.reports = state.reports.filter((report) => report.id !== existingReport.id);
+      state.studies = state.studies.map((study) =>
+        study.id === studyId && study.projectId === project.id && study.stage === "full_text" ? { ...study, stage: "title_abstract" } : study
+      );
+      appendEvent(state, actor, "Returned study to title/abstract screening", studyId);
+    }
+  }
+
+  syncProjectWorkflowCounts(state, project.id);
+}
+
+function syncStudyAfterFullTextDecision(state: PersistedState, project: ReviewProject, reportId: string) {
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === project.id);
+  if (!report) {
+    return;
+  }
+
+  const currentDecisions = state.decisions.filter(
+    (decision) => decision.projectId === project.id && decision.reportId === reportId && decision.stage === "full_text" && decision.isCurrent
+  );
+  const evaluation = evaluateStage(
+    "full_text",
+    currentDecisions.map((decision) => decision.decisionValue),
+    project.fullTextRequiredVotes,
+    project.maybePolicy
+  );
+
+  if (evaluation.state === "advance_extraction") {
+    state.studies = state.studies.map((study) =>
+      study.id === report.studyId && study.projectId === project.id ? { ...study, stage: "extraction" } : study
+    );
+  }
+}
+
+function upsertReportForStudy(state: PersistedState, projectId: string, study: Study, actor: string) {
+  const existing = state.reports.find((report) => report.projectId === projectId && report.studyId === study.id);
+  if (existing) {
+    return existing;
+  }
+
+  const report: Report = {
+    id: createId("report"),
+    projectId,
+    studyId: study.id,
+    title: study.title,
+    citation: formatStudyCitation(study),
+    retrievalStatus: "not_sought",
+    pdfName: "No PDF uploaded",
+    fileName: "",
+    mimeType: "",
+    size: 0,
+    checksum: "",
+    storagePath: "",
+    isPdfValidated: false,
+    validationNotes: ["PDF has not been uploaded."],
+    notes: 0
+  };
+  state.reports.unshift(report);
+  appendEvent(state, actor, "Created full-text report", report.id);
+  return report;
+}
+
+function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
+  const reports = state.reports.filter((report) => report.projectId === projectId);
+  const screenedStudyIds = new Set(
+    state.decisions
+      .filter((decision) => decision.projectId === projectId && decision.stage === "title_abstract" && decision.isCurrent)
+      .map((decision) => decision.studyId)
+  );
+  const includedStudies = state.studies.filter((study) => study.projectId === projectId && study.stage === "extraction").length;
+
+  state.projects = state.projects.map((project) => {
+    if (project.id !== projectId) {
+      return project;
+    }
+
+    return {
+      ...project,
+      status: project.status === "draft" && (reports.length > 0 || screenedStudyIds.size > 0) ? "active" : project.status,
+      stage:
+        includedStudies > 0
+          ? "extraction"
+          : reports.length > 0
+            ? "full_text"
+            : project.stage === "setup" || project.stage === "import"
+              ? project.stage
+              : "screening",
+      recordsScreened: Math.min(Math.max(project.recordsScreened, screenedStudyIds.size), project.recordsTotal),
+      studiesIncluded: includedStudies,
+      updatedAt: toEuToday()
+    };
+  });
 }
 
 function syncImportBatchAfterStudyChange(state: PersistedState, projectId: string, importId: string, refreshWarnings: boolean) {
@@ -1279,6 +1635,72 @@ function normalizeOwnerIds(project: ReviewProject, userIds: Set<string>) {
 function normalizeMemberIds(project: ReviewProject, userIds: Set<string>) {
   const ownerIds = normalizeOwnerIds(project, userIds);
   return uniqueIds([...(Array.isArray(project.memberIds) ? project.memberIds : []), ...ownerIds]).filter((memberId) => userIds.has(memberId));
+}
+
+function normalizeReport(report: Partial<Report>): Report {
+  return {
+    id: report.id || createId("report"),
+    projectId: report.projectId || "",
+    studyId: report.studyId || "",
+    title: report.title || "Untitled report",
+    citation: report.citation || "Citation unavailable.",
+    retrievalStatus: isRetrievalStatus(report.retrievalStatus) ? report.retrievalStatus : "not_sought",
+    pdfName: report.pdfName ?? report.fileName ?? "No PDF uploaded",
+    fileName: report.fileName ?? report.pdfName ?? "",
+    mimeType: report.mimeType ?? "",
+    size: typeof report.size === "number" && Number.isFinite(report.size) ? report.size : 0,
+    checksum: report.checksum ?? "",
+    storagePath: report.storagePath ?? "",
+    isPdfValidated: Boolean(report.isPdfValidated),
+    validationNotes: Array.isArray(report.validationNotes) ? report.validationNotes : [],
+    notes: typeof report.notes === "number" && Number.isFinite(report.notes) ? report.notes : 0
+  };
+}
+
+function isRetrievalStatus(value: unknown): value is Report["retrievalStatus"] {
+  return ["not_sought", "sought", "retrieved", "not_retrieved"].includes(String(value));
+}
+
+function formatRetrievalStatus(value: Report["retrievalStatus"]) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatStudyCitation(study: Study) {
+  const authors = study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed";
+  const year = study.year > 0 ? study.year : "Year needs review";
+  return `${authors}. ${study.journal}. ${year}.`;
+}
+
+function validatePdfBuffer(buffer: Buffer, declaredSize?: number) {
+  const maxPdfSize = 25 * 1024 * 1024;
+  if (buffer.length === 0) {
+    throw new ApiError("PDF file is empty.");
+  }
+  if (buffer.length > maxPdfSize) {
+    throw new ApiError("PDF file must be 25 MB or smaller.");
+  }
+  if (typeof declaredSize === "number" && declaredSize > 0 && declaredSize !== buffer.length) {
+    throw new ApiError("PDF upload size does not match the received file.");
+  }
+  if (buffer.subarray(0, 5).toString("utf8") !== "%PDF-") {
+    throw new ApiError("PDF header is not readable.");
+  }
+}
+
+function reportPdfStoragePath(projectId: string, reportId: string, checksum: string, fileName: string) {
+  const safeProjectId = slugify(projectId) || "project";
+  const safeReportId = slugify(reportId) || "report";
+  const extension = path.extname(fileName).toLowerCase() || ".pdf";
+  return path.join(path.dirname(dataFilePath()), "pdfs", safeProjectId, `${safeReportId}-${checksum}${extension}`);
+}
+
+function findDuplicateReportChecksum(state: PersistedState, projectId: string, reportId: string, checksum: string) {
+  return state.reports.find(
+    (report) => report.projectId === projectId && report.id !== reportId && Boolean(report.checksum) && report.checksum === checksum
+  );
 }
 
 function uniqueIds(ids: string[]) {

@@ -88,11 +88,19 @@ export type Study = {
 
 export type Report = {
   id: string;
+  projectId: string;
   studyId: string;
   title: string;
   citation: string;
   retrievalStatus: "not_sought" | "sought" | "retrieved" | "not_retrieved";
-  pdfName: string;
+  pdfName?: string;
+  fileName?: string;
+  mimeType?: string;
+  size?: number;
+  checksum?: string;
+  storagePath?: string;
+  isPdfValidated: boolean;
+  validationNotes: string[];
   notes: number;
 };
 
@@ -362,20 +370,36 @@ export const screeningStudies: Study[] = [
 export const reportQueue: Report[] = [
   {
     id: "report-001",
+    projectId: "demo-review",
     studyId: "study-001",
     title: "Remote blood pressure self-monitoring supported by pharmacist messaging in adults with hypertension",
     citation: "Nolan P, Rivera M, Sharma T. Journal of Digital Therapeutics. 2025;18(2):101-114.",
     retrievalStatus: "retrieved",
     pdfName: "nolan-2025-hypertension-monitoring.pdf",
+    fileName: "nolan-2025-hypertension-monitoring.pdf",
+    mimeType: "application/pdf",
+    size: 3145728,
+    checksum: "demo-report-001",
+    storagePath: "demo/report-001.pdf",
+    isPdfValidated: true,
+    validationNotes: [],
     notes: 4
   },
   {
     id: "report-002",
+    projectId: "demo-review",
     studyId: "study-004",
     title: "Digital pulmonary rehabilitation after hospitalization for COPD exacerbation",
     citation: "McArthur L, Nguyen P, Osei K. Respiratory Care Research. 2022;41(7):619-631.",
     retrievalStatus: "sought",
     pdfName: "mcarthur-2022-copd-rehab.pdf",
+    fileName: "mcarthur-2022-copd-rehab.pdf",
+    mimeType: "application/pdf",
+    size: 0,
+    checksum: "",
+    storagePath: "",
+    isPdfValidated: false,
+    validationNotes: ["PDF retrieval is still pending."],
     notes: 1
   }
 ];
