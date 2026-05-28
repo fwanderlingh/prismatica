@@ -1,7 +1,5 @@
-PRISMATICA
-==========
-
-## To DO:
+PRISMATICA To DO
+================
 
 Full Text has no actionable workflow right now:
 1. The full-text queue is hardcoded to demo data only, not derived from real screening results: prisma-review-app.tsx.
