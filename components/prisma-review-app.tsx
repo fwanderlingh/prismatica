@@ -2058,6 +2058,11 @@ export function PrismaReviewApp() {
             <SectionTitle icon={BookOpen} title="Report Metadata" action={`${activeReport.notes} notes`} />
             <h2>{activeReport.title}</h2>
             <p className="subtle">{activeReport.citation}</p>
+            <div className="metaStrip">
+              <span>
+                DOI {renderDoiLink(currentReportStudy.doi, currentReportStudy.doi || "Missing")}
+              </span>
+            </div>
 
             <div className="pdfStatusGrid">
               <StatusRow label="PDF" value={pdfStatus} tone={activeReport.isPdfValidated ? "secure" : activeReport.fileName ? "warning" : "danger"} />
@@ -2987,10 +2992,10 @@ export function PrismaReviewApp() {
       <aside className="sidebar" aria-label="Project navigation">
         <div className="brandBlock">
           <div className="brandMark brandMarkImage">
-            <img src="/icon.svg" alt="Prismatica logo" width={30} height={30} />
+            <img src="/icon.svg" alt="PRISMATICA logo" width={30} height={30} />
           </div>
           <div>
-            <strong>Prismatica</strong>
+            <strong>PRISMATICA</strong>
             <span>Open source PRISMA review platform</span>
           </div>
         </div>
