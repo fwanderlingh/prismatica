@@ -57,6 +57,7 @@ type ParsedCitation = {
 };
 
 const demoUserIds = new Set(["user-rivera", "user-chen", "user-patel", "user-okafor"]);
+const adminUserId = "admin-root";
 
 export class ApiError extends Error {
   status: number;
@@ -111,7 +112,14 @@ function writeState(state: PersistedState) {
 
 function normalizeState(state: Partial<PersistedState>): PersistedState {
   const now = new Date().toISOString();
-  const users = Array.isArray(state.users) ? state.users.filter((user) => !demoUserIds.has(user.id)) : [];
+  const persistedUsers = Array.isArray(state.users) ? state.users.filter((user) => !demoUserIds.has(user.id)) : [];
+  const users = ensureAdminUser(
+    persistedUsers.map((user) => ({
+      ...user,
+      isAdmin: Boolean(user.isAdmin)
+    })) as StoredUser[],
+    now
+  );
   const userIds = new Set(users.map((user) => user.id));
   const projects = Array.isArray(state.projects)
     ? state.projects
@@ -222,6 +230,7 @@ function publicUser(user: StoredUser): AppUser {
     id: user.id,
     name: user.name,
     email: user.email,
+    isAdmin: user.isAdmin,
     initials: user.initials,
     organization: user.organization,
     title: user.title,
@@ -243,6 +252,14 @@ function isProjectMember(project: ReviewProject, userId: string) {
 }
 
 function requireProjectMember(state: PersistedState, projectId: string, userId: string) {
+  const user = getUser(state, userId);
+  if (user?.isAdmin) {
+    const project = getProject(state, projectId);
+    if (!project) {
+      throw new ApiError("You do not have access to that project.", 403);
+    }
+    return project;
+  }
   const project = getProject(state, projectId);
   if (!project || !isProjectMember(project, userId)) {
     throw new ApiError("You do not have access to that project.", 403);
@@ -276,7 +293,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
 
   return {
     currentUser: publicUser(currentUser),
-    users: state.users.map(publicUser),
+    users: state.users.filter((user) => currentUser.isAdmin || !user.isAdmin).map(publicUser),
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
     studies: state.studies.filter((study) => study.projectId && projectIds.has(study.projectId)),
@@ -340,6 +357,7 @@ export function registerUser(input: {
     id: createId(`user-${slugify(email)}`),
     name,
     email,
+    isAdmin: false,
     initials: getInitials(name),
     organization,
     title: input.title?.trim() || "Reviewer",
@@ -403,6 +421,100 @@ export function updateCurrentUserForUser(
   );
   writeState(state);
   return buildPayload(state, userId);
+}
+
+export function adminResetPasswordForUser(adminUserIdInput: string, targetUserId: string): AppMutationPayload {
+  const state = readState();
+  const adminUser = requireAdminUser(state, adminUserIdInput);
+  const targetUser = getUser(state, targetUserId);
+
+  if (!targetUser) {
+    throw new ApiError("Account not found.", 404);
+  }
+  if (targetUser.id === adminUser.id) {
+    throw new ApiError("Use the profile form to change the admin password.", 400);
+  }
+  if (targetUser.isAdmin) {
+    throw new ApiError("Admin accounts cannot be reset here.", 400);
+  }
+
+  const temporaryPassword = crypto.randomBytes(12).toString("base64url").slice(0, 16);
+  const passwordUpdate = hashPassword(temporaryPassword);
+  state.users = state.users.map((candidate) =>
+    candidate.id === targetUserId
+      ? {
+          ...candidate,
+          ...passwordUpdate,
+          updatedAt: new Date().toISOString()
+        }
+      : candidate
+  );
+  appendEvent(state, adminUser.name, `Reset password for ${targetUser.name}`, targetUserId);
+  writeState(state);
+
+  return {
+    ...buildPayload(state, adminUser.id),
+    message: `Temporary password generated for ${targetUser.name}.`,
+    temporaryPassword
+  };
+}
+
+export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: string): AppMutationPayload {
+  const state = readState();
+  const adminUser = requireAdminUser(state, adminUserIdInput);
+  const targetUser = getUser(state, targetUserId);
+
+  if (!targetUser) {
+    throw new ApiError("Account not found.", 404);
+  }
+  if (targetUser.id === adminUser.id) {
+    throw new ApiError("The admin account cannot delete itself.", 400);
+  }
+  if (targetUser.isAdmin) {
+    throw new ApiError("Admin accounts cannot be deleted here.", 400);
+  }
+
+  const ownedProjectIds = new Set(state.projects.filter((project) => project.ownerId === targetUserId).map((project) => project.id));
+  const removedStudyIds = new Set(
+    state.studies
+      .filter((study) => study.projectId && ownedProjectIds.has(study.projectId))
+      .map((study) => study.id)
+  );
+  const remainingProjects = state.projects
+    .filter((project) => !ownedProjectIds.has(project.id))
+    .map((project) => {
+      if (!project.memberIds.includes(targetUserId)) {
+        return project;
+      }
+
+      const nextMemberIds = project.memberIds.filter((memberId) => memberId !== targetUserId);
+      return {
+        ...project,
+        memberIds: nextMemberIds,
+        reviewers: nextMemberIds.length,
+        updatedAt: toEuToday(),
+        lastEvent: `Removed account ${targetUser.name}`
+      };
+    });
+
+  state.users = state.users.filter((user) => user.id !== targetUserId);
+  state.projects = remainingProjects;
+  state.imports = state.imports.filter((batch) => !ownedProjectIds.has(batch.projectId));
+  state.studies = state.studies.filter((study) => !removedStudyIds.has(study.id));
+  state.decisions = state.decisions.filter(
+    (decision) => decision.userId !== targetUserId && !ownedProjectIds.has(decision.projectId) && !removedStudyIds.has(decision.studyId)
+  );
+  state.events = state.events.filter((event) => !ownedProjectIds.has(event.entity));
+  state.dedupCandidates = state.dedupCandidates.filter(
+    (candidate) => !ownedProjectIds.has(candidate.recordA.projectId ?? "") && !ownedProjectIds.has(candidate.recordB.projectId ?? "")
+  );
+  appendEvent(state, adminUser.name, `Deleted account ${targetUser.name}`, targetUserId);
+  writeState(state);
+
+  return {
+    ...buildPayload(state, adminUser.id),
+    message: `Deleted account ${targetUser.name}.`
+  };
 }
 
 export function createProjectForUser(userId: string, input: NewProjectInput): AppMutationPayload {
@@ -1074,6 +1186,59 @@ function appendEvent(state: PersistedState, actor: string, action: string, entit
     time: "just now"
   };
   state.events = [nextEvent, ...state.events].slice(0, 50);
+}
+
+function requireAdminUser(state: PersistedState, userId: string) {
+  const user = getUser(state, userId);
+  if (!user) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+  if (!user.isAdmin) {
+    throw new ApiError("Administrator access is required.", 403);
+  }
+  return user;
+}
+
+function ensureAdminUser(users: StoredUser[], now: string) {
+  const adminEmail = (process.env.PRISMATICA_ADMIN_EMAIL ?? "admin@prismatica.local").trim().toLowerCase();
+  const adminPassword = process.env.PRISMATICA_ADMIN_PASSWORD ?? "change-me-admin";
+  const existingAdmin = users.find((user) => user.id === adminUserId || user.isAdmin);
+  if (existingAdmin) {
+    return users.map((user) =>
+      user.id === existingAdmin.id
+        ? {
+            ...user,
+            id: adminUserId,
+            isAdmin: true,
+            email: user.email || adminEmail,
+            name: user.name || "Prismatica Admin",
+            initials: user.initials || "PA",
+            organization: user.organization || "Prismatica",
+            title: user.title || "Administrator",
+            timezone: user.timezone || "Europe/Rome",
+            avatarColor: user.avatarColor || "#42656d"
+          }
+        : user
+    );
+  }
+
+  return [
+    {
+      id: adminUserId,
+      name: "Prismatica Admin",
+      email: adminEmail,
+      isAdmin: true,
+      initials: "PA",
+      organization: "Prismatica",
+      title: "Administrator",
+      timezone: "Europe/Rome",
+      avatarColor: "#42656d",
+      ...hashPassword(adminPassword),
+      createdAt: now,
+      updatedAt: now
+    },
+    ...users
+  ];
 }
 
 function uniqueIds(ids: string[]) {

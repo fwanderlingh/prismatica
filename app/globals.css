@@ -1758,6 +1758,17 @@ select:disabled {
   text-align: left;
 }
 
+.adminManagedUserSwitch {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+}
+
+.userSwitchActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .formActions {
   display: flex;
   justify-content: space-between;

@@ -18,6 +18,7 @@ export type AppUser = {
   id: string;
   name: string;
   email: string;
+  isAdmin: boolean;
   initials: string;
   organization: string;
   title: string;

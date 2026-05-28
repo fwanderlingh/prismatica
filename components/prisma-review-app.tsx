@@ -175,6 +175,7 @@ const guestUser: AppUser = {
   id: "guest",
   name: "New reviewer",
   email: "",
+  isAdmin: false,
   initials: "NR",
   organization: "Prismatica",
   title: "Reviewer",
@@ -253,6 +254,7 @@ export function PrismaReviewApp() {
   const [studyEditId, setStudyEditId] = useState("");
   const [studyEditForm, setStudyEditForm] = useState<StudyEditForm>(emptyStudyEditForm);
   const [accountMessage, setAccountMessage] = useState("");
+  const [adminDirectoryMessage, setAdminDirectoryMessage] = useState("");
   const [accountForm, setAccountForm] = useState({
     organization: "",
     title: "",
@@ -890,6 +892,34 @@ export function PrismaReviewApp() {
       setAccountMessage("Account updated.");
     } catch (error) {
       setAccountMessage(getErrorMessage(error));
+    }
+  }
+
+  async function adminResetUserPassword(user: AppUser) {
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/admin/users/${user.id}/reset-password`, {
+        method: "POST"
+      });
+      applyAppState(payload);
+      setAdminDirectoryMessage(`Temporary password for ${user.name}: ${payload.temporaryPassword ?? "not returned"}`);
+    } catch (error) {
+      setAdminDirectoryMessage(getErrorMessage(error));
+    }
+  }
+
+  async function adminDeleteUser(user: AppUser) {
+    if (!window.confirm(`Delete account \"${user.name}\"? This also removes their memberships and owned projects.`)) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/admin/users/${user.id}`, {
+        method: "DELETE"
+      });
+      applyAppState(payload);
+      setAdminDirectoryMessage(payload.message ?? `Deleted account ${user.name}.`);
+    } catch (error) {
+      setAdminDirectoryMessage(getErrorMessage(error));
     }
   }
 
@@ -2536,11 +2566,11 @@ export function PrismaReviewApp() {
           </div>
 
           <div className="panel">
-            <SectionTitle icon={Users} title="Team Directory" action="Server accounts" />
+            <SectionTitle icon={Users} title="Team Directory" action={currentUser.isAdmin ? "Admin controls enabled" : "Server accounts"} />
             <div className="memberPicker">
               {users.map((user) => (
                 <div
-                  className={user.id === currentUser.id ? "userSwitch active" : "userSwitch"}
+                  className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"}${currentUser.isAdmin ? " adminManagedUserSwitch" : ""}`}
                   key={user.id}
                 >
                   <span className="avatar" style={{ background: user.avatarColor }}>
@@ -2548,11 +2578,40 @@ export function PrismaReviewApp() {
                   </span>
                   <div>
                     <strong>{user.name}</strong>
-                    <small>{user.email}</small>
+                    <small>
+                      {user.email}
+                      {user.isAdmin ? " · administrator" : ""}
+                    </small>
                   </div>
+                  {currentUser.isAdmin ? (
+                    <div className="userSwitchActions">
+                      <button
+                        className="ghostButton"
+                        type="button"
+                        disabled={user.id === currentUser.id || user.isAdmin}
+                        onClick={() => adminResetUserPassword(user)}
+                      >
+                        Reset password
+                      </button>
+                      <button
+                        className="dangerButton"
+                        type="button"
+                        disabled={user.id === currentUser.id || user.isAdmin}
+                        onClick={() => adminDeleteUser(user)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
+            {adminDirectoryMessage ? (
+              <div className={adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? "validationItem ok" : "validationItem blocked"}>
+                {adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{adminDirectoryMessage}</span>
+              </div>
+            ) : null}
           </div>
         </section>
 

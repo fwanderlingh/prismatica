@@ -8,6 +8,7 @@ Open source PRISMA review platform built with Next.js, React, and TypeScript.
 
 - Project dashboard with PRISMA counts and audit trail
 - Sign-in and registration screens with HTTP-only server sessions
+- Seeded administrator account with admin-only password reset and account deletion controls
 - Multi-review dashboard showing each user's accessible review projects
 - Project-specific sidebar navigation after opening a review
 - Profile page with account details, project membership, and team directory
@@ -22,7 +23,7 @@ Open source PRISMA review platform built with Next.js, React, and TypeScript.
 - PRISMA export preview with validation checks
 - Role, blind-mode, and state-machine settings views
 
-Registered users, newly created reviews, team membership, screening decisions, duplicate-candidate statuses, and workflow events are stored server-side. By default the Node server writes a JSON data file at `data/prismatica-state.json`; set `PRISMATICA_DATA_FILE` to place it somewhere durable.
+Registered users, the seeded administrator account, newly created reviews, team membership, screening decisions, duplicate-candidate statuses, and workflow events are stored server-side. By default the Node server writes a JSON data file at `data/prismatica-state.json`; set `PRISMATICA_DATA_FILE` to place it somewhere durable.
 
 This is the Node storage adapter for the current Next.js app. The API routes keep project, user, decision, and audit mutations behind server boundaries so a PostgreSQL/NestJS adapter from `prisma_website_specifications.md` can replace the JSON file later.
 
@@ -61,7 +62,19 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 Open `http://127.0.0.1:3000`.
 
-No demo accounts are pre-created. Register the first account from the sign-in screen, then create review projects and invite team members from project settings.
+No demo reviewer accounts are pre-created. Register the first reviewer account from the sign-in screen, then create review projects and invite team members from project settings.
+
+A separate administrator account is created automatically on startup. By default it uses:
+
+- Email: `admin@prismatica.local`
+- Password: `change-me-admin`
+
+Use that account to open the Profile page and manage server accounts from the Team Directory, including:
+
+- generating a temporary password for a user who lost access
+- deleting a user account
+
+Deleting an account also removes that user from project membership and deletes projects they own.
 
 ## Server Storage And Sessions
 
@@ -78,10 +91,14 @@ Optional environment variables:
 
 ```bash
 export PRISMATICA_INVITE_PASSWORD="temporary-password-for-invited-users"
+export PRISMATICA_ADMIN_EMAIL="admin@example.com"
+export PRISMATICA_ADMIN_PASSWORD="replace-this-default-admin-password"
 export PRISMATICA_SECURE_COOKIES="true"
 ```
 
 Use `PRISMATICA_SECURE_COOKIES=true` only when the app is served over HTTPS.
+
+For any environment beyond local development, set `PRISMATICA_ADMIN_PASSWORD` explicitly instead of relying on the built-in default.
 
 ## Subnetwork Development Access
 
