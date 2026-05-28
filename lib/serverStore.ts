@@ -1245,6 +1245,33 @@ export function uploadReportPdfForUser(
   return buildPayload(state, userId);
 }
 
+export function getReportPdfForUser(userId: string, projectId: string, reportId: string) {
+  const state = readState();
+  requireProjectMember(state, projectId, userId);
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) {
+    throw new ApiError("Report not found.", 404);
+  }
+  const storagePath = resolveReportPdfStoragePath(report, projectId, reportId);
+  if (!storagePath) {
+    throw new ApiError("PDF file is not available for this report.", 404);
+  }
+
+  if (storagePath !== report.storagePath) {
+    state.reports = state.reports.map((candidate) =>
+      candidate.id === reportId && candidate.projectId === projectId ? { ...candidate, storagePath } : candidate
+    );
+    writeState(state);
+  }
+
+  const buffer = fs.readFileSync(/*turbopackIgnore: true*/ storagePath);
+  return {
+    buffer,
+    fileName: report.fileName || report.pdfName || "report.pdf",
+    mimeType: report.mimeType || "application/pdf"
+  };
+}
+
 export function validateReportPdfForUser(userId: string, projectId: string, reportId: string): AppMutationPayload {
   const state = readState();
   const currentUser = getUser(state, userId);
@@ -1259,10 +1286,11 @@ export function validateReportPdfForUser(userId: string, projectId: string, repo
   }
 
   const validationNotes: string[] = [];
-  if (!report.storagePath || !fs.existsSync(/*turbopackIgnore: true*/ report.storagePath)) {
+  const storagePath = resolveReportPdfStoragePath(report, projectId, reportId);
+  if (!storagePath) {
     validationNotes.push("PDF file is missing from storage.");
   } else {
-    const buffer = fs.readFileSync(/*turbopackIgnore: true*/ report.storagePath);
+    const buffer = fs.readFileSync(/*turbopackIgnore: true*/ storagePath);
     try {
       validatePdfBuffer(buffer, report.size);
     } catch (error) {
@@ -1285,6 +1313,7 @@ export function validateReportPdfForUser(userId: string, projectId: string, repo
     candidate.id === reportId && candidate.projectId === projectId
       ? {
           ...candidate,
+          storagePath: storagePath || candidate.storagePath,
           isPdfValidated: validationNotes.length === 0,
           validationNotes: validationNotes.length > 0 ? validationNotes : ["PDF header, size, MIME type, and checksum validated."]
         }
@@ -1690,11 +1719,45 @@ function validatePdfBuffer(buffer: Buffer, declaredSize?: number) {
   }
 }
 
-function reportPdfStoragePath(projectId: string, reportId: string, checksum: string, fileName: string) {
+function reportPdfStorageDirectory(projectId: string) {
   const safeProjectId = slugify(projectId) || "project";
+  return path.join(path.dirname(dataFilePath()), "pdfs", safeProjectId);
+}
+
+function reportPdfStoragePath(projectId: string, reportId: string, checksum: string, fileName: string) {
   const safeReportId = slugify(reportId) || "report";
   const extension = path.extname(fileName).toLowerCase() || ".pdf";
-  return path.join(path.dirname(dataFilePath()), "pdfs", safeProjectId, `${safeReportId}-${checksum}${extension}`);
+  return path.join(reportPdfStorageDirectory(projectId), `${safeReportId}-${checksum}${extension}`);
+}
+
+function resolveReportPdfStoragePath(report: Report, projectId: string, reportId: string) {
+  const candidates = [
+    report.storagePath,
+    report.checksum ? reportPdfStoragePath(projectId, reportId, report.checksum, report.fileName || report.pdfName || "report.pdf") : ""
+  ];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (candidate && !seen.has(candidate)) {
+      seen.add(candidate);
+      if (fs.existsSync(/*turbopackIgnore: true*/ candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  if (!report.checksum) {
+    return "";
+  }
+
+  const safeReportId = slugify(reportId) || "report";
+  const prefix = `${safeReportId}-${report.checksum}.`;
+  const directory = reportPdfStorageDirectory(projectId);
+  if (!fs.existsSync(/*turbopackIgnore: true*/ directory)) {
+    return "";
+  }
+
+  const matchedFile = fs.readdirSync(/*turbopackIgnore: true*/ directory).find((fileName) => fileName.startsWith(prefix));
+  return matchedFile ? path.join(directory, matchedFile) : "";
 }
 
 function findDuplicateReportChecksum(state: PersistedState, projectId: string, reportId: string, checksum: string) {

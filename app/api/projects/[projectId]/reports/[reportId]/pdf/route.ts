@@ -1,5 +1,16 @@
-import { jsonError, jsonOk, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
-import { uploadReportPdfForUser } from "@/lib/serverStore";
+import { jsonError, jsonOk, pdfFileResponse, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
+import { getReportPdfForUser, uploadReportPdfForUser } from "@/lib/serverStore";
+
+export async function GET(_request: Request, context: { params: Promise<{ projectId: string; reportId: string }> }) {
+  try {
+    const userId = await requireSessionUserId();
+    const { projectId, reportId } = await context.params;
+    const pdf = getReportPdfForUser(userId, projectId, reportId);
+    return pdfFileResponse(pdf);
+  } catch (error) {
+    return jsonError(error);
+  }
+}
 
 export async function POST(request: Request, context: { params: Promise<{ projectId: string; reportId: string }> }) {
   try {

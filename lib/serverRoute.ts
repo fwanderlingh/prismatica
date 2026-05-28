@@ -22,6 +22,19 @@ export function jsonOk<T>(payload: T) {
   return NextResponse.json(payload);
 }
 
+export function pdfFileResponse(file: { buffer: Uint8Array; fileName: string; mimeType: string }) {
+  const fileName = file.fileName.replace(/["\r\n]/g, "_") || "report.pdf";
+  return new Response(new Uint8Array(file.buffer), {
+    headers: {
+      "Cache-Control": "private, no-store",
+      "Content-Disposition": `inline; filename="${fileName}"`,
+      "Content-Length": String(file.buffer.byteLength),
+      "Content-Type": file.mimeType || "application/pdf",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
 export function jsonError(error: unknown) {
   if (error instanceof ApiError) {
     return NextResponse.json({ error: error.message }, { status: error.status });

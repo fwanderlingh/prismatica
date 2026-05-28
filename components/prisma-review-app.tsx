@@ -1961,9 +1961,13 @@ export function PrismaReviewApp() {
     );
     const selectedDecision = activeFullTextDecision?.decisionValue;
     const canExclude = selectedDecision === "exclude";
+    const pdfDisplayName = activeReport.fileName || activeReport.pdfName || "No PDF uploaded";
     const pdfStatus = activeReport.isPdfValidated ? "Validated" : activeReport.fileName ? "Uploaded, not validated" : "Missing PDF";
     const canInclude = activeReport.retrievalStatus === "retrieved" && activeReport.isPdfValidated;
     const messageIsSuccess = /updated|saved|uploaded|completed/i.test(fullTextMessage);
+    const pdfViewerUrl = activeReport.fileName
+      ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
+      : "";
 
     return (
       <div className="viewStack">
@@ -2000,7 +2004,9 @@ export function PrismaReviewApp() {
         <section className="fullTextLayout">
           <div className="pdfPane">
             <div className="pdfToolbar">
-              <strong>{activeReport.fileName || activeReport.pdfName || "No PDF uploaded"}</strong>
+              <strong className="pdfTitle" title={pdfDisplayName}>
+                {pdfDisplayName}
+              </strong>
               <div className="toolbarCluster">
                 <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
                 <button className="ghostButton" type="button" title="Upload PDF" onClick={() => pdfInputRef.current?.click()}>
@@ -2011,7 +2017,7 @@ export function PrismaReviewApp() {
                   <FileCheck2 size={16} />
                   Validate
                 </button>
-                <button className="ghostButton iconOnly" type="button" title="Search PDF">
+                {/*<button className="ghostButton iconOnly" type="button" title="Search PDF">
                   <Search size={16} />
                 </button>
                 <button className="ghostButton iconOnly" type="button" title="Zoom in">
@@ -2019,38 +2025,28 @@ export function PrismaReviewApp() {
                 </button>
                 <button className="ghostButton iconOnly" type="button" title="Show notes">
                   <MessageSquareText size={16} />
-                </button>
+                </button>*/}
               </div>
             </div>
-            <div className="pdfCanvas" aria-label="PDF review pane">
-              <div className="paperPage">
-                <p className="paperEyebrow">{pdfStatus}</p>
-                <h2>{currentReportStudy.title}</h2>
-                {activeReport.validationNotes.length > 0 ? (
-                  <div className="pdfValidationNotes">
-                    {activeReport.validationNotes.slice(0, 4).map((note) => (
-                      <span key={note}>{note}</span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="paperLine wide" />
-                <div className="paperLine" />
-                <div className="paperLine short" />
-                <h3>Methods</h3>
-                <div className="paperColumns">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
+            <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
+              {pdfViewerUrl ? (
+                <iframe className="pdfViewer" src={pdfViewerUrl} title={`${activeReport.title} PDF`} />
+              ) : (
+                <div className="paperPage emptyPdfPage">
+                  <p className="paperEyebrow">{pdfStatus}</p>
+                  <h2>{currentReportStudy.title}</h2>
+                  {activeReport.validationNotes.length > 0 ? (
+                    <div className="pdfValidationNotes">
+                      {activeReport.validationNotes.slice(0, 4).map((note) => (
+                        <span key={note}>{note}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="paperLine wide" />
+                  <div className="paperLine" />
+                  <div className="paperLine short" />
                 </div>
-                <h3>Results</h3>
-                <div className="miniChart">
-                  <i style={{ height: "62%" }} />
-                  <i style={{ height: "44%" }} />
-                  <i style={{ height: "78%" }} />
-                  <i style={{ height: "52%" }} />
-                </div>
-              </div>
+              )}
             </div>
           </div>
 

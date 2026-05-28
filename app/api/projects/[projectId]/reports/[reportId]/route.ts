@@ -1,7 +1,22 @@
-import { jsonError, jsonOk, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
-import { updateReportForUser } from "@/lib/serverStore";
+import { jsonError, jsonOk, pdfFileResponse, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
+import { ApiError, getReportPdfForUser, updateReportForUser } from "@/lib/serverStore";
 import type { Report } from "@/lib/prismaData";
 import type { DecisionValue } from "@/lib/workflow";
+
+export async function GET(request: Request, context: { params: Promise<{ projectId: string; reportId: string }> }) {
+  try {
+    const userId = await requireSessionUserId();
+    const { projectId, reportId } = await context.params;
+    const url = new URL(request.url);
+    if (url.searchParams.get("pdf") !== "1") {
+      throw new ApiError("Add ?pdf=1 to stream this report PDF.");
+    }
+    const pdf = getReportPdfForUser(userId, projectId, reportId);
+    return pdfFileResponse(pdf);
+  } catch (error) {
+    return jsonError(error);
+  }
+}
 
 export async function PATCH(request: Request, context: { params: Promise<{ projectId: string; reportId: string }> }) {
   try {

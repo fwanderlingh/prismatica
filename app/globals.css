@@ -1568,9 +1568,22 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  min-width: 0;
   padding: 12px 14px;
   border-bottom: 1px solid #c8d3d8;
   background: var(--surface);
+}
+
+.pdfTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdfToolbar .toolbarCluster {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
 }
 
 .pdfCanvas {
@@ -1578,6 +1591,23 @@ textarea {
   place-items: center;
   overflow: auto;
   padding: 30px;
+}
+
+.pdfCanvasViewer {
+  place-items: stretch;
+  padding: 0;
+}
+
+.pdfViewer {
+  width: 100%;
+  min-height: 760px;
+  height: 100%;
+  border: 0;
+  background: #ffffff;
+}
+
+.emptyPdfPage {
+  align-self: center;
 }
 
 .paperPage {
