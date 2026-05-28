@@ -2040,6 +2040,8 @@ export function PrismaReviewApp() {
     const pdfViewerUrl = activeReport.fileName
       ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
       : "";
+    const reportPreviewItems = [activeReport, ...projectReportQueue.filter((report) => report.id !== activeReport.id).slice(0, 3)];
+    const reportPreviewOverflow = Math.max(projectReportQueue.length - reportPreviewItems.length, 0);
 
     return (
       <div className="viewStack">
@@ -2049,20 +2051,46 @@ export function PrismaReviewApp() {
             <h1>Report Review</h1>
             <p className="subtle">Retrieval status and report-level exclusion reasons feed the PRISMA export.</p>
           </div>
-          <div className="segmented">
-            {projectReportQueue.map((report) => (
-              <button
-                className={report.id === activeReport.id ? "active" : ""}
-                type="button"
-                key={report.id}
-                onClick={() => {
-                  setActiveReportId(report.id);
-                  setFullTextMessage("");
-                }}
-              >
-                {report.title}
-              </button>
-            ))}
+          <div className="reportPicker">
+            <div>
+              <p className="eyebrow">Report queue</p>
+              <strong>{projectReportQueue.length} report{projectReportQueue.length === 1 ? "" : "s"}</strong>
+              <p className="subtle">Active report: {activeReport.title}</p>
+            </div>
+            <label className="fieldLabel" htmlFor="full-text-report-picker">
+              Jump to report
+            </label>
+            <select
+              id="full-text-report-picker"
+              value={activeReport.id}
+              onChange={(event) => {
+                setActiveReportId(event.target.value);
+                setFullTextMessage("");
+              }}
+            >
+              {projectReportQueue.map((report) => (
+                <option key={report.id} value={report.id}>
+                  {report.title}
+                </option>
+              ))}
+            </select>
+            <div className="reportPreviewRow" aria-label="Report preview">
+              {reportPreviewItems.map((report) => (
+                <button
+                  className={report.id === activeReport.id ? "reportPreviewChip active" : "reportPreviewChip"}
+                  type="button"
+                  key={report.id}
+                  onClick={() => {
+                    setActiveReportId(report.id);
+                    setFullTextMessage("");
+                  }}
+                  title={report.title}
+                >
+                  {report.title}
+                </button>
+              ))}
+              {reportPreviewOverflow > 0 ? <span className="reportPreviewOverflow">+{reportPreviewOverflow} more</span> : null}
+            </div>
           </div>
         </section>
 

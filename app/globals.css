@@ -495,6 +495,59 @@ p {
   box-shadow: none;
 }
 
+.reportPicker {
+  display: grid;
+  gap: 8px;
+  min-width: min(100%, 420px);
+}
+
+.reportPicker strong {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.reportPreviewRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reportPreviewChip,
+.reportPreviewOverflow {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f3f7f8;
+  color: #415058;
+  font-size: 0.8rem;
+  font-weight: 760;
+  line-height: 28px;
+}
+
+.reportPreviewChip {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reportPreviewChip.active {
+  border-color: #b7d8d8;
+  background: var(--surface);
+  color: var(--teal);
+  box-shadow: 0 1px 3px rgba(30, 45, 55, 0.08);
+}
+
+.reportPreviewChip:hover {
+  background: #eaf0f1;
+}
+
+.reportPreviewOverflow {
+  background: #eef2f4;
+  color: #66757d;
+}
+
 .overviewBand h1 {
   max-width: 900px;
   margin-top: 3px;
