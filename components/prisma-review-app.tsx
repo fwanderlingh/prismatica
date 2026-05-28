@@ -112,7 +112,7 @@ const projectNavItems: NavItem[] = [
   { key: "screening", label: "Screening", path: "/project/current/screen/title-abstract", Icon: FileSearch },
   { key: "fullText", label: "Full Text", path: "/project/current/full-text", Icon: BookOpen },
   { key: "extraction", label: "Extraction", path: "/project/current/extraction/consensus", Icon: ClipboardCheck },
-  { key: "risk", label: "Risk of Bias", path: "/project/current/risk-of-bias", Icon: ShieldCheck },
+  //{ key: "risk", label: "Risk of Bias", path: "/project/current/risk-of-bias", Icon: ShieldCheck },
   { key: "exports", label: "Exports", path: "/project/current/exports", Icon: Download },
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
@@ -3744,10 +3744,10 @@ export function PrismaReviewApp() {
           })}
         </nav>
 
-        <div className="sidebarFooter">
+        {/* <div className="sidebarFooter">
           <Lock size={16} />
           <span>{isProjectView ? "Blind mode is enforced for reviewer views." : "Project access follows membership."}</span>
-        </div>
+        </div> */}
       </aside>
 
       <main className="mainArea">
