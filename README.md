@@ -139,13 +139,3 @@ npm run build
 ```
 
 Run the production server with `npm run start -- --hostname 0.0.0.0 --port 3000`.
-
-## Verification Run
-
-These commands have been run successfully:
-
-```bash
-npm audit --audit-level=moderate
-npm run check
-npm run build
-```
