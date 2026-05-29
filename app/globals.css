@@ -141,6 +141,15 @@ h3 {
   min-width: 0;
 }
 
+.brandButton {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .brandBlock strong,
 .brandBlock span {
   display: block;

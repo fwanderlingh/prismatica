@@ -4325,7 +4325,15 @@ export function PrismaReviewApp() {
     <div className="appFrame">
       <aside className={isMobileNavOpen ? "sidebar open" : "sidebar"} aria-label="Project navigation">
         <div className="sidebarHeader">
-          <div className="brandBlock">
+          <button
+            className="brandBlock brandButton"
+            type="button"
+            title="Go to homepage"
+            onClick={() => {
+              setActiveView("dashboard");
+              setIsMobileNavOpen(false);
+            }}
+          >
             <div className="brandMark brandMarkImage">
               <img src="/icon.svg" alt="PRISMATICA logo" width={30} height={30} />
             </div>
@@ -4333,7 +4341,7 @@ export function PrismaReviewApp() {
               <strong>PRISMATICA</strong>
               <span>Open source PRISMA review platform</span>
             </div>
-          </div>
+          </button>
           <button
             className="ghostButton iconOnly mobileNavToggle"
             type="button"
