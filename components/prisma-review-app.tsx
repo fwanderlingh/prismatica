@@ -135,11 +135,131 @@ const projectNavItems: NavItem[] = [
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
 
+const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "profile"];
+const viewKeySet = new Set<ViewKey>([
+  "dashboard",
+  "projectDashboard",
+  "imports",
+  "dedup",
+  "screening",
+  "fullText",
+  "extraction",
+  "risk",
+  "exports",
+  "audit",
+  "settings",
+  "newProject",
+  "about",
+  "profile"
+]);
+
+function isViewKey(value: string | null): value is ViewKey {
+  return value !== null && viewKeySet.has(value as ViewKey);
+}
+
+function isProjectScopedView(view: ViewKey) {
+  return !globalViewKeys.includes(view);
+}
+
+function normalizePathname(pathname: string) {
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1);
+  }
+  return pathname;
+}
+
+function buildPathForState(view: ViewKey, projectId: string) {
+  switch (view) {
+    case "dashboard":
+      return "/";
+    case "newProject":
+      return "/projects/new";
+    case "about":
+      return "/about";
+    case "profile":
+      return "/profile";
+    case "projectDashboard":
+      return `/projects/${encodeURIComponent(projectId)}`;
+    case "imports":
+      return `/projects/${encodeURIComponent(projectId)}/imports`;
+    case "dedup":
+      return `/projects/${encodeURIComponent(projectId)}/dedup`;
+    case "screening":
+      return `/projects/${encodeURIComponent(projectId)}/screening`;
+    case "fullText":
+      return `/projects/${encodeURIComponent(projectId)}/full-text`;
+    case "extraction":
+      return `/projects/${encodeURIComponent(projectId)}/extraction`;
+    case "risk":
+      return `/projects/${encodeURIComponent(projectId)}/risk`;
+    case "exports":
+      return `/projects/${encodeURIComponent(projectId)}/exports`;
+    case "audit":
+      return `/projects/${encodeURIComponent(projectId)}/audit`;
+    case "settings":
+      return `/projects/${encodeURIComponent(projectId)}/settings`;
+    default:
+      return "/";
+  }
+}
+
+function parseRouteState(pathname: string, search: string): { view: ViewKey; projectId?: string } {
+  const normalizedPath = normalizePathname(pathname);
+
+  if (normalizedPath === "/") {
+    return { view: "dashboard" };
+  }
+  if (normalizedPath === "/projects/new") {
+    return { view: "newProject" };
+  }
+  if (normalizedPath === "/about") {
+    return { view: "about" };
+  }
+  if (normalizedPath === "/profile") {
+    return { view: "profile" };
+  }
+
+  const parts = normalizedPath.split("/").filter(Boolean);
+  if (parts[0] === "projects" && parts[1] && parts[1] !== "new") {
+    const routeKey = parts.slice(2).join("/");
+    const routeViewMap: Record<string, ViewKey> = {
+      "": "projectDashboard",
+      imports: "imports",
+      dedup: "dedup",
+      screening: "screening",
+      "screen/title-abstract": "screening",
+      "full-text": "fullText",
+      extraction: "extraction",
+      "extraction/consensus": "extraction",
+      risk: "risk",
+      exports: "exports",
+      audit: "audit",
+      settings: "settings"
+    };
+
+    return {
+      view: routeViewMap[routeKey] ?? "projectDashboard",
+      projectId: decodeURIComponent(parts[1])
+    };
+  }
+
+  // Backward compatibility for links using query params.
+  const params = new URLSearchParams(search);
+  const requestedView = params.get("view");
+  const requestedProjectId = params.get("projectId");
+
+  return {
+    view: isViewKey(requestedView) ? requestedView : "dashboard",
+    projectId: requestedProjectId ?? undefined
+  };
+}
+
 type NewProjectForm = {
   title: string;
   organization: string;
   protocolId: string;
   description: string;
+  searchStrategies: string;
   dueDate: string;
   blindMode: boolean;
   abstractRequiredVotes: number;
@@ -194,6 +314,7 @@ const emptyProjectForm: NewProjectForm = {
   organization: "Evidence Methods Unit",
   protocolId: "",
   description: "",
+  searchStrategies: "",
   dueDate: "30-09-2026",
   blindMode: true,
   abstractRequiredVotes: 2,
@@ -207,6 +328,7 @@ const emptyProjectSettingsForm: ProjectSettingsForm = {
   organization: "",
   protocolId: "",
   description: "",
+  searchStrategies: "",
   dueDate: "",
   blindMode: true,
   abstractRequiredVotes: 2,
@@ -290,6 +412,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const skipUrlSyncRef = useRef(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -371,7 +494,7 @@ export function PrismaReviewApp() {
     [currentUser.id, projects]
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
-  const isProjectView = !["dashboard", "newProject", "about", "profile"].includes(activeView);
+  const isProjectView = isProjectScopedView(activeView);
   const hasProjectSeedData = selectedProject.id === "demo-review";
   const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
   const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
@@ -607,6 +730,38 @@ export function PrismaReviewApp() {
   }, []);
 
   useEffect(() => {
+    function applyUrlState() {
+      const routeState = parseRouteState(window.location.pathname, window.location.search);
+
+      skipUrlSyncRef.current = true;
+      setActiveView(routeState.view);
+      if (routeState.projectId) {
+        setSelectedProjectId(routeState.projectId);
+      }
+    }
+
+    applyUrlState();
+    window.addEventListener("popstate", applyUrlState);
+    return () => window.removeEventListener("popstate", applyUrlState);
+  }, []);
+
+  useEffect(() => {
+    const nextPath = normalizePathname(buildPathForState(activeView, selectedProjectId));
+    const currentPath = normalizePathname(window.location.pathname);
+    const nextUrl = `${nextPath}${window.location.hash}`;
+    const currentUrl = `${currentPath}${window.location.hash}`;
+
+    if (skipUrlSyncRef.current) {
+      skipUrlSyncRef.current = false;
+      return;
+    }
+
+    if (nextUrl !== currentUrl) {
+      window.history.pushState(null, "", nextUrl);
+    }
+  }, [activeView, selectedProjectId]);
+
+  useEffect(() => {
     if (!isAuthenticated || userProjects.length === 0) {
       return;
     }
@@ -689,6 +844,7 @@ export function PrismaReviewApp() {
       organization: selectedProject.organization,
       protocolId: selectedProject.protocolId,
       description: selectedProject.description,
+      searchStrategies: selectedProject.searchStrategies,
       dueDate: selectedProject.dueDate,
       blindMode: selectedProject.blindMode,
       abstractRequiredVotes: selectedProject.abstractRequiredVotes,
@@ -706,6 +862,7 @@ export function PrismaReviewApp() {
     selectedProject.maybePolicy,
     selectedProject.organization,
     selectedProject.protocolId,
+    selectedProject.searchStrategies,
     selectedProject.title
   ]);
 
@@ -1826,10 +1983,10 @@ export function PrismaReviewApp() {
                       <div>
                         <strong>{event.action}</strong>
                         <span>
-                          {event.actor} · {event.entity}
+                          {event.actor} · {formatAuditEntityLabel(event, selectedProject, projectScreeningStudies, projectReportQueue)}
                         </span>
                       </div>
-                      <time>{event.time}</time>
+                      <time>{formatAuditTime(event.time)}</time>
                     </article>
                   ))}
                 </div>
@@ -3261,10 +3418,10 @@ export function PrismaReviewApp() {
                     <div>
                       <strong>{event.action}</strong>
                       <span>
-                        {event.actor} · {event.entity}
+                        {event.actor} · {formatAuditEntityLabel(event, selectedProject, projectScreeningStudies, projectReportQueue)}
                       </span>
                     </div>
-                    <time>{event.time}</time>
+                    <time>{formatAuditTime(event.time)}</time>
                   </article>
                 ))}
               </div>
@@ -3371,6 +3528,16 @@ export function PrismaReviewApp() {
                 value={projectSettingsForm.description}
                 onChange={(event) => updateProjectSettingsForm("description", event.target.value)}
                 disabled={!canManageProject}
+              />
+            </label>
+            <label className="wideField">
+              <span>Search strategies backup</span>
+              <textarea
+                className="strategyTextarea"
+                value={projectSettingsForm.searchStrategies}
+                onChange={(event) => updateProjectSettingsForm("searchStrategies", event.target.value)}
+                disabled={!canManageProject}
+                placeholder={"Paste exact database searches, keywords, Boolean strings, dates, filters, and platform notes.\n\nExample:\nPubMed (2026-05-29)\n(\"underwater mapping\" OR sonar) AND (3D OR reconstruction)\nFilters: English; 2015-2026"}
               />
             </label>
             {projectSettingsMessage ? (
@@ -3635,6 +3802,15 @@ export function PrismaReviewApp() {
                 value={newProjectForm.description}
                 onChange={(event) => updateNewProjectForm("description", event.target.value)}
                 placeholder="Briefly describe the review question and scope."
+              />
+            </label>
+            <label className="wideField">
+              <span>Search strategies backup</span>
+              <textarea
+                className="strategyTextarea"
+                value={newProjectForm.searchStrategies}
+                onChange={(event) => updateNewProjectForm("searchStrategies", event.target.value)}
+                placeholder={"Optional. Paste database names, keywords, Boolean strings, dates, filters, and search-platform notes."}
               />
             </label>
           </section>
@@ -4586,6 +4762,38 @@ function formatConflictStage(stage: WorkflowConflict["stage"]) {
 
 function formatConflictResolutionHint(requiredVotes: number) {
   return `A conflict remains only while Include and Exclude are tied or neither side has reached ${requiredVotes} required vote${requiredVotes === 1 ? "" : "s"}.`;
+}
+
+function formatAuditEntityLabel(
+  event: WorkflowEvent,
+  project: ReviewProject,
+  studies: Study[],
+  reports: Report[]
+) {
+  const study = studies.find((candidate) => candidate.id === event.entity);
+  if (study) {
+    return study.title;
+  }
+
+  const report = reports.find((candidate) => candidate.id === event.entity);
+  if (report) {
+    return report.title;
+  }
+
+  if (event.entity === project.id) {
+    return project.title;
+  }
+
+  return event.entity;
+}
+
+function formatAuditTime(value: string) {
+  const parsedTime = Date.parse(value);
+  if (Number.isNaN(parsedTime)) {
+    return value;
+  }
+
+  return new Date(parsedTime).toLocaleString();
 }
 
 function decisionTone(value: DecisionValue): "success" | "warning" | "danger" | "info" | "neutral" {

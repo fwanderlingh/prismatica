@@ -113,10 +113,13 @@ h3 {
   flex-direction: column;
   gap: 22px;
   height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 22px 18px;
   border-right: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.84);
   backdrop-filter: blur(14px);
+  -webkit-overflow-scrolling: touch;
 }
 
 .sidebarHeader {
@@ -2199,6 +2202,13 @@ select:disabled {
   margin-top: 14px;
 }
 
+.strategyTextarea {
+  min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .memberPicker {
   display: grid;
   gap: 9px;
@@ -2591,7 +2601,10 @@ button:disabled {
   .sidebar {
     position: sticky;
     z-index: 20;
+    max-height: 100dvh;
     height: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     gap: 12px;
     padding: 14px;
     border-right: 0;
@@ -2610,6 +2623,10 @@ button:disabled {
   .sidebar:not(.open) .navList,
   .sidebar:not(.open) .sidebarFooter {
     display: none;
+  }
+
+  .sidebar:not(.open) {
+    overflow: visible;
   }
 
   .navList {

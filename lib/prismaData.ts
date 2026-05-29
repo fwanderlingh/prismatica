@@ -43,6 +43,7 @@ export type ProjectSummary = {
 
 export type ReviewProject = ProjectSummary & {
   description: string;
+  searchStrategies: string;
   status: "active" | "draft" | "archived";
   stage: "setup" | "import" | "screening" | "full_text" | "extraction" | "complete";
   ownerId: string;
@@ -230,6 +231,7 @@ export const reviewProjects: ReviewProject[] = [
   {
     ...projectSummary,
     description: "Evaluate randomized and pragmatic trials of digital self-management support for chronic disease.",
+    searchStrategies: "",
     status: "active",
     stage: "screening",
     ownerId: "user-rivera",
@@ -255,6 +257,7 @@ export const reviewProjects: ReviewProject[] = [
     reviewers: 5,
     lastEvent: "Import batch parsed 2 hours ago",
     description: "Review remote monitoring and telehealth follow-up models after high-risk pregnancy discharge.",
+    searchStrategies: "",
     status: "active",
     stage: "import",
     ownerId: "user-patel",
@@ -280,6 +283,7 @@ export const reviewProjects: ReviewProject[] = [
     reviewers: 4,
     lastEvent: "Project settings created yesterday",
     description: "Map clinical safety outcomes and implementation factors in AI triage studies.",
+    searchStrategies: "",
     status: "draft",
     stage: "setup",
     ownerId: "user-okafor",

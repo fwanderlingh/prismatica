@@ -52,6 +52,7 @@ type NewProjectInput = {
   organization?: string;
   protocolId?: string;
   description?: string;
+  searchStrategies?: string;
   dueDate?: string;
   blindMode?: boolean;
   abstractRequiredVotes?: number;
@@ -180,6 +181,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
         .filter((project) => userIds.has(project.ownerId))
         .map((project) => ({
           ...project,
+          searchStrategies: typeof project.searchStrategies === "string" ? project.searchStrategies : "",
           fullTextRequiredVotes: clampFullTextVoteCount(project.fullTextRequiredVotes),
           ownerIds: normalizeOwnerIds(project, userIds),
           memberIds: normalizeMemberIds(project, userIds)
@@ -779,6 +781,7 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     reviewers: memberIds.length,
     lastEvent: "Project created just now",
     description: input.description?.trim() || "New systematic review project.",
+    searchStrategies: input.searchStrategies?.trim() ?? "",
     status: "draft",
     stage: "setup",
     ownerId: userId,
@@ -830,6 +833,7 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
           organization: input.organization?.trim() || project.organization,
           protocolId: input.protocolId?.trim() || project.protocolId,
           description: input.description?.trim() || project.description,
+          searchStrategies: input.searchStrategies?.trim() ?? "",
           dueDate,
           blindMode: Boolean(input.blindMode ?? project.blindMode),
           abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes ?? project.abstractRequiredVotes),
@@ -1981,7 +1985,7 @@ function appendEvent(state: PersistedState, actor: string, action: string, entit
     actor,
     action,
     entity,
-    time: "just now"
+    time: new Date().toISOString()
   };
   state.events = [nextEvent, ...state.events].slice(0, 50);
 }
