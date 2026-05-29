@@ -1833,7 +1833,7 @@ td span {
 textarea {
   width: 100%;
   min-height: 118px;
-  margin-top: 22px;
+  /*margin-top: 22px;*/
   padding: 12px;
   resize: vertical;
   color: var(--text);

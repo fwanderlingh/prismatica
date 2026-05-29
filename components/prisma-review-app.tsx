@@ -278,6 +278,7 @@ type NewProjectForm = {
   blindMode: boolean;
   abstractRequiredVotes: number;
   fullTextRequiredVotes: number;
+  extractionRequiredVotes: number;
   maybePolicy: "advance_to_full_text" | "conflict" | "third_vote";
   memberIds: string[];
 };
@@ -333,6 +334,7 @@ const emptyProjectForm: NewProjectForm = {
   blindMode: true,
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
+  extractionRequiredVotes: 2,
   maybePolicy: "advance_to_full_text",
   memberIds: []
 };
@@ -347,6 +349,7 @@ const emptyProjectSettingsForm: ProjectSettingsForm = {
   blindMode: true,
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
+  extractionRequiredVotes: 2,
   maybePolicy: "advance_to_full_text"
 };
 
@@ -864,6 +867,7 @@ export function PrismaReviewApp() {
       blindMode: selectedProject.blindMode,
       abstractRequiredVotes: selectedProject.abstractRequiredVotes,
       fullTextRequiredVotes: selectedProject.fullTextRequiredVotes,
+      extractionRequiredVotes: selectedProject.extractionRequiredVotes,
       maybePolicy: selectedProject.maybePolicy
     });
     setProjectSettingsMessage("");
@@ -872,6 +876,7 @@ export function PrismaReviewApp() {
     selectedProject.blindMode,
     selectedProject.description,
     selectedProject.dueDate,
+    selectedProject.extractionRequiredVotes,
     selectedProject.fullTextRequiredVotes,
     selectedProject.id,
     selectedProject.maybePolicy,
@@ -3168,6 +3173,7 @@ export function PrismaReviewApp() {
             response.isSubmitted
         )
       : [];
+    const requiredExtractionVotes = selectedProject.extractionRequiredVotes;
     const hasMyExtraction = Boolean(activeExtractionResponse?.isSubmitted);
 
     return (
@@ -3182,7 +3188,7 @@ export function PrismaReviewApp() {
             <div>
               <p className="eyebrow">Included reports</p>
               <strong>{projectExtractionReports.length} report{projectExtractionReports.length === 1 ? "" : "s"}</strong>
-              <p className="subtle">At least two submitted extractions are required.</p>
+              <p className="subtle">At least {requiredExtractionVotes} submitted extraction vote{requiredExtractionVotes === 1 ? "" : "s"} required.</p>
             </div>
             <label className="fieldLabel" htmlFor="extraction-report-picker">
               Jump to report
@@ -3244,7 +3250,11 @@ export function PrismaReviewApp() {
           </div>
 
           <aside className="panel extractionFormPanel">
-            <SectionTitle icon={ClipboardCheck} title="Extraction Form" action={`${submittedResponsesForActiveReport.length}/2 submitted`} />
+            <SectionTitle
+              icon={ClipboardCheck}
+              title="Extraction Form"
+              action={`${submittedResponsesForActiveReport.length}/${requiredExtractionVotes} submitted`}
+            />
             <h2>{activeReportForExtraction?.title ?? "Included report"}</h2>
             <p className="subtle">
               {activeStudyForExtraction
@@ -3256,9 +3266,13 @@ export function PrismaReviewApp() {
             <div className="stateRows">
               <StatusRow label="Template" value={`${activeExtractionTemplate.fields.length} fields`} tone="info" />
               <StatusRow
-                label="Dual extraction"
-                value={submittedResponsesForActiveReport.length >= 2 ? "Ready for comparison" : `${submittedResponsesForActiveReport.length}/2 submitted`}
-                tone={submittedResponsesForActiveReport.length >= 2 ? "secure" : "warning"}
+                label="Extraction votes"
+                value={
+                  submittedResponsesForActiveReport.length >= requiredExtractionVotes
+                    ? "Ready for comparison"
+                    : `${submittedResponsesForActiveReport.length}/${requiredExtractionVotes} submitted`
+                }
+                tone={submittedResponsesForActiveReport.length >= requiredExtractionVotes ? "secure" : "warning"}
               />
               <StatusRow label="My extraction" value={hasMyExtraction ? "Submitted" : "Open"} tone={hasMyExtraction ? "secure" : "warning"} />
             </div>
@@ -3660,6 +3674,17 @@ export function PrismaReviewApp() {
                     disabled={!canManageProject}
                   />
                 </label>
+                <label>
+                  <span>Extraction votes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={projectSettingsForm.extractionRequiredVotes}
+                    onChange={(event) => updateProjectSettingsForm("extractionRequiredVotes", Number(event.target.value))}
+                    disabled={!canManageProject}
+                  />
+                </label>
               </div>
               <label className="fieldLabel" htmlFor="project-settings-maybe-policy">
                 Maybe policy
@@ -3913,6 +3938,16 @@ export function PrismaReviewApp() {
                     max={4}
                     value={newProjectForm.fullTextRequiredVotes}
                     onChange={(event) => updateNewProjectForm("fullTextRequiredVotes", Number(event.target.value))}
+                  />
+                </label>
+                <label>
+                  <span>Extraction votes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={newProjectForm.extractionRequiredVotes}
+                    onChange={(event) => updateNewProjectForm("extractionRequiredVotes", Number(event.target.value))}
                   />
                 </label>
               </div>
@@ -4802,7 +4837,10 @@ function getProjectPhaseIndex(stage: ReviewProject["stage"]) {
   if (stage === "full_text") {
     return 2;
   }
-  return 3;
+  if (stage === "extraction") {
+    return 3;
+  }
+  return 4;
 }
 
 function getPhaseNavState(key: ViewKey, stage: ReviewProject["stage"]): PhaseNavState | null {

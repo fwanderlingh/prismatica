@@ -38,6 +38,7 @@ export type ProjectSummary = {
   blindMode: boolean;
   abstractRequiredVotes: number;
   fullTextRequiredVotes: number;
+  extractionRequiredVotes: number;
   maybePolicy: MaybePolicy;
   reviewers: number;
   lastEvent: string;
@@ -225,6 +226,7 @@ export const projectSummary: ProjectSummary = {
   blindMode: true,
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
+  extractionRequiredVotes: 2,
   maybePolicy: "advance_to_full_text",
   reviewers: 8,
   lastEvent: "PRISMA counts recalculated 7 minutes ago"
@@ -256,6 +258,7 @@ export const reviewProjects: ReviewProject[] = [
     blindMode: true,
     abstractRequiredVotes: 2,
     fullTextRequiredVotes: 2,
+    extractionRequiredVotes: 2,
     maybePolicy: "third_vote",
     reviewers: 5,
     lastEvent: "Import batch parsed 2 hours ago",
@@ -282,6 +285,7 @@ export const reviewProjects: ReviewProject[] = [
     blindMode: false,
     abstractRequiredVotes: 2,
     fullTextRequiredVotes: 2,
+    extractionRequiredVotes: 2,
     maybePolicy: "conflict",
     reviewers: 4,
     lastEvent: "Project settings created yesterday",

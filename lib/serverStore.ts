@@ -57,6 +57,7 @@ type NewProjectInput = {
   blindMode?: boolean;
   abstractRequiredVotes?: number;
   fullTextRequiredVotes?: number;
+  extractionRequiredVotes?: number;
   maybePolicy?: ReviewProject["maybePolicy"];
   memberIds?: string[];
 };
@@ -246,6 +247,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
           ...project,
           searchStrategies: typeof project.searchStrategies === "string" ? project.searchStrategies : "",
           fullTextRequiredVotes: clampFullTextVoteCount(project.fullTextRequiredVotes),
+          extractionRequiredVotes: clampVoteCount(project.extractionRequiredVotes),
           ownerIds: normalizeOwnerIds(project, userIds),
           memberIds: normalizeMemberIds(project, userIds)
         }))
@@ -878,6 +880,7 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     blindMode: Boolean(input.blindMode ?? true),
     abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes),
     fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes),
+    extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes),
     maybePolicy: input.maybePolicy ?? "advance_to_full_text",
     reviewers: memberIds.length,
     lastEvent: "Project created just now",
@@ -939,12 +942,14 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
           blindMode: Boolean(input.blindMode ?? project.blindMode),
           abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes ?? project.abstractRequiredVotes),
           fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes ?? project.fullTextRequiredVotes),
+          extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes ?? project.extractionRequiredVotes),
           maybePolicy,
           updatedAt: toEuToday(),
           lastEvent: "Project settings updated"
         }
       : candidate
   );
+  syncProjectWorkflowCounts(state, projectId);
   appendEvent(state, currentUser.name, "Updated project settings", projectId);
   writeState(state);
 
@@ -1961,18 +1966,49 @@ function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
       .filter((decision) => decision.projectId === projectId && decision.stage === "title_abstract" && decision.isCurrent)
       .map((decision) => decision.studyId)
   );
-  const includedStudies = state.studies.filter((study) => study.projectId === projectId && study.stage === "extraction").length;
+  const includedStudyIds = new Set(
+    state.studies
+      .filter((study) => study.projectId === projectId && study.stage === "extraction")
+      .map((study) => study.id)
+  );
+  const includedStudies = includedStudyIds.size;
+  const includedReports = reports.filter((report) => includedStudyIds.has(report.studyId));
 
   state.projects = state.projects.map((project) => {
     if (project.id !== projectId) {
       return project;
     }
 
+    const activeExtractionTemplate = state.extractionTemplates.find(
+      (template) => template.projectId === project.id && template.isActive
+    );
+    const extractionReadyForCompletion =
+      includedStudies > 0 &&
+      Boolean(activeExtractionTemplate) &&
+      includedReports.every((report) => {
+        const submittedVotes = state.extractionResponses.filter(
+          (response) =>
+            response.projectId === project.id &&
+            response.reportId === report.id &&
+            response.templateId === activeExtractionTemplate?.id &&
+            response.isSubmitted
+        ).length;
+        return submittedVotes >= project.extractionRequiredVotes;
+      });
+
     const conflictCount = countProjectWorkflowConflicts(state, project);
     return {
       ...project,
       status: project.status === "archived" ? "archived" : reports.length > 0 || screenedStudyIds.size > 0 || project.recordsTotal > 0 ? "active" : "draft",
-      stage: includedStudies > 0 ? "extraction" : reports.length > 0 ? "full_text" : project.recordsTotal > 0 ? "screening" : "import",
+      stage: extractionReadyForCompletion
+        ? "complete"
+        : includedStudies > 0
+          ? "extraction"
+          : reports.length > 0
+            ? "full_text"
+            : project.recordsTotal > 0
+              ? "screening"
+              : "import",
       recordsScreened: Math.min(Math.max(project.recordsScreened, screenedStudyIds.size), project.recordsTotal),
       conflicts: conflictCount,
       studiesIncluded: includedStudies,
