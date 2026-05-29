@@ -1866,16 +1866,20 @@ function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: Rev
 
   if (evaluation.state === "advance_full_text") {
     let advancedStudy: Study | undefined;
+    let transitionedToFullText = false;
     state.studies = state.studies.map((study) => {
       if (study.id !== studyId || study.projectId !== project.id) {
         return study;
       }
-      advancedStudy = { ...study, stage: "full_text" };
+      transitionedToFullText = study.stage !== "full_text";
+      advancedStudy = transitionedToFullText ? { ...study, stage: "full_text" } : study;
       return advancedStudy;
     });
     if (advancedStudy) {
       upsertReportForStudy(state, project.id, advancedStudy, actor);
-      appendEvent(state, actor, "Advanced study to full-text review", studyId);
+      if (transitionedToFullText) {
+        appendEvent(state, actor, "Advanced study to full-text review", studyId);
+      }
     }
   } else {
     const existingReport = state.reports.find((report) => report.projectId === project.id && report.studyId === studyId);

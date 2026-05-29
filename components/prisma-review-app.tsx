@@ -118,10 +118,10 @@ const defaultAuthSettings: AppAuthSettings = {
 const globalNavItems: NavItem[] = [
   { key: "dashboard", label: "All Reviews", path: "/dashboard", Icon: Home },
   { key: "newProject", label: "New Review", path: "/projects/new", Icon: FolderPlus },
-  { key: "about", label: "About", path: "/about", Icon: Info },
   { key: "adminReviews", label: "Review Admin", path: "/admin/reviews", Icon: LayoutDashboard },
   { key: "registeredUsers", label: "Registered Users", path: "/admin/users", Icon: Users },
-  { key: "profile", label: "Profile", path: "/profile" }
+  { key: "profile", label: "Profile", path: "/profile" },
+  { key: "about", label: "About", path: "/about", Icon: Info }
 ];
 
 const projectNavItems: NavItem[] = [
