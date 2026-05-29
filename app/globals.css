@@ -635,6 +635,10 @@ h3 {
   gap: calc(8px * var(--ui-scale));
 }
 
+.exportPrimaryAction {
+  margin-top: calc(10px * var(--ui-scale));
+}
+
 .ghostButton,
 .primaryButton,
 .dangerButton,

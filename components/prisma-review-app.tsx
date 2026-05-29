@@ -1930,10 +1930,6 @@ export function PrismaReviewApp() {
   }
 
   function renderPortfolioDashboard() {
-    const totalRecords = userProjects.reduce((total, project) => total + project.recordsTotal, 0);
-    const totalConflicts = userProjects.reduce((total, project) => total + project.conflicts, 0);
-    const activeReviews = userProjects.filter((project) => project.status === "active").length;
-
     return (
       <div className="viewStack">
         <section className="overviewBand">
@@ -1994,11 +1990,6 @@ export function PrismaReviewApp() {
                     <i style={{ width: `${progress}%` }} />
                   </div>
                 </div>
-                <div className="projectStats">
-                  <span>{project.reviewers} reviewers</span>
-                  <span>{project.conflicts} conflicts</span>
-                  <span>{project.studiesIncluded} included</span>
-                </div>
                 <div className="buttonRow">
                   <button className="primaryButton" type="button" onClick={() => openProject(project.id, "projectDashboard")}>
                     <LayoutDashboard size={17} />
@@ -2022,32 +2013,6 @@ export function PrismaReviewApp() {
           />
         </section>
         )}
-
-        <section className="metricGrid" aria-label="Portfolio metrics">
-          <Metric label="Accessible reviews" value={userProjects.length.toString()} tone="blue" detail={`${activeReviews} active review projects`} />
-          <Metric label="Records across reviews" value={formatNumber(totalRecords)} tone="teal" detail="Counts visible by membership" />
-          <Metric label="Open conflicts" value={totalConflicts.toString()} tone="amber" detail="Title/abstract and full-text queues" />
-          <Metric label="Team members" value={users.length.toString()} tone="green" detail="Users with review-specific access" />
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={Users} title="Users and Membership" action="Demo access model" />
-          <div className="userGrid">
-            {users.map((user) => (
-              <article className="userCard" key={user.id}>
-                <span className="avatar" style={{ background: user.avatarColor }}>
-                  {user.initials}
-                </span>
-                <div>
-                  <strong>{user.name}</strong>
-                  <span>{user.title}</span>
-                  <small>{projects.filter((project) => project.memberIds.includes(user.id) || project.ownerId === user.id).length} reviews</small>
-                  <small>{projects.filter((project) => project.memberIds.includes(user.id) || project.ownerIds.includes(user.id) || project.ownerId === user.id).length} reviews</small>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
       </div>
     );
   }
@@ -3802,6 +3767,7 @@ export function PrismaReviewApp() {
 
   function renderExports() {
     const exportMessageIsSuccess = /downloaded|generated|exported/i.test(exportMessage);
+    const canExportExtractionCsv = Boolean(activeExtractionTemplate) && activeCounts.studiesIncluded > 0;
     const validations = [
       {
         label: "Records identified reconcile with removals and screened records",
@@ -3833,22 +3799,6 @@ export function PrismaReviewApp() {
             <h1>Flow Diagram and Audit Package</h1>
             <p className="subtle">Counts are generated from workflow events, current decisions, and report retrieval status.</p>
           </div>
-          <div className="toolbarCluster">
-            <button className="ghostButton" type="button" title="Download SVG">
-              <Download size={17} />
-              SVG
-            </button>
-            <button
-              className="primaryButton"
-              type="button"
-              title="Download consensus extraction CSV"
-              onClick={downloadConsensusExtractionCsv}
-              disabled={!activeExtractionTemplate || activeCounts.studiesIncluded === 0}
-            >
-              <FileText size={17} />
-              Export Extraction CSV
-            </button>
-          </div>
         </section>
 
         {exportMessage ? (
@@ -3859,9 +3809,30 @@ export function PrismaReviewApp() {
         ) : null}
 
         <section className="exportLayout">
-          <div className="panel">
-            <SectionTitle icon={BarChart3} title="Flow Preview" action="PRISMA 2020" />
-            <PrismaFlow counts={activeCounts} reportsExcludedTotal={reportsExcludedTotal} />
+          <div className="viewStack">
+            <div className="panel">
+              <SectionTitle icon={FileText} title="Consensus Dataset Export" action={canExportExtractionCsv ? "Ready" : "Blocked"} />
+              <p className="subtle">
+                Export the finalized consensus dataset used for downstream analysis. The CSV includes one row per included study with consensus-approved fields only.
+              </p>
+              <div className="buttonRow exportPrimaryAction">
+                <button
+                  className="primaryButton"
+                  type="button"
+                  title="Download consensus extraction CSV"
+                  onClick={downloadConsensusExtractionCsv}
+                  disabled={!canExportExtractionCsv}
+                >
+                  <FileText size={17} />
+                  Export Extraction CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="panel">
+              <SectionTitle icon={BarChart3} title="Flow Preview" action="PRISMA 2020" />
+              <PrismaFlow counts={activeCounts} reportsExcludedTotal={reportsExcludedTotal} />
+            </div>
           </div>
 
           <div className="panel">
@@ -3873,11 +3844,6 @@ export function PrismaReviewApp() {
                   <span>{validation.label}</span>
                 </div>
               ))}
-            </div>
-            <div className="exportHistory">
-              <strong>Recent exports</strong>
-              <span>PRISMA SVG · generated today at 13:41</span>
-              <span>Audit CSV · generated yesterday at 18:05</span>
             </div>
           </div>
         </section>
@@ -5140,9 +5106,11 @@ function getProjectPhaseIndex(stage: ReviewProject["stage"]) {
 function getPhaseNavState(key: ViewKey, stage: ReviewProject["stage"]): PhaseNavState | null {
   const navPhaseIndex: Partial<Record<ViewKey, number>> = {
     imports: 0,
+    dedup: 1,
     screening: 1,
     fullText: 2,
-    extraction: 3
+    extraction: 3,
+    consensus: 3
   };
   const phaseIndex = navPhaseIndex[key];
   if (phaseIndex === undefined) {
