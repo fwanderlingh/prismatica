@@ -14,6 +14,8 @@ export type ViewKey =
   | "settings"
   | "newProject"
   | "about"
+  | "adminReviews"
+  | "registeredUsers"
   | "profile";
 
 export type AppUser = {

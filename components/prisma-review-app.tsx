@@ -119,6 +119,8 @@ const globalNavItems: NavItem[] = [
   { key: "dashboard", label: "All Reviews", path: "/dashboard", Icon: Home },
   { key: "newProject", label: "New Review", path: "/projects/new", Icon: FolderPlus },
   { key: "about", label: "About", path: "/about", Icon: Info },
+  { key: "adminReviews", label: "Review Admin", path: "/admin/reviews", Icon: LayoutDashboard },
+  { key: "registeredUsers", label: "Registered Users", path: "/admin/users", Icon: Users },
   { key: "profile", label: "Profile", path: "/profile" }
 ];
 
@@ -135,7 +137,7 @@ const projectNavItems: NavItem[] = [
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
 
-const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "profile"];
+const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "profile"];
 const viewKeySet = new Set<ViewKey>([
   "dashboard",
   "projectDashboard",
@@ -150,6 +152,8 @@ const viewKeySet = new Set<ViewKey>([
   "settings",
   "newProject",
   "about",
+  "adminReviews",
+  "registeredUsers",
   "profile"
 ]);
 
@@ -176,6 +180,10 @@ function buildPathForState(view: ViewKey, projectId: string) {
       return "/projects/new";
     case "about":
       return "/about";
+    case "adminReviews":
+      return "/admin/reviews";
+    case "registeredUsers":
+      return "/admin/users";
     case "profile":
       return "/profile";
     case "projectDashboard":
@@ -214,6 +222,12 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
   }
   if (normalizedPath === "/about") {
     return { view: "about" };
+  }
+  if (normalizedPath === "/admin/reviews") {
+    return { view: "adminReviews" };
+  }
+  if (normalizedPath === "/admin/users") {
+    return { view: "registeredUsers" };
   }
   if (normalizedPath === "/profile") {
     return { view: "profile" };
@@ -492,7 +506,7 @@ export function PrismaReviewApp() {
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
   const userProjects = useMemo(
     () => (currentUser.isAdmin ? projects : projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id)),
-    [currentUser.id, projects]
+    [currentUser.id, currentUser.isAdmin, projects]
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
   const isProjectView = isProjectScopedView(activeView);
@@ -1782,6 +1796,10 @@ export function PrismaReviewApp() {
         return renderNewProject();
       case "about":
         return renderAbout();
+      case "adminReviews":
+        return currentUser.isAdmin ? renderAdminReviews() : renderProfile();
+      case "registeredUsers":
+        return currentUser.isAdmin ? renderRegisteredUsers() : renderProfile();
       case "profile":
         return renderProfile();
       default:
@@ -4004,9 +4022,177 @@ export function PrismaReviewApp() {
     );
   }
 
-  function renderProfile() {
-    const ownedProjects = projects.filter((project) => project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id);
+  function renderAdminReviews() {
+    return (
+      <div className="viewStack">
+        <section className="overviewBand">
+          <div>
+            <p className="eyebrow">Administration</p>
+            <h1>Review Admin</h1>
+            <p className="subtle">Inspect every review workspace, open settings, and remove obsolete or spam projects.</p>
+          </div>
+        </section>
 
+        {dashboardMessage ? (
+          <section className="panel">
+            <div className={dashboardMessage.startsWith("Deleted review") ? "validationItem ok" : "validationItem blocked"}>
+              {dashboardMessage.startsWith("Deleted review") ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>{dashboardMessage}</span>
+            </div>
+          </section>
+        ) : null}
+
+        <section className="panel">
+          <SectionTitle icon={LayoutDashboard} title="Registered Reviews" action={`${projects.length} total`} />
+          <div className="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Review</th>
+                  <th>Owners</th>
+                  <th>Status</th>
+                  <th>Records</th>
+                  <th>Updated</th>
+                  <th>Open</th>
+                  <th>Settings</th>
+                  <th>Delete</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((project) => {
+                  const ownerNames = project.ownerIds
+                    .map((ownerId) => users.find((user) => user.id === ownerId)?.name)
+                    .filter(Boolean)
+                    .join(", ");
+
+                  return (
+                    <tr key={project.id}>
+                      <td>
+                        <strong>{project.title}</strong>
+                        <span>{project.organization}</span>
+                      </td>
+                      <td>{ownerNames || "Unassigned"}</td>
+                      <td>
+                        <Badge label={formatProjectPhase(project.stage)} tone={projectPhaseBadgeTone(project.stage)} />
+                      </td>
+                      <td>{numberFormatter.format(project.recordsTotal)}</td>
+                      <td>{formatEuDate(project.updatedAt)}</td>
+                      <td>
+                        <button className="ghostButton" type="button" onClick={() => openProject(project.id)}>
+                          <ChevronRight size={17} />
+                          Open
+                        </button>
+                      </td>
+                      <td>
+                        <button className="ghostButton" type="button" onClick={() => openProject(project.id, "settings")}>
+                          <Settings size={17} />
+                          Edit
+                        </button>
+                      </td>
+                      <td>
+                        <button className="dangerButton" type="button" onClick={() => adminDeleteProject(project)}>
+                          <Trash2 size={17} />
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderRegisteredUsers() {
+    return (
+      <div className="viewStack">
+        <section className="overviewBand">
+          <div>
+            <p className="eyebrow">Administration</p>
+            <h1>Registered Users</h1>
+            <p className="subtle">Review server accounts, reset access for non-admin users, delete spam accounts, and control public registration.</p>
+          </div>
+        </section>
+
+        <section className="settingsGrid">
+          <div className="panel">
+            <SectionTitle icon={Users} title="User Accounts" action={`${users.length} registered`} />
+            <div className="memberPicker">
+              {users.map((user) => (
+                <div
+                  className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"} adminManagedUserSwitch`}
+                  key={user.id}
+                >
+                  <span className="avatar" style={{ background: user.avatarColor }}>
+                    {user.initials}
+                  </span>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <small>
+                      {user.email} · {user.title}
+                      {user.isAdmin ? " · administrator" : ""}
+                    </small>
+                  </div>
+                  <div className="userSwitchActions">
+                    <button
+                      className="ghostButton"
+                      type="button"
+                      disabled={user.id === currentUser.id || user.isAdmin}
+                      onClick={() => adminResetUserPassword(user)}
+                    >
+                      Reset password
+                    </button>
+                    <button
+                      className="dangerButton"
+                      type="button"
+                      disabled={user.id === currentUser.id || user.isAdmin}
+                      onClick={() => adminDeleteUser(user)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {adminDirectoryMessage ? (
+              <div className={adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? "validationItem ok" : "validationItem blocked"}>
+                {adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{adminDirectoryMessage}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="panel">
+            <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
+            <label className="toggleRow">
+              <input
+                type="checkbox"
+                checked={authSettings.registrationEnabled}
+                onChange={(event) => updateRegistrationSetting(event.target.checked)}
+              />
+              <span />
+              <strong>Allow public registration</strong>
+            </label>
+            <div className="stateRows">
+              <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
+              <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
+            </div>
+            {authSettingsMessage ? (
+              <div className={authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? "validationItem ok" : "validationItem blocked"}>
+                {authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{authSettingsMessage}</span>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderProfile() {
     return (
       <div className="viewStack">
         <section className="overviewBand">
@@ -4028,176 +4214,53 @@ export function PrismaReviewApp() {
           </button>
         </section>
 
-        <section className="settingsGrid">
-          <div className="panel">
-            <SectionTitle icon={UserCircle} title="Account" action="Server session" />
-            <form className="accountForm" onSubmit={updateAccount}>
-              <label>
-                <span>Organization</span>
-                <input
-                  value={accountForm.organization}
-                  onChange={(event) => setAccountForm((previous) => ({ ...previous, organization: event.target.value }))}
-                />
-              </label>
-              <label>
-                <span>Role title</span>
-                <input
-                  value={accountForm.title}
-                  onChange={(event) => setAccountForm((previous) => ({ ...previous, title: event.target.value }))}
-                />
-              </label>
-              <label>
-                <span>Current password</span>
-                <input
-                  type="password"
-                  value={accountForm.currentPassword}
-                  onChange={(event) => setAccountForm((previous) => ({ ...previous, currentPassword: event.target.value }))}
-                />
-              </label>
-              <label>
-                <span>New password</span>
-                <input
-                  type="password"
-                  value={accountForm.newPassword}
-                  onChange={(event) => setAccountForm((previous) => ({ ...previous, newPassword: event.target.value }))}
-                />
-              </label>
-              <div className="profileRows">
-                <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
-                <StatusRow label="Owned reviews" value={ownedProjects.length.toString()} tone="warning" />
-              </div>
-              {accountMessage ? (
-                <div className={accountMessage === "Account updated." ? "validationItem ok" : "validationItem blocked"}>
-                  {accountMessage === "Account updated." ? <Check size={17} /> : <AlertTriangle size={17} />}
-                  <span>{accountMessage}</span>
-                </div>
-              ) : null}
-              <button className="primaryButton" type="submit">
-                <Check size={17} />
-                Save Account
-              </button>
-            </form>
-          </div>
-
-          <div className="panel">
-            <SectionTitle icon={Users} title="Team Directory" action={currentUser.isAdmin ? "Admin controls enabled" : "Server accounts"} />
-            <div className="memberPicker">
-              {users.map((user) => (
-                <div
-                  className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"}${currentUser.isAdmin ? " adminManagedUserSwitch" : ""}`}
-                  key={user.id}
-                >
-                  <span className="avatar" style={{ background: user.avatarColor }}>
-                    {user.initials}
-                  </span>
-                  <div>
-                    <strong>{user.name}</strong>
-                    <small>
-                      {user.email}
-                      {user.isAdmin ? " · administrator" : ""}
-                    </small>
-                  </div>
-                  {currentUser.isAdmin ? (
-                    <div className="userSwitchActions">
-                      <button
-                        className="ghostButton"
-                        type="button"
-                        disabled={user.id === currentUser.id || user.isAdmin}
-                        onClick={() => adminResetUserPassword(user)}
-                      >
-                        Reset password
-                      </button>
-                      <button
-                        className="dangerButton"
-                        type="button"
-                        disabled={user.id === currentUser.id || user.isAdmin}
-                        onClick={() => adminDeleteUser(user)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+        <section className="panel">
+          <SectionTitle icon={UserCircle} title="Account" action="Server session" />
+          <form className="accountForm" onSubmit={updateAccount}>
+            <label>
+              <span>Organization</span>
+              <input
+                value={accountForm.organization}
+                onChange={(event) => setAccountForm((previous) => ({ ...previous, organization: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>Role title</span>
+              <input
+                value={accountForm.title}
+                onChange={(event) => setAccountForm((previous) => ({ ...previous, title: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>Current password</span>
+              <input
+                type="password"
+                value={accountForm.currentPassword}
+                onChange={(event) => setAccountForm((previous) => ({ ...previous, currentPassword: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>New password</span>
+              <input
+                type="password"
+                value={accountForm.newPassword}
+                onChange={(event) => setAccountForm((previous) => ({ ...previous, newPassword: event.target.value }))}
+              />
+            </label>
+            <div className="profileRows">
+              <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
             </div>
-            {adminDirectoryMessage ? (
-              <div className={adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? "validationItem ok" : "validationItem blocked"}>
-                {adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? <Check size={17} /> : <AlertTriangle size={17} />}
-                <span>{adminDirectoryMessage}</span>
+            {accountMessage ? (
+              <div className={accountMessage === "Account updated." ? "validationItem ok" : "validationItem blocked"}>
+                {accountMessage === "Account updated." ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{accountMessage}</span>
               </div>
             ) : null}
-          </div>
-
-          {currentUser.isAdmin ? (
-            <div className="panel">
-              <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
-              <label className="toggleRow">
-                <input
-                  type="checkbox"
-                  checked={authSettings.registrationEnabled}
-                  onChange={(event) => updateRegistrationSetting(event.target.checked)}
-                />
-                <span />
-                <strong>Allow public registration</strong>
-              </label>
-              <div className="stateRows">
-                <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
-                <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
-              </div>
-              {authSettingsMessage ? (
-                <div className={authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? "validationItem ok" : "validationItem blocked"}>
-                  {authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? <Check size={17} /> : <AlertTriangle size={17} />}
-                  <span>{authSettingsMessage}</span>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={LayoutDashboard} title="My Reviews" action={`${userProjects.length} accessible`} />
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Review</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Updated</th>
-                  <th>Open</th>
-                  {currentUser.isAdmin ? <th>Delete</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {userProjects.map((project) => (
-                  <tr key={project.id}>
-                    <td>
-                      <strong>{project.title}</strong>
-                      <span>{project.organization}</span>
-                    </td>
-                    <td>{project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id ? "Owner" : "Member"}</td>
-                    <td>
-                      <Badge label={formatProjectPhase(project.stage)} tone={projectPhaseBadgeTone(project.stage)} />
-                    </td>
-                    <td>{formatEuDate(project.updatedAt)}</td>
-                    <td>
-                      <button className="ghostButton" type="button" onClick={() => openProject(project.id)}>
-                        <ChevronRight size={17} />
-                        Open
-                      </button>
-                    </td>
-                    {currentUser.isAdmin ? (
-                      <td>
-                        <button className="dangerButton" type="button" onClick={() => adminDeleteProject(project)}>
-                          Delete
-                        </button>
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <button className="primaryButton" type="submit">
+              <Check size={17} />
+              Save Account
+            </button>
+          </form>
         </section>
       </div>
     );
@@ -4397,7 +4460,10 @@ export function PrismaReviewApp() {
         ) : null}
 
         <nav className="navList">
-          {(isProjectView ? projectNavItems : globalNavItems).map(({ key, label, path, Icon }) => {
+          {(isProjectView
+            ? projectNavItems
+            : globalNavItems.filter((item) => !["adminReviews", "registeredUsers"].includes(item.key) || currentUser.isAdmin)
+          ).map(({ key, label, path, Icon }) => {
             const phaseState = isProjectView ? getPhaseNavState(key, selectedProject.stage) : null;
             const navClassName = ["navItem", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
               .filter(Boolean)
