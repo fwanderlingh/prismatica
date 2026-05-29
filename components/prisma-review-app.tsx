@@ -2007,7 +2007,7 @@ export function PrismaReviewApp() {
                 ["Inclusion", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
                 [
                   "Extract",
-                  `${activeCounts.studiesIncluded} item${activeCounts.studiesIncluded === 1 ? "" : "s"}`,
+                  `${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`,
                   getWorkflowStepState("extraction", selectedProject.stage)
                 ],
                 ["Export", "PRISMA 2020", activeCounts.studiesIncluded > 0 ? "ready" : "pending"]
@@ -2020,6 +2020,17 @@ export function PrismaReviewApp() {
             </div>
             <div className="stateRows">
               <StatusRow label="Review phase" value={formatProjectPhase(selectedProject.stage)} tone={projectPhaseStatusTone(selectedProject.stage)} />
+              <StatusRow
+                label="Extraction progress"
+                value={`${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`}
+                tone={
+                  activeCounts.studiesIncluded === 0
+                    ? "info"
+                    : activeCounts.studiesExtracted >= activeCounts.studiesIncluded
+                      ? "secure"
+                      : "warning"
+                }
+              />
               <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Server-enforced visibility model" : "Disabled"} tone="secure" />
               <StatusRow label="Maybe policy" value={formatMaybePolicy(selectedProject.maybePolicy)} tone="info" />
               <StatusRow label="Unresolved conflicts" value={`${selectedProject.conflicts} open conflicts`} tone="warning" />
