@@ -83,6 +83,14 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 Open `http://127.0.0.1:3000`.
 
+For encrypted local development, run:
+
+```bash
+npm run dev:https -- --hostname 127.0.0.1 --port 3000
+```
+
+This uses Next.js experimental HTTPS support with a local certificate.
+
 No demo reviewer accounts are pre-created. Register the first reviewer account from the sign-in screen, then create review projects and invite team members from project settings.
 
 A separate administrator account is created automatically on startup. By default it uses:
@@ -151,6 +159,42 @@ If public clients cannot connect:
 
 - Ensure inbound TCP `3000` is allowed by the host firewall and any upstream network firewall.
 - Ensure the server process is still running and listening on `0.0.0.0:3000`.
+
+## HTTPS In Production (Let's Encrypt)
+
+Recommended production setup is to keep Next.js on localhost and terminate TLS at Caddy.
+
+1. Point your domain DNS A/AAAA record to this server.
+2. Install Caddy on the host.
+3. Copy `deploy/caddy/Caddyfile` to `/etc/caddy/Caddyfile` and replace `prismatica.example.com` with your real domain.
+4. Build and run Prismatica behind localhost:
+
+```bash
+npm install
+npm run build
+```
+
+5. Install the systemd service from `deploy/caddy/prismatica.service`:
+
+```bash
+sudo cp deploy/caddy/prismatica.service /etc/systemd/system/prismatica.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now prismatica
+```
+
+6. Reload Caddy:
+
+```bash
+sudo systemctl reload caddy
+```
+
+Caddy will automatically request and renew a trusted Let's Encrypt certificate.
+
+Important:
+
+- Keep `PRISMATICA_SECURE_COOKIES=true` in production.
+- Keep Next.js bound to `127.0.0.1:3000` when reverse-proxied by Caddy.
+- Open inbound TCP ports 80 and 443 in your firewall.
 
 ## Type Check
 

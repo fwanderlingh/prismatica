@@ -1,0 +1,15 @@
+# Replace prismatica.example.com with your real domain before deploying.
+prismatica.example.com {
+  encode zstd gzip
+
+  # Reverse proxy to the local Next.js process.
+  reverse_proxy 127.0.0.1:3000
+
+  # Security headers for browser hardening.
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}

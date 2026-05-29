@@ -1,0 +1,20 @@
+[Unit]
+Description=Prismatica Next.js server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/prismatica
+Environment=NODE_ENV=production
+Environment=PRISMATICA_SECURE_COOKIES=true
+Environment=PRISMATICA_SESSION_SECRET=replace-with-a-long-random-string
+Environment=PRISMATICA_DATA_FILE=/var/lib/prismatica/prismatica-state.json
+Environment=PRISMATICA_ADMIN_PASSWORD=replace-with-a-strong-password
+ExecStart=/usr/bin/npm run start:prod
+Restart=always
+RestartSec=5
+User=prismatica
+Group=prismatica
+
+[Install]
+WantedBy=multi-user.target
