@@ -1,4 +1,5 @@
 :root {
+  --ui-scale: 0.9;
   --bg: #f5f7f8;
   --surface: #ffffff;
   --surface-strong: #f0f4f6;
@@ -18,8 +19,8 @@
   --green: #2f7d4f;
   --green-soft: #e8f5ec;
   --violet: #6d5aa7;
-  --shadow: 0 18px 50px rgba(30, 45, 55, 0.09);
-  --radius: 8px;
+  --shadow: 0 calc(18px * var(--ui-scale)) calc(50px * var(--ui-scale)) rgba(30, 45, 55, 0.09);
+  --radius: calc(8px * var(--ui-scale));
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --font-logo: "Helvetica Neue", "Segoe UI Light", "Roboto Light", ui-sans-serif, system-ui, sans-serif; 
@@ -32,6 +33,7 @@
 html {
   min-height: 100%;
   background: var(--bg);
+  font-size: calc(16px * var(--ui-scale));
 }
 
 body {
@@ -77,8 +79,8 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid rgba(22, 125, 127, 0.22);
-  outline-offset: 2px;
+  outline: calc(3px * var(--ui-scale)) solid rgba(22, 125, 127, 0.22);
+  outline-offset: calc(2px * var(--ui-scale));
 }
 
 .hiddenFileInput {
@@ -103,7 +105,7 @@ h3 {
 
 .appFrame {
   display: grid;
-  grid-template-columns: 286px minmax(0, 1fr);
+  grid-template-columns: calc(286px * var(--ui-scale)) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -112,20 +114,20 @@ h3 {
   top: 0;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: calc(22px * var(--ui-scale));
   height: 100vh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 22px 18px;
-  border-right: 1px solid var(--border);
+  padding: calc(22px * var(--ui-scale)) calc(18px * var(--ui-scale));
+  border-right: calc(1px * var(--ui-scale)) solid var(--border);
   background: rgba(255, 255, 255, 0.84);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(calc(14px * var(--ui-scale)));
   -webkit-overflow-scrolling: touch;
 }
 
 .sidebarHeader {
   display: flex;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
   align-items: center;
   justify-content: space-between;
   min-width: 0;
@@ -138,7 +140,7 @@ h3 {
 .brandBlock {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
   min-width: 0;
 }
 
@@ -166,7 +168,7 @@ h3 {
 }
 
 .brandBlock span {
-  margin-top: 2px;
+  margin-top: calc(2px * var(--ui-scale));
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -184,30 +186,30 @@ h3 {
   overflow: visible;
   background: transparent;
   border: 0;
-  padding-left: 5px;
+  padding-left: calc(5px * var(--ui-scale));
 }
 
 .brandMarkImage img {
   display: block;
-  width: 40px;
-  height: 40px;
+  width: calc(40px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
   object-fit: contain;
 }
 
 .navList {
   display: grid;
-  gap: 6px;
+  gap: calc(6px * var(--ui-scale));
 }
 
 .navItem {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: calc(11px * var(--ui-scale));
   width: 100%;
-  min-height: 42px;
-  padding: 0 12px;
+  min-height: calc(42px * var(--ui-scale));
+  padding: 0 calc(12px * var(--ui-scale));
   color: #354149;
-  border: 1px solid transparent;
+  border: calc(1px * var(--ui-scale)) solid transparent;
   border-radius: var(--radius);
   background: transparent;
   text-align: left;
@@ -225,7 +227,7 @@ h3 {
 .navItem.phase-current .navPhaseMarker {
   border-color: var(--amber);
   background: var(--surface);
-  /*box-shadow: inset 0 0 0 3px var(--teal);*/
+  /*box-shadow: inset 0 0 0 calc(3px * var(--ui-scale)) var(--teal);*/
 }
 
 .navItem.phase-pending .navPhaseMarker {
@@ -236,11 +238,11 @@ h3 {
 .navPhaseMarker {
   display: block;
   flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
+  width: calc(10px * var(--ui-scale));
+  height: calc(10px * var(--ui-scale));
   margin-left: auto;
-  border: 2px solid var(--border);
-  border-radius: 999px;
+  border: calc(2px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(999px * var(--ui-scale));
 }
 
 .navItem span {
@@ -252,11 +254,11 @@ h3 {
 .navAvatar {
   display: grid;
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: calc(22px * var(--ui-scale));
+  height: calc(22px * var(--ui-scale));
   place-items: center;
   color: #ffffff;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--ui-scale));
   font-size: 0.66rem;
   font-weight: 850;
   line-height: 1;
@@ -275,12 +277,12 @@ h3 {
 
 .sidebarFooter {
   display: flex;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
   align-items: flex-start;
   margin-top: auto;
-  padding: 12px;
+  padding: calc(12px * var(--ui-scale));
   color: #25555a;
-  border: 1px solid #c9dedc;
+  border: calc(1px * var(--ui-scale)) solid #c9dedc;
   border-radius: var(--radius);
   background: #eef8f7;
   font-size: 0.83rem;
@@ -289,16 +291,16 @@ h3 {
 
 .projectContext {
   display: grid;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
+  gap: calc(12px * var(--ui-scale));
+  padding: calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
 
 .projectContext > div {
   display: grid;
-  gap: 7px;
+  gap: calc(7px * var(--ui-scale));
 }
 
 .projectContext strong {
@@ -321,7 +323,7 @@ h3 {
 
 .mainArea {
   min-width: 0;
-  padding: 18px 22px 34px;
+  padding: calc(18px * var(--ui-scale)) calc(22px * var(--ui-scale)) calc(34px * var(--ui-scale));
 }
 
 .overviewBand,
@@ -334,15 +336,15 @@ h3 {
 
 .loginShell {
   display: grid;
-  grid-template-columns: minmax(320px, 460px);
+  grid-template-columns: minmax(calc(320px * var(--ui-scale)), calc(460px * var(--ui-scale)));
   justify-content: center;
   align-content: center;
   min-height: 100vh;
-  padding: 28px;
+  padding: calc(28px * var(--ui-scale));
 }
 
 .loginPanel {
-  border: 1px solid var(--border);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
@@ -351,8 +353,8 @@ h3 {
 .loginPanel {
   display: grid;
   align-content: space-between;
-  gap: 34px;
-  padding: 26px;
+  gap: calc(34px * var(--ui-scale));
+  padding: calc(26px * var(--ui-scale));
 }
 
 .loginBrand {
@@ -372,32 +374,32 @@ h3 {
 }
 
 .singleAuthTab button {
-  flex: 0 1 220px;
+  flex: 0 1 calc(220px * var(--ui-scale));
 }
 
 .loginForm {
   display: grid;
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
 }
 
 .authLoadingPanel {
-  gap: 24px;
+  gap: calc(24px * var(--ui-scale));
 }
 
 .authLoadingBody {
   display: grid;
   justify-items: center;
-  gap: 12px;
-  padding: 28px 0 8px;
+  gap: calc(12px * var(--ui-scale));
+  padding: calc(28px * var(--ui-scale)) 0 calc(8px * var(--ui-scale));
   text-align: center;
 }
 
 .authLoadingSpinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid var(--teal-soft);
+  width: calc(24px * var(--ui-scale));
+  height: calc(24px * var(--ui-scale));
+  border: calc(3px * var(--ui-scale)) solid var(--teal-soft);
   border-top-color: var(--teal);
-  border-radius: 999px;
+  border-radius: calc(999px * var(--ui-scale));
   animation: authSpin 0.9s linear infinite;
 }
 
@@ -408,7 +410,7 @@ h3 {
 }
 
 .loginForm h1 {
-  margin-top: 5px;
+  margin-top: calc(5px * var(--ui-scale));
   font-size: 1.82rem;
   line-height: 1.12;
 }
@@ -416,7 +418,7 @@ h3 {
 .loginForm label,
 .projectForm label {
   display: grid;
-  gap: 7px;
+  gap: calc(7px * var(--ui-scale));
 }
 
 .loginForm label span,
@@ -429,9 +431,9 @@ h3 {
 
 .passwordField {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr) calc(42px * var(--ui-scale));
   align-items: center;
-  border: 1px solid var(--border);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -443,12 +445,12 @@ h3 {
 
 .passwordField button {
   display: grid;
-  width: 42px;
-  height: 40px;
+  width: calc(42px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
   place-items: center;
   color: var(--muted);
   border: 0;
-  border-left: 1px solid var(--border);
+  border-left: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: 0 var(--radius) var(--radius) 0;
   background: transparent;
 }
@@ -461,14 +463,14 @@ h3 {
 .captchaField {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
   align-items: center;
 }
 
 .captchaField strong {
-  min-width: 72px;
-  padding: 10px 11px;
-  border: 1px solid var(--border);
+  min-width: calc(72px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale)) calc(11px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
   font-family: var(--font-sans);
@@ -476,9 +478,9 @@ h3 {
 }
 
 .captchaField button {
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
+  min-height: calc(42px * var(--ui-scale));
+  padding: 0 calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
   color: var(--muted);
@@ -492,11 +494,11 @@ h3 {
 
 .userSwitch {
   display: grid;
-  gap: 7px;
+  gap: calc(7px * var(--ui-scale));
   justify-items: start;
-  min-height: 148px;
-  padding: 14px;
-  border: 1px solid var(--border);
+  min-height: calc(148px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
   text-align: left;
@@ -518,11 +520,11 @@ h3 {
 .avatar {
   display: grid;
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: calc(34px * var(--ui-scale));
+  height: calc(34px * var(--ui-scale));
   place-items: center;
   color: #ffffff;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--ui-scale));
   font-size: 0.78rem;
   font-weight: 850;
   line-height: 1;
@@ -530,21 +532,21 @@ h3 {
 }
 
 .largeAvatar {
-  width: 58px;
-  height: 58px;
+  width: calc(58px * var(--ui-scale));
+  height: calc(58px * var(--ui-scale));
   font-size: 1rem;
 }
 
 .viewStack {
   display: grid;
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
 }
 
 .overviewBand {
   justify-content: space-between;
-  gap: 20px;
-  padding: 20px;
-  border: 1px solid var(--border);
+  gap: calc(20px * var(--ui-scale));
+  padding: calc(20px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
@@ -556,8 +558,8 @@ h3 {
 
 .reportPicker {
   display: grid;
-  gap: 8px;
-  min-width: min(100%, 420px);
+  gap: calc(8px * var(--ui-scale));
+  min-width: min(100%, calc(420px * var(--ui-scale)));
 }
 
 .reportPicker strong {
@@ -568,24 +570,24 @@ h3 {
 .reportPreviewRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
 }
 
 .reportPreviewChip,
 .reportPreviewOverflow {
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  min-height: calc(30px * var(--ui-scale));
+  padding: 0 calc(10px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(999px * var(--ui-scale));
   background: #f3f7f8;
   color: #415058;
   font-size: 0.8rem;
   font-weight: 760;
-  line-height: 28px;
+  line-height: calc(28px * var(--ui-scale));
 }
 
 .reportPreviewChip {
-  max-width: 210px;
+  max-width: calc(210px * var(--ui-scale));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -595,7 +597,7 @@ h3 {
   border-color: #b7d8d8;
   background: var(--surface);
   color: var(--teal);
-  box-shadow: 0 1px 3px rgba(30, 45, 55, 0.08);
+  box-shadow: 0 calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale)) rgba(30, 45, 55, 0.08);
 }
 
 .reportPreviewChip:hover {
@@ -608,8 +610,8 @@ h3 {
 }
 
 .overviewBand h1 {
-  max-width: 900px;
-  margin-top: 3px;
+  max-width: calc(900px * var(--ui-scale));
+  margin-top: calc(3px * var(--ui-scale));
   font-size: 1.82rem;
   line-height: 1.12;
 }
@@ -622,7 +624,7 @@ h3 {
 }
 
 .subtle {
-  margin-top: 6px;
+  margin-top: calc(6px * var(--ui-scale));
   color: var(--muted);
   line-height: 1.5;
 }
@@ -630,7 +632,7 @@ h3 {
 .toolbarCluster,
 .buttonRow {
   flex-wrap: wrap;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
 }
 
 .ghostButton,
@@ -642,9 +644,9 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 13px;
+  gap: calc(8px * var(--ui-scale));
+  min-height: calc(38px * var(--ui-scale));
+  padding: 0 calc(13px * var(--ui-scale));
   border-radius: var(--radius);
   font-weight: 760;
   white-space: nowrap;
@@ -652,7 +654,7 @@ h3 {
 
 .ghostButton {
   color: #334048;
-  border: 1px solid var(--border);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   background: var(--surface);
 }
 
@@ -662,7 +664,7 @@ h3 {
 
 .primaryButton {
   color: #ffffff;
-  border: 1px solid var(--teal);
+  border: calc(1px * var(--ui-scale)) solid var(--teal);
   background: var(--teal);
   text-decoration: none;
 }
@@ -685,25 +687,25 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .dangerButton {
   color: #ffffff;
-  border: 1px solid var(--coral);
+  border: calc(1px * var(--ui-scale)) solid var(--coral);
   background: var(--coral);
 }
 
 .iconOnly {
-  width: 38px;
+  width: calc(38px * var(--ui-scale));
   padding: 0;
 }
 
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .metricCard {
-  min-height: 134px;
-  padding: 16px;
-  border: 1px solid var(--border);
+  min-height: calc(134px * var(--ui-scale));
+  padding: calc(16px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
 }
@@ -715,7 +717,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .metricCard strong {
   display: block;
-  margin: 10px 0 7px;
+  margin: calc(10px * var(--ui-scale)) 0 calc(7px * var(--ui-scale));
   font-size: 2rem;
   line-height: 1;
 }
@@ -725,61 +727,61 @@ a.primaryButton[target="_blank"]:focus-visible {
 }
 
 .metricCard.blue {
-  border-top: 4px solid var(--blue);
+  border-top: calc(4px * var(--ui-scale)) solid var(--blue);
 }
 
 .metricCard.teal {
-  border-top: 4px solid var(--teal);
+  border-top: calc(4px * var(--ui-scale)) solid var(--teal);
 }
 
 .metricCard.amber {
-  border-top: 4px solid var(--amber);
+  border-top: calc(4px * var(--ui-scale)) solid var(--amber);
 }
 
 .metricCard.green {
-  border-top: 4px solid var(--green);
+  border-top: calc(4px * var(--ui-scale)) solid var(--green);
 }
 
 .reviewGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
 }
 
 .projectCard {
   display: grid;
   align-content: start;
-  gap: 16px;
-  min-height: 380px;
+  gap: calc(16px * var(--ui-scale));
+  min-height: calc(380px * var(--ui-scale));
 }
 
 .projectCardHeader {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
   align-items: start;
 }
 
 .projectCardHeader h2 {
-  margin-top: 10px;
+  margin-top: calc(10px * var(--ui-scale));
   font-size: 1.22rem;
   line-height: 1.2;
 }
 
 .projectCardHeader p {
-  margin-top: 8px;
+  margin-top: calc(8px * var(--ui-scale));
   color: var(--muted);
   line-height: 1.45;
 }
 
 .projectMeta {
   display: grid;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
 }
 
 .projectMeta span {
   display: flex;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
   align-items: center;
   color: #435059;
   font-size: 0.86rem;
@@ -788,14 +790,14 @@ a.primaryButton[target="_blank"]:focus-visible {
 .projectStats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
   margin-top: auto;
 }
 
 .projectStats span {
-  min-height: 42px;
-  padding: 8px;
-  border: 1px solid var(--border);
+  min-height: calc(42px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
   color: #435059;
@@ -806,16 +808,16 @@ a.primaryButton[target="_blank"]:focus-visible {
 .userGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .userCard {
   display: flex;
-  gap: 11px;
+  gap: calc(11px * var(--ui-scale));
   align-items: center;
-  min-height: 96px;
-  padding: 13px;
-  border: 1px solid var(--border);
+  min-height: calc(96px * var(--ui-scale));
+  padding: calc(13px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -827,7 +829,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 }
 
 .userCard span:not(.avatar) {
-  margin-top: 3px;
+  margin-top: calc(3px * var(--ui-scale));
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -844,14 +846,14 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .panel {
   min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--border);
+  padding: calc(16px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
 }
 
 .largePanel {
-  min-height: 340px;
+  min-height: calc(340px * var(--ui-scale));
 }
 
 .dashboardGrid,
@@ -861,20 +863,20 @@ a.primaryButton[target="_blank"]:focus-visible {
 .settingsGrid,
 .exportLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.8fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(calc(340px * var(--ui-scale)), 0.8fr);
+  gap: calc(16px * var(--ui-scale));
 }
 
 .aboutGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(calc(320px * var(--ui-scale)), 0.9fr);
+  gap: calc(16px * var(--ui-scale));
 }
 
 .aboutPanel {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .aboutPanel p {
@@ -894,14 +896,14 @@ a.primaryButton[target="_blank"]:focus-visible {
 .aboutFeatureGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .aboutFeature {
   display: grid;
-  gap: 8px;
-  padding: 13px;
-  border: 1px solid var(--border);
+  gap: calc(8px * var(--ui-scale));
+  padding: calc(13px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -913,14 +915,14 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .sectionTitle {
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: calc(12px * var(--ui-scale));
+  margin-bottom: calc(14px * var(--ui-scale));
 }
 
 .sectionTitle div {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
   min-width: 0;
 }
 
@@ -940,27 +942,27 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .workflowMap {
   display: grid;
-  grid-template-columns: repeat(6, minmax(112px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(6, minmax(calc(112px * var(--ui-scale)), 1fr));
+  gap: calc(10px * var(--ui-scale));
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: calc(2px * var(--ui-scale));
 }
 
 .workflowNode {
   position: relative;
-  min-height: 96px;
-  padding: 12px;
-  border: 1px solid var(--border);
+  min-height: calc(96px * var(--ui-scale));
+  padding: calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
 
 .workflowNode::after {
   position: absolute;
-  top: 46px;
+  top: calc(46px * var(--ui-scale));
   right: -11px;
-  width: 11px;
-  height: 2px;
+  width: calc(11px * var(--ui-scale));
+  height: calc(2px * var(--ui-scale));
   background: var(--border);
   content: "";
 }
@@ -980,7 +982,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 }
 
 .workflowNode strong {
-  margin-top: 18px;
+  margin-top: calc(18px * var(--ui-scale));
   font-size: 1.05rem;
 }
 
@@ -1001,16 +1003,16 @@ a.primaryButton[target="_blank"]:focus-visible {
 .stateRows,
 .settingList {
   display: grid;
-  gap: 8px;
-  margin-top: 16px;
+  gap: calc(8px * var(--ui-scale));
+  margin-top: calc(16px * var(--ui-scale));
 }
 
 .statusRow,
 .settingList div {
   display: flex;
   justify-content: space-between;
-  gap: 14px;
-  padding: 11px 12px;
+  gap: calc(14px * var(--ui-scale));
+  padding: calc(11px * var(--ui-scale)) calc(12px * var(--ui-scale));
   border-radius: var(--radius);
   background: #f8fafb;
 }
@@ -1043,15 +1045,15 @@ a.primaryButton[target="_blank"]:focus-visible {
 .validationList,
 .exportHistory {
   display: grid;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
 }
 
 .eventItem {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 11px 0;
-  border-bottom: 1px solid var(--border);
+  gap: calc(10px * var(--ui-scale));
+  padding: calc(11px * var(--ui-scale)) 0;
+  border-bottom: calc(1px * var(--ui-scale)) solid var(--border);
 }
 
 .eventItem:last-child {
@@ -1061,23 +1063,23 @@ a.primaryButton[target="_blank"]:focus-visible {
 .auditTrailActions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  margin-top: calc(14px * var(--ui-scale));
+  padding-top: calc(12px * var(--ui-scale));
+  border-top: calc(1px * var(--ui-scale)) solid var(--border);
 }
 
 .fullAuditList {
-  margin-top: 4px;
+  margin-top: calc(4px * var(--ui-scale));
 }
 
 .paginationBar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  gap: calc(12px * var(--ui-scale));
+  margin-top: calc(16px * var(--ui-scale));
+  padding-top: calc(14px * var(--ui-scale));
+  border-top: calc(1px * var(--ui-scale)) solid var(--border);
 }
 
 .paginationBar span {
@@ -1089,10 +1091,10 @@ a.primaryButton[target="_blank"]:focus-visible {
 .conflictItem {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
+  gap: calc(14px * var(--ui-scale));
   align-items: center;
-  padding: 13px 0;
-  border-bottom: 1px solid var(--border);
+  padding: calc(13px * var(--ui-scale)) 0;
+  border-bottom: calc(1px * var(--ui-scale)) solid var(--border);
 }
 
 .conflictItem:last-child {
@@ -1101,12 +1103,12 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .conflictMain {
   display: grid;
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
   min-width: 0;
 }
 
 .conflictMain h3 {
-  margin-top: 8px;
+  margin-top: calc(8px * var(--ui-scale));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1114,7 +1116,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 }
 
 .conflictMain p {
-  margin-top: 4px;
+  margin-top: calc(4px * var(--ui-scale));
   overflow: hidden;
   color: var(--muted);
   font-size: 0.84rem;
@@ -1125,17 +1127,17 @@ a.primaryButton[target="_blank"]:focus-visible {
 .voteStrip {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: calc(7px * var(--ui-scale));
 }
 
 .votePill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
+  gap: calc(6px * var(--ui-scale));
+  min-height: calc(28px * var(--ui-scale));
   max-width: 100%;
-  padding: 0 9px;
-  border-radius: 999px;
+  padding: 0 calc(9px * var(--ui-scale));
+  border-radius: calc(999px * var(--ui-scale));
   background: #eef2f4;
   color: #45545c;
   font-size: 0.78rem;
@@ -1144,7 +1146,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .votePill strong {
   overflow: hidden;
-  max-width: 180px;
+  max-width: calc(180px * var(--ui-scale));
   color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1181,36 +1183,36 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .eventItem span,
 .eventItem time {
-  margin-top: 3px;
+  margin-top: calc(3px * var(--ui-scale));
   color: var(--muted);
   font-size: 0.78rem;
 }
 
 .prismaFlow {
   display: grid;
-  grid-template-columns: repeat(4, minmax(190px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(calc(190px * var(--ui-scale)), 1fr));
+  gap: calc(14px * var(--ui-scale));
   overflow-x: auto;
 }
 
 .flowColumn {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
 }
 
 .mainFlow {
-  padding-top: 18px;
+  padding-top: calc(18px * var(--ui-scale));
 }
 
 .flowBox {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: calc(22px * var(--ui-scale)) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  min-height: 64px;
-  padding: 10px;
-  border: 1px solid var(--border);
+  gap: calc(9px * var(--ui-scale));
+  min-height: calc(64px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -1258,13 +1260,13 @@ a.primaryButton[target="_blank"]:focus-visible {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 620px;
+  min-width: calc(620px * var(--ui-scale));
 }
 
 th,
 td {
-  padding: 12px 10px;
-  border-bottom: 1px solid var(--border);
+  padding: calc(12px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  border-bottom: calc(1px * var(--ui-scale)) solid var(--border);
   text-align: left;
   vertical-align: top;
 }
@@ -1278,26 +1280,26 @@ th {
 
 td span {
   display: block;
-  margin-top: 3px;
+  margin-top: calc(3px * var(--ui-scale));
   color: var(--muted);
   font-size: 0.82rem;
 }
 
 .activeImportRow td {
   background: #f4fbfa;
-  box-shadow: inset 0 1px 0 #c9dedc, inset 0 -1px 0 #c9dedc;
+  box-shadow: inset 0 calc(1px * var(--ui-scale)) 0 #c9dedc, inset 0 -1px 0 #c9dedc;
 }
 
 .activeImportRow td:first-child {
-  box-shadow: inset 3px 0 0 var(--teal), inset 0 1px 0 #c9dedc, inset 0 -1px 0 #c9dedc;
+  box-shadow: inset calc(3px * var(--ui-scale)) 0 0 var(--teal), inset 0 calc(1px * var(--ui-scale)) 0 #c9dedc, inset 0 -1px 0 #c9dedc;
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
-  padding: 0 8px;
-  border-radius: 999px;
+  min-height: calc(24px * var(--ui-scale));
+  padding: 0 calc(8px * var(--ui-scale));
+  border-radius: calc(999px * var(--ui-scale));
   font-size: 0.76rem;
   font-weight: 800;
   text-transform: capitalize;
@@ -1331,10 +1333,10 @@ td span {
 .emptyState {
   display: grid;
   justify-items: center;
-  gap: 10px;
-  min-height: 220px;
+  gap: calc(10px * var(--ui-scale));
+  min-height: calc(220px * var(--ui-scale));
   place-content: center;
-  padding: 24px;
+  padding: calc(24px * var(--ui-scale));
   color: var(--muted);
   text-align: center;
 }
@@ -1351,14 +1353,14 @@ td span {
 }
 
 .emptyState p {
-  max-width: 520px;
+  max-width: calc(520px * var(--ui-scale));
   line-height: 1.5;
 }
 
 .provenanceStack {
   display: grid;
-  /*grid-template-rows: 1fr 22px 1fr 22px 1fr;*/
-  gap: 10px;
+  /*grid-template-rows: 1fr calc(22px * var(--ui-scale)) 1fr calc(22px * var(--ui-scale)) 1fr;*/
+  gap: calc(10px * var(--ui-scale));
   align-items: stretch;
   min-width: 0;
   overflow: hidden;
@@ -1366,11 +1368,11 @@ td span {
 
 .provenanceStack div {
   display: grid;
-  /*gap: 8px;*/
+  /*gap: calc(8px * var(--ui-scale));*/
   min-width: 0;
-  min-height: 150px;
-  padding: 14px;
-  border: 1px solid var(--border);
+  min-height: calc(150px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -1391,11 +1393,11 @@ td span {
 .secureBox,
 .validationBox {
   display: flex;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
   align-items: flex-start;
-  margin-top: 14px;
-  padding: 11px;
-  border: 1px solid #f0d8a5;
+  margin-top: calc(14px * var(--ui-scale));
+  padding: calc(11px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid #f0d8a5;
   border-radius: var(--radius);
   background: var(--amber-soft);
   color: #744705;
@@ -1414,7 +1416,7 @@ td span {
 
 .importReviewBox > div {
   display: grid;
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
   min-width: 0;
 }
 
@@ -1425,20 +1427,20 @@ td span {
 
 .compactList {
   display: grid;
-  gap: 5px;
+  gap: calc(5px * var(--ui-scale));
   margin: 0;
 }
 
 .importStudyList {
   display: grid;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
 }
 
 .importStudyList article {
   display: grid;
-  gap: 3px;
-  padding: 9px;
-  border: 1px solid rgba(116, 71, 5, 0.18);
+  gap: calc(3px * var(--ui-scale));
+  padding: calc(9px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid rgba(116, 71, 5, 0.18);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.48);
 }
@@ -1450,21 +1452,21 @@ td span {
 
 .importEditorLayout {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: calc(360px * var(--ui-scale)) minmax(0, 1fr);
+  gap: calc(16px * var(--ui-scale));
   align-items: start;
 }
 
 .importDetailForm,
 .studyEditForm {
   display: grid;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .importDetailForm label,
 .studyEditForm label {
   display: grid;
-  gap: 7px;
+  gap: calc(7px * var(--ui-scale));
 }
 
 .importDetailForm label span,
@@ -1477,14 +1479,14 @@ td span {
 
 .importEntryList {
   display: grid;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .importEntryCard {
   display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
+  gap: calc(10px * var(--ui-scale));
+  padding: calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -1497,7 +1499,7 @@ td span {
 .importEntryHeader {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
   align-items: flex-start;
 }
 
@@ -1507,7 +1509,7 @@ td span {
 }
 
 .importEntryHeader span {
-  margin-top: 4px;
+  margin-top: calc(4px * var(--ui-scale));
   color: var(--muted);
   line-height: 1.4;
 }
@@ -1515,9 +1517,9 @@ td span {
 .entryReference {
   display: inline-flex;
   width: fit-content;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  padding: calc(2px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(999px * var(--ui-scale));
   background: #eef2f4;
   color: #44525c;
   font-size: 0.72rem;
@@ -1534,21 +1536,21 @@ td span {
 .segmented {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
+  gap: calc(4px * var(--ui-scale));
+  padding: calc(4px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #eef2f4;
 }
 
 .segmented button {
-  max-width: 220px;
+  max-width: calc(220px * var(--ui-scale));
   overflow: hidden;
-  min-height: 32px;
-  padding: 0 11px;
+  min-height: calc(32px * var(--ui-scale));
+  padding: 0 calc(11px * var(--ui-scale));
   color: #3d4a52;
   border: 0;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--ui-scale));
   background: transparent;
   font-weight: 760;
   text-overflow: ellipsis;
@@ -1558,28 +1560,28 @@ td span {
 .segmented button.active {
   color: #0f4f51;
   background: var(--surface);
-  box-shadow: 0 1px 3px rgba(30, 45, 55, 0.12);
+  box-shadow: 0 calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale)) rgba(30, 45, 55, 0.12);
 }
 
 .dedupGrid {
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: calc(340px * var(--ui-scale)) minmax(0, 1fr);
 }
 
 .comparisonGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
 }
 
 .scoreRing {
   display: grid;
   place-items: center;
-  min-height: 148px;
-  margin-bottom: 14px;
-  padding: 16px;
-  border: 12px solid var(--teal-soft);
+  min-height: calc(148px * var(--ui-scale));
+  margin-bottom: calc(14px * var(--ui-scale));
+  padding: calc(16px * var(--ui-scale));
+  border: calc(12px * var(--ui-scale)) solid var(--teal-soft);
   border-top-color: var(--teal);
-  border-radius: 999px;
+  border-radius: calc(999px * var(--ui-scale));
   text-align: center;
 }
 
@@ -1588,7 +1590,7 @@ td span {
 }
 
 .scoreRing span {
-  max-width: 220px;
+  max-width: calc(220px * var(--ui-scale));
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.35;
@@ -1597,22 +1599,22 @@ td span {
 .scoreBars,
 .assignmentBars {
   display: grid;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .scoreBar div {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
+  gap: calc(12px * var(--ui-scale));
+  margin-bottom: calc(6px * var(--ui-scale));
   font-size: 0.84rem;
 }
 
 .scoreBar i {
   display: block;
-  height: 8px;
+  height: calc(8px * var(--ui-scale));
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--ui-scale));
   background: #e7edf0;
 }
 
@@ -1624,27 +1626,27 @@ td span {
 }
 
 .doiNote {
-  margin: 14px 0 8px;
+  margin: calc(14px * var(--ui-scale)) 0 calc(8px * var(--ui-scale));
   color: var(--teal);
   font-weight: 800;
 }
 
 .plainList {
-  margin: 0 0 16px;
-  padding-left: 20px;
+  margin: 0 0 calc(16px * var(--ui-scale));
+  padding-left: calc(20px * var(--ui-scale));
   color: var(--muted);
   line-height: 1.6;
 }
 
 .recordCard dl {
   display: grid;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
   margin: 0;
 }
 
 .recordCard dl div {
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+  padding-bottom: calc(10px * var(--ui-scale));
+  border-bottom: calc(1px * var(--ui-scale)) solid var(--border);
 }
 
 .recordCard dt {
@@ -1655,14 +1657,14 @@ td span {
 }
 
 .recordCard dd {
-  margin: 4px 0 0;
+  margin: calc(4px * var(--ui-scale)) 0 0;
   line-height: 1.45;
 }
 
 .progressBlock {
   display: grid;
-  gap: 8px;
-  min-width: 240px;
+  gap: calc(8px * var(--ui-scale));
+  min-width: calc(240px * var(--ui-scale));
 }
 
 .progressBlock span {
@@ -1671,9 +1673,9 @@ td span {
 }
 
 .progressTrack {
-  height: 9px;
+  height: calc(9px * var(--ui-scale));
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--ui-scale));
   background: #e7edf0;
 }
 
@@ -1686,8 +1688,8 @@ td span {
 
 .screeningLayout {
   display: grid;
-  grid-template-columns: 290px minmax(0, 1fr) 288px;
-  gap: 16px;
+  grid-template-columns: calc(290px * var(--ui-scale)) minmax(0, 1fr) calc(288px * var(--ui-scale));
+  gap: calc(16px * var(--ui-scale));
 }
 
 .queuePanel,
@@ -1697,10 +1699,10 @@ td span {
 
 .queueItem {
   display: grid;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
   width: 100%;
-  padding: 11px;
-  border: 1px solid var(--border);
+  padding: calc(11px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
   text-align: left;
@@ -1725,7 +1727,7 @@ td span {
 .queueBadges {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: calc(6px * var(--ui-scale));
 }
 
 .queueItem .queueBadges {
@@ -1751,10 +1753,10 @@ td span {
 
 .conflictVotesBox {
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 12px;
-  border: 1px solid #efc2bd;
+  gap: calc(10px * var(--ui-scale));
+  margin-top: calc(14px * var(--ui-scale));
+  padding: calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid #efc2bd;
   border-radius: var(--radius);
   background: var(--coral-soft);
 }
@@ -1771,18 +1773,18 @@ td span {
 }
 
 .citationPanel {
-  min-height: 570px;
+  min-height: calc(570px * var(--ui-scale));
 }
 
 .citationHeader {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 14px;
+  gap: calc(18px * var(--ui-scale));
+  margin-bottom: calc(14px * var(--ui-scale));
 }
 
 .citationHeader h2 {
-  max-width: 900px;
+  max-width: calc(900px * var(--ui-scale));
   font-size: 1.52rem;
   line-height: 1.18;
 }
@@ -1790,14 +1792,14 @@ td span {
 .metaStrip {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 16px 0;
+  gap: calc(8px * var(--ui-scale));
+  margin: calc(16px * var(--ui-scale)) 0;
 }
 
 .metaStrip span {
-  padding: 6px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  padding: calc(6px * var(--ui-scale)) calc(9px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(999px * var(--ui-scale));
   color: #435059;
   background: #fbfcfd;
   font-size: 0.82rem;
@@ -1814,8 +1816,8 @@ td span {
 }
 
 .highlight {
-  padding: 1px 3px;
-  border-radius: 4px;
+  padding: calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale));
+  border-radius: calc(4px * var(--ui-scale));
 }
 
 .highlight.include {
@@ -1832,21 +1834,21 @@ td span {
 
 textarea {
   width: 100%;
-  min-height: 118px;
-  /*margin-top: 22px;*/
-  padding: 12px;
+  min-height: calc(118px * var(--ui-scale));
+  /*margin-top: calc(22px * var(--ui-scale));*/
+  padding: calc(12px * var(--ui-scale));
   resize: vertical;
   color: var(--text);
-  border: 1px solid var(--border);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
 
 .decisionState {
   display: grid;
-  gap: 8px;
-  padding: 13px;
-  border: 1px solid var(--border);
+  gap: calc(8px * var(--ui-scale));
+  padding: calc(13px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -1861,15 +1863,15 @@ textarea {
 
 .decisionButtons {
   display: grid;
-  gap: 10px;
-  margin: 14px 0;
+  gap: calc(10px * var(--ui-scale));
+  margin: calc(14px * var(--ui-scale)) 0;
 }
 
 .includeButton,
 .maybeButton,
 .excludeButton {
   width: 100%;
-  border: 1px solid transparent;
+  border: calc(1px * var(--ui-scale)) solid transparent;
 }
 
 .includeButton {
@@ -1902,23 +1904,23 @@ textarea {
 
 .fullTextLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 16px;
-  min-height: 660px;
+  grid-template-columns: minmax(0, 1fr) calc(360px * var(--ui-scale));
+  gap: calc(16px * var(--ui-scale));
+  min-height: calc(660px * var(--ui-scale));
 }
 
 .extractionWorkspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 420px;
-  gap: 16px;
-  min-height: 760px;
+  grid-template-columns: minmax(0, 1fr) calc(420px * var(--ui-scale));
+  gap: calc(16px * var(--ui-scale));
+  min-height: calc(760px * var(--ui-scale));
 }
 
 .pdfPane {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #dce4e8;
 }
@@ -1926,11 +1928,11 @@ textarea {
 .pdfToolbar {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
   align-items: center;
   min-width: 0;
-  padding: 12px 14px;
-  border-bottom: 1px solid #c8d3d8;
+  padding: calc(12px * var(--ui-scale)) calc(14px * var(--ui-scale));
+  border-bottom: calc(1px * var(--ui-scale)) solid #c8d3d8;
   background: var(--surface);
 }
 
@@ -1950,7 +1952,7 @@ textarea {
   display: grid;
   place-items: center;
   overflow: auto;
-  padding: 30px;
+  padding: calc(30px * var(--ui-scale));
 }
 
 .pdfCanvasViewer {
@@ -1960,7 +1962,7 @@ textarea {
 
 .pdfViewer {
   width: 100%;
-  min-height: 760px;
+  min-height: calc(760px * var(--ui-scale));
   height: 100%;
   border: 0;
   background: #ffffff;
@@ -1971,12 +1973,12 @@ textarea {
 }
 
 .paperPage {
-  width: min(680px, 100%);
-  min-height: 820px;
-  padding: 44px;
-  border-radius: 2px;
+  width: min(calc(680px * var(--ui-scale)), 100%);
+  min-height: calc(820px * var(--ui-scale));
+  padding: calc(44px * var(--ui-scale));
+  border-radius: calc(2px * var(--ui-scale));
   background: #ffffff;
-  box-shadow: 0 20px 45px rgba(35, 45, 52, 0.2);
+  box-shadow: 0 calc(20px * var(--ui-scale)) calc(45px * var(--ui-scale)) rgba(35, 45, 52, 0.2);
 }
 
 .paperEyebrow {
@@ -1988,14 +1990,14 @@ textarea {
 
 .pdfValidationNotes {
   display: grid;
-  gap: 7px;
-  margin: 12px 0 18px;
+  gap: calc(7px * var(--ui-scale));
+  margin: calc(12px * var(--ui-scale)) 0 calc(18px * var(--ui-scale));
 }
 
 .pdfValidationNotes span {
-  padding: 8px 9px;
+  padding: calc(8px * var(--ui-scale)) calc(9px * var(--ui-scale));
   color: #744705;
-  border: 1px solid #f0d8a5;
+  border: calc(1px * var(--ui-scale)) solid #f0d8a5;
   border-radius: var(--radius);
   background: var(--amber-soft);
   font-size: 0.86rem;
@@ -2003,22 +2005,22 @@ textarea {
 }
 
 .paperPage h2 {
-  margin: 12px 0 22px;
+  margin: calc(12px * var(--ui-scale)) 0 calc(22px * var(--ui-scale));
   font-size: 1.52rem;
   line-height: 1.18;
 }
 
 .paperPage h3 {
-  margin: 24px 0 12px;
+  margin: calc(24px * var(--ui-scale)) 0 calc(12px * var(--ui-scale));
   font-size: 1.08rem;
   line-height: 1.2;
 }
 
 .paperLine {
-  height: 10px;
+  height: calc(10px * var(--ui-scale));
   width: 82%;
-  margin: 8px 0;
-  border-radius: 999px;
+  margin: calc(8px * var(--ui-scale)) 0;
+  border-radius: calc(999px * var(--ui-scale));
   background: #dfe6ea;
 }
 
@@ -2033,41 +2035,41 @@ textarea {
 .paperColumns {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
 }
 
 .paperColumns span {
-  height: 82px;
-  border-radius: 6px;
+  height: calc(82px * var(--ui-scale));
+  border-radius: calc(6px * var(--ui-scale));
   background: #eef3f6;
 }
 
 .miniChart {
   display: flex;
   align-items: end;
-  gap: 14px;
-  height: 140px;
-  padding: 18px;
-  border: 1px solid var(--border);
+  gap: calc(14px * var(--ui-scale));
+  height: calc(140px * var(--ui-scale));
+  padding: calc(18px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
 }
 
 .miniChart i {
   flex: 1;
-  border-radius: 6px 6px 0 0;
+  border-radius: calc(6px * var(--ui-scale)) calc(6px * var(--ui-scale)) 0 0;
   background: linear-gradient(180deg, var(--teal), var(--blue));
 }
 
 .fullTextPanel h2 {
-  margin-bottom: 8px;
+  margin-bottom: calc(8px * var(--ui-scale));
   font-size: 1.22rem;
   line-height: 1.22;
 }
 
 .pdfStatusGrid {
   display: grid;
-  gap: 8px;
-  margin-top: 14px;
+  gap: calc(8px * var(--ui-scale));
+  margin-top: calc(14px * var(--ui-scale));
 }
 
 .pdfStatusGrid .statusRow {
@@ -2076,7 +2078,7 @@ textarea {
 
 .fieldLabel {
   display: block;
-  margin: 16px 0 6px;
+  margin: calc(16px * var(--ui-scale)) 0 calc(6px * var(--ui-scale));
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 800;
@@ -2085,20 +2087,20 @@ textarea {
 
 select {
   width: 100%;
-  min-height: 40px;
-  padding: 0 10px;
+  min-height: calc(40px * var(--ui-scale));
+  padding: 0 calc(10px * var(--ui-scale));
   color: var(--text);
-  border: 1px solid var(--border);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
 
 input {
   width: 100%;
-  min-height: 40px;
-  padding: 0 10px;
+  min-height: calc(40px * var(--ui-scale));
+  padding: 0 calc(10px * var(--ui-scale));
   color: var(--text);
-  border: 1px solid var(--border);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -2130,36 +2132,36 @@ select:disabled {
 
 .templateBuilder {
   display: grid;
-  gap: 14px;
+  gap: calc(14px * var(--ui-scale));
 }
 
 .templateFieldList,
 .extractionForm {
   display: grid;
-  gap: 14px;
+  gap: calc(14px * var(--ui-scale));
 }
 
 .templateFieldEditor,
 .extractionField {
   min-width: 0;
-  padding: 13px;
-  border: 1px solid var(--border);
+  padding: calc(13px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
 
 .templateFieldHeader {
   display: flex;
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: calc(10px * var(--ui-scale));
 }
 
 .extractionFormPanel {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: calc(14px * var(--ui-scale));
 }
 
 .extractionFormPanel h2 {
@@ -2170,7 +2172,7 @@ select:disabled {
 
 .extractionField {
   display: grid;
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
 }
 
 .extractionField legend {
@@ -2180,41 +2182,41 @@ select:disabled {
 
 .choiceList {
   display: grid;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
 }
 
 .choiceList label {
   display: flex;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
   align-items: center;
-  min-height: 34px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
+  min-height: calc(34px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #ffffff;
 }
 
 .projectForm {
   display: grid;
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
 }
 
 .formGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: calc(14px * var(--ui-scale));
 }
 
 .compactFormGrid {
-  margin-top: 16px;
+  margin-top: calc(16px * var(--ui-scale));
 }
 
 .wideField {
-  margin-top: 14px;
+  margin-top: calc(14px * var(--ui-scale));
 }
 
 .strategyTextarea {
-  min-height: 220px;
+  min-height: calc(220px * var(--ui-scale));
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -2222,18 +2224,18 @@ select:disabled {
 
 .memberPicker {
   display: grid;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
 }
 
 .memberOption,
 .userSwitch {
   display: grid;
-  grid-template-columns: 18px 34px minmax(0, 1fr);
+  grid-template-columns: calc(18px * var(--ui-scale)) calc(34px * var(--ui-scale)) minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  min-height: 58px;
-  padding: 10px;
-  border: 1px solid var(--border);
+  gap: calc(10px * var(--ui-scale));
+  min-height: calc(58px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -2247,31 +2249,31 @@ select:disabled {
 
 .memberOption small,
 .userSwitch small {
-  margin-top: 2px;
+  margin-top: calc(2px * var(--ui-scale));
   overflow-wrap: anywhere;
 }
 
 .userSwitch {
   width: 100%;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: calc(34px * var(--ui-scale)) minmax(0, 1fr);
   text-align: left;
 }
 
 .adminManagedUserSwitch {
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: calc(34px * var(--ui-scale)) minmax(0, 1fr) auto;
 }
 
 .userSwitchActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
   justify-content: flex-end;
 }
 
 .formActions {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
   align-items: center;
 }
 
@@ -2281,7 +2283,7 @@ select:disabled {
 }
 
 .formActions span {
-  margin-top: 4px;
+  margin-top: calc(4px * var(--ui-scale));
   color: var(--muted);
 }
 
@@ -2292,23 +2294,23 @@ button:disabled {
 
 .profileHero {
   display: flex;
-  gap: 14px;
+  gap: calc(14px * var(--ui-scale));
   align-items: center;
 }
 
 .profileRows {
   display: grid;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
 }
 
 .accountForm {
   display: grid;
-  gap: 12px;
+  gap: calc(12px * var(--ui-scale));
 }
 
 .accountForm label {
   display: grid;
-  gap: 7px;
+  gap: calc(7px * var(--ui-scale));
 }
 
 .accountForm label span {
@@ -2323,24 +2325,24 @@ button:disabled {
 .inviteForm,
 .reportFileList {
   display: grid;
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
 }
 
 .teamMember,
 .reportFileCard {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto auto;
-  gap: 10px;
+  grid-template-columns: calc(34px * var(--ui-scale)) minmax(0, 1fr) auto auto;
+  gap: calc(10px * var(--ui-scale));
   align-items: center;
-  min-height: 62px;
-  padding: 10px;
-  border: 1px solid var(--border);
+  min-height: calc(62px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
 
 .reportFileCard {
-  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  grid-template-columns: calc(24px * var(--ui-scale)) minmax(0, 1fr) auto auto;
 }
 
 .teamMember strong,
@@ -2352,7 +2354,7 @@ button:disabled {
 
 .teamMember span:not(.avatar),
 .reportFileCard span {
-  margin-top: 2px;
+  margin-top: calc(2px * var(--ui-scale));
   overflow: hidden;
   color: var(--muted);
   font-size: 0.82rem;
@@ -2369,7 +2371,7 @@ button:disabled {
 .teamMemberActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
   justify-content: flex-end;
 }
 
@@ -2381,7 +2383,7 @@ button:disabled {
 .addMemberBox label,
 .inviteForm label {
   display: grid;
-  gap: 7px;
+  gap: calc(7px * var(--ui-scale));
 }
 
 .addMemberBox label span,
@@ -2393,20 +2395,20 @@ button:disabled {
 }
 
 .inviteForm {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  margin-top: calc(14px * var(--ui-scale));
+  padding-top: calc(14px * var(--ui-scale));
+  border-top: calc(1px * var(--ui-scale)) solid var(--border);
 }
 
 .compactTableWrap {
-  margin-top: 14px;
+  margin-top: calc(14px * var(--ui-scale));
 }
 
 .schemaList div {
   display: grid;
-  gap: 4px;
-  padding: 13px;
-  border: 1px solid var(--border);
+  gap: calc(4px * var(--ui-scale));
+  padding: calc(13px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: #fbfcfd;
 }
@@ -2418,24 +2420,24 @@ button:disabled {
 .qualityGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: calc(16px * var(--ui-scale));
 }
 
 .qualityPanel {
   display: grid;
   align-content: start;
-  gap: 16px;
-  min-height: 260px;
+  gap: calc(16px * var(--ui-scale));
+  min-height: calc(260px * var(--ui-scale));
 }
 
 .qualityHeader {
   display: flex;
-  gap: 10px;
+  gap: calc(10px * var(--ui-scale));
   align-items: flex-start;
 }
 
 .qualityHeader h2 {
-  margin-bottom: 8px;
+  margin-bottom: calc(8px * var(--ui-scale));
   font-size: 1.06rem;
   line-height: 1.24;
 }
@@ -2448,16 +2450,16 @@ button:disabled {
 .judgementRail {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: calc(6px * var(--ui-scale));
   margin-top: auto;
 }
 
 .judgementRail span {
   display: grid;
-  min-height: 34px;
+  min-height: calc(34px * var(--ui-scale));
   place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(6px * var(--ui-scale));
   color: #56636b;
   background: #fbfcfd;
   font-size: 0.78rem;
@@ -2484,9 +2486,9 @@ button:disabled {
 
 .validationItem {
   display: flex;
-  gap: 9px;
+  gap: calc(9px * var(--ui-scale));
   align-items: flex-start;
-  padding: 11px;
+  padding: calc(11px * var(--ui-scale));
   border-radius: var(--radius);
   line-height: 1.35;
 }
@@ -2502,9 +2504,9 @@ button:disabled {
 }
 
 .exportHistory {
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  margin-top: calc(20px * var(--ui-scale));
+  padding-top: calc(14px * var(--ui-scale));
+  border-top: calc(1px * var(--ui-scale)) solid var(--border);
 }
 
 .exportHistory span {
@@ -2513,8 +2515,8 @@ button:disabled {
 
 .toggleRow {
   display: grid;
-  grid-template-columns: 0 48px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 0 calc(48px * var(--ui-scale)) minmax(0, 1fr);
+  gap: calc(12px * var(--ui-scale));
   align-items: center;
   cursor: pointer;
 }
@@ -2525,22 +2527,22 @@ button:disabled {
 
 .toggleRow span {
   position: relative;
-  width: 48px;
-  height: 28px;
-  border-radius: 999px;
+  width: calc(48px * var(--ui-scale));
+  height: calc(28px * var(--ui-scale));
+  border-radius: calc(999px * var(--ui-scale));
   background: #cfd8dc;
   transition: background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .toggleRow span::after {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
+  top: calc(4px * var(--ui-scale));
+  left: calc(4px * var(--ui-scale));
+  width: calc(20px * var(--ui-scale));
+  height: calc(20px * var(--ui-scale));
+  border-radius: calc(999px * var(--ui-scale));
   background: #ffffff;
-  box-shadow: 0 2px 6px rgba(23, 33, 38, 0.18);
+  box-shadow: 0 calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale)) rgba(23, 33, 38, 0.18);
   content: "";
   transition: transform 0.18s ease;
 }
@@ -2550,11 +2552,11 @@ button:disabled {
 }
 
 .toggleRow input:checked + span::after {
-  transform: translateX(20px);
+  transform: translateX(calc(20px * var(--ui-scale)));
 }
 
 .toggleRow input:focus-visible + span {
-  box-shadow: 0 0 0 3px rgba(24, 95, 99, 0.18);
+  box-shadow: 0 0 0 calc(3px * var(--ui-scale)) rgba(24, 95, 99, 0.18);
 }
 
 .toggleRow input:disabled + span,
@@ -2602,7 +2604,7 @@ button:disabled {
 @media (max-width: 860px) {
   .loginShell {
     grid-template-columns: 1fr;
-    padding: 14px;
+    padding: calc(14px * var(--ui-scale));
   }
 
   .appFrame {
@@ -2616,14 +2618,14 @@ button:disabled {
     height: auto;
     overflow-y: auto;
     overscroll-behavior: contain;
-    gap: 12px;
-    padding: 14px;
+    gap: calc(12px * var(--ui-scale));
+    padding: calc(14px * var(--ui-scale));
     border-right: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: calc(1px * var(--ui-scale)) solid var(--border);
   }
 
   .sidebar.open {
-    box-shadow: 0 12px 30px rgba(30, 45, 55, 0.12);
+    box-shadow: 0 calc(12px * var(--ui-scale)) calc(30px * var(--ui-scale)) rgba(30, 45, 55, 0.12);
   }
 
   .ghostButton.mobileNavToggle {
@@ -2645,7 +2647,7 @@ button:disabled {
   }
 
   .mainArea {
-    padding: 14px;
+    padding: calc(14px * var(--ui-scale));
   }
 
   .overviewBand,
@@ -2711,7 +2713,7 @@ button:disabled {
   }
 
   .adminManagedUserSwitch {
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: calc(34px * var(--ui-scale)) minmax(0, 1fr);
   }
 
   .adminManagedUserSwitch .userSwitchActions {
@@ -2720,16 +2722,16 @@ button:disabled {
   }
 
   .adminManagedUserSwitch .userSwitchActions button {
-    flex: 1 1 150px;
+    flex: 1 1 calc(150px * var(--ui-scale));
     justify-content: center;
   }
 
   .prismaFlow {
-    grid-template-columns: minmax(230px, 1fr);
+    grid-template-columns: minmax(calc(230px * var(--ui-scale)), 1fr);
   }
 
   .reportFileCard {
-    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-columns: calc(24px * var(--ui-scale)) minmax(0, 1fr);
   }
 
   .reportFileCard .badge,
@@ -2751,16 +2753,16 @@ button:disabled {
   }
 
   .iconOnly {
-    width: 38px;
+    width: calc(38px * var(--ui-scale));
   }
 
   .paperPage {
-    min-height: 620px;
-    padding: 24px;
+    min-height: calc(620px * var(--ui-scale));
+    padding: calc(24px * var(--ui-scale));
   }
 
   .conflictMain {
-    gap: 12px;
+    gap: calc(12px * var(--ui-scale));
   }
 
   .voteStrip {
@@ -2771,11 +2773,11 @@ button:disabled {
   .votePill {
     justify-content: space-between;
     width: 100%;
-    border-radius: 8px;
+    border-radius: calc(8px * var(--ui-scale));
   }
 
   .votePill strong {
-    max-width: min(58vw, 220px);
+    max-width: min(58vw, calc(220px * var(--ui-scale)));
   }
 
   .queueBadges {
