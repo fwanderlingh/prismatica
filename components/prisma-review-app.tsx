@@ -72,6 +72,7 @@ import {
   type DedupCandidate,
   type Decision,
   type ExtractionFieldType,
+  type ExtractionConsensus,
   type ExtractionResponse,
   type ExtractionResponseValue,
   type ExtractionTemplate,
@@ -144,7 +145,8 @@ const projectNavItems: NavItem[] = [
   { key: "dedup", label: "Dedup", path: "/project/current/dedup", Icon: GitMerge },
   { key: "screening", label: "Screening", path: "/project/current/screen/title-abstract", Icon: FileSearch },
   { key: "fullText", label: "Full Text", path: "/project/current/full-text", Icon: BookOpen },
-  { key: "extraction", label: "Extraction", path: "/project/current/extraction/consensus", Icon: ClipboardCheck },
+  { key: "extraction", label: "Extraction", path: "/project/current/extraction", Icon: ClipboardCheck },
+  { key: "consensus", label: "Consensus", path: "/project/current/extraction/consensus", Icon: GitMerge },
   //{ key: "risk", label: "Risk of Bias", path: "/project/current/risk-of-bias", Icon: ShieldCheck },
   { key: "exports", label: "Exports", path: "/project/current/exports", Icon: Download },
   { key: "audit", label: "Audit", path: "/project/current/audit", Icon: History },
@@ -160,6 +162,7 @@ const viewKeySet = new Set<ViewKey>([
   "screening",
   "fullText",
   "extraction",
+  "consensus",
   "risk",
   "exports",
   "audit",
@@ -212,6 +215,8 @@ function buildPathForState(view: ViewKey, projectId: string) {
       return `/projects/${encodeURIComponent(projectId)}/full-text`;
     case "extraction":
       return `/projects/${encodeURIComponent(projectId)}/extraction`;
+    case "consensus":
+      return `/projects/${encodeURIComponent(projectId)}/extraction/consensus`;
     case "risk":
       return `/projects/${encodeURIComponent(projectId)}/risk`;
     case "exports":
@@ -258,7 +263,7 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
       "screen/title-abstract": "screening",
       "full-text": "fullText",
       extraction: "extraction",
-      "extraction/consensus": "extraction",
+      "extraction/consensus": "consensus",
       risk: "risk",
       exports: "exports",
       audit: "audit",
@@ -431,6 +436,13 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The server request failed.";
 }
 
+function formatExtractionResponseValue(value: ExtractionResponseValue | undefined) {
+  if (Array.isArray(value)) {
+    return value.join(" | ");
+  }
+  return value?.trim() || "-";
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 8192;
@@ -457,6 +469,7 @@ export function PrismaReviewApp() {
   const [reports, setReports] = useState<Report[]>(reportQueue);
   const [extractionTemplates, setExtractionTemplates] = useState<ExtractionTemplate[]>([]);
   const [extractionResponses, setExtractionResponses] = useState<ExtractionResponse[]>([]);
+  const [extractionConsensus, setExtractionConsensus] = useState<ExtractionConsensus[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
   const [authMode, setAuthMode] = useState<"signIn" | "register">("signIn");
@@ -499,6 +512,9 @@ export function PrismaReviewApp() {
   const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
   const [extractionFormValues, setExtractionFormValues] = useState<Record<string, ExtractionResponseValue>>({});
   const [extractionMessage, setExtractionMessage] = useState("");
+  const [consensusFormValues, setConsensusFormValues] = useState<Record<string, ExtractionResponseValue>>({});
+  const [consensusMessage, setConsensusMessage] = useState("");
+  const [exportMessage, setExportMessage] = useState("");
   const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
   const [fullTextMessage, setFullTextMessage] = useState("");
   const [importMessage, setImportMessage] = useState("");
@@ -547,6 +563,14 @@ export function PrismaReviewApp() {
           response.reportId === activeExtractionReport.id &&
           response.templateId === activeExtractionTemplate.id &&
           response.userId === currentUser.id
+      )
+    : undefined;
+  const activeExtractionConsensus = activeExtractionReport && activeExtractionTemplate
+    ? extractionConsensus.find(
+        (consensus) =>
+          consensus.projectId === selectedProject.id &&
+          consensus.reportId === activeExtractionReport.id &&
+          consensus.templateId === activeExtractionTemplate.id
       )
     : undefined;
   const activeReport = projectReportQueue.find((report) => report.id === activeReportId) ?? projectReportQueue[0] ?? reportQueue[0];
@@ -903,7 +927,10 @@ export function PrismaReviewApp() {
   useEffect(() => {
     setExtractionTemplateForm({ title: "Data Template", fields: [createBlankExtractionField()] });
     setExtractionFormValues({});
+    setConsensusFormValues({});
     setExtractionMessage("");
+    setConsensusMessage("");
+    setExportMessage("");
     setAuditPage(1);
   }, [selectedProject.id]);
 
@@ -936,6 +963,11 @@ export function PrismaReviewApp() {
     setExtractionFormValues(activeExtractionResponse?.values ?? {});
     setExtractionMessage("");
   }, [activeExtractionReport?.id, activeExtractionResponse?.id, activeExtractionTemplate?.id, currentUser.id]);
+
+  useEffect(() => {
+    setConsensusFormValues(activeExtractionConsensus?.resolvedValues ?? {});
+    setConsensusMessage("");
+  }, [activeExtractionConsensus?.id, activeExtractionReport?.id, activeExtractionTemplate?.id]);
 
   useEffect(() => {
     const decision = decisions.find(
@@ -998,6 +1030,7 @@ export function PrismaReviewApp() {
     setReports(payload.reports);
     setExtractionTemplates(payload.extractionTemplates);
     setExtractionResponses(payload.extractionResponses);
+    setExtractionConsensus(payload.extractionConsensus);
     setDecisions(payload.decisions);
     setEvents(payload.events);
     setDedupCandidates(payload.dedupCandidates);
@@ -1421,6 +1454,19 @@ export function PrismaReviewApp() {
     updateExtractionValue(fieldId, checked ? [...currentChoices, option] : currentChoices.filter((choice) => choice !== option));
   }
 
+  function updateConsensusValue(fieldId: string, value: ExtractionResponseValue) {
+    setConsensusFormValues((previous) => ({
+      ...previous,
+      [fieldId]: value
+    }));
+  }
+
+  function toggleConsensusChoice(fieldId: string, option: string, checked: boolean) {
+    const currentValue = consensusFormValues[fieldId];
+    const currentChoices = Array.isArray(currentValue) ? currentValue : [];
+    updateConsensusValue(fieldId, checked ? [...currentChoices, option] : currentChoices.filter((choice) => choice !== option));
+  }
+
   async function submitExtractionResponse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeExtractionTemplate || !activeExtractionReport) {
@@ -1442,6 +1488,61 @@ export function PrismaReviewApp() {
       setExtractionMessage("Extraction submitted.");
     } catch (error) {
       setExtractionMessage(getErrorMessage(error));
+    }
+  }
+
+  async function finalizeExtractionConsensus(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeExtractionTemplate || !activeExtractionReport) {
+      return;
+    }
+
+    setConsensusMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/extractions/consensus`, {
+        method: "POST",
+        body: JSON.stringify({
+          templateId: activeExtractionTemplate.id,
+          reportId: activeExtractionReport.id,
+          studyId: activeExtractionReport.studyId,
+          resolvedValues: consensusFormValues
+        })
+      });
+      applyAppState(payload);
+      setConsensusMessage("Consensus finalized.");
+    } catch (error) {
+      setConsensusMessage(getErrorMessage(error));
+    }
+  }
+
+  async function downloadConsensusExtractionCsv() {
+    setExportMessage("");
+
+    try {
+      const response = await fetch(`/api/projects/${selectedProject.id}/exports`, {
+        method: "GET",
+        credentials: "include"
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
+        throw new Error(errorPayload?.error || "Failed to export consensus CSV.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const fileNameMatch = /filename="?([^";]+)"?/i.exec(disposition);
+      link.href = objectUrl;
+      link.download = fileNameMatch?.[1] || `${selectedProject.id}-consensus-extraction.csv`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+      setExportMessage("Consensus extraction CSV downloaded.");
+    } catch (error) {
+      setExportMessage(getErrorMessage(error));
     }
   }
 
@@ -1803,6 +1904,8 @@ export function PrismaReviewApp() {
         return renderFullText();
       case "extraction":
         return renderExtraction();
+      case "consensus":
+        return renderConsensus();
       case "risk":
         return renderRisk();
       case "exports":
@@ -3028,7 +3131,7 @@ export function PrismaReviewApp() {
           <section className="overviewBand">
             <div>
               <p className="eyebrow">Data extraction</p>
-              <h1>Consensus Workspace</h1>
+              <h1>Dual Independent Extraction</h1>
               <p className="subtle">Extraction forms and assignments become available after studies are included.</p>
             </div>
           </section>
@@ -3206,7 +3309,7 @@ export function PrismaReviewApp() {
         <section className="overviewBand compactBand">
           <div>
             <p className="eyebrow">Data extraction</p>
-            <h1>Consensus Workspace</h1>
+            <h1>Dual Independent Extraction</h1>
             <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
           </div>
           <div className="reportPicker">
@@ -3215,6 +3318,10 @@ export function PrismaReviewApp() {
               <strong>{projectExtractionReports.length} report{projectExtractionReports.length === 1 ? "" : "s"}</strong>
               <p className="subtle">At least {requiredExtractionVotes} submitted extraction vote{requiredExtractionVotes === 1 ? "" : "s"} required.</p>
             </div>
+            <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
+              <GitMerge size={16} />
+              Resolve Conflicts
+            </button>
             <label className="fieldLabel" htmlFor="extraction-report-picker">
               Jump to report
             </label>
@@ -3361,6 +3468,278 @@ export function PrismaReviewApp() {
     );
   }
 
+  function renderConsensus() {
+    const canArbitrate =
+      selectedProject.memberIds.includes(currentUser.id) ||
+      selectedProject.ownerIds.includes(currentUser.id) ||
+      selectedProject.ownerId === currentUser.id;
+    const consensusMessageIsSuccess = /finalized|saved|resolved/i.test(consensusMessage);
+
+    if (activeCounts.studiesIncluded === 0) {
+      return (
+        <div className="viewStack">
+          <section className="overviewBand">
+            <div>
+              <p className="eyebrow">Consensus arbitration</p>
+              <h1>Conflict Flagging and Arbitration</h1>
+              <p className="subtle">This workspace opens after dual extraction submissions are collected for included studies.</p>
+            </div>
+          </section>
+          <section className="panel">
+            <EmptyState
+              icon={GitMerge}
+              title="No reports in extraction"
+              description="Complete inclusion and independent extraction before running discrepancy arbitration."
+            />
+          </section>
+        </div>
+      );
+    }
+
+    if (!activeExtractionTemplate) {
+      return (
+        <div className="viewStack">
+          <section className="overviewBand">
+            <div>
+              <p className="eyebrow">Consensus arbitration</p>
+              <h1>Conflict Flagging and Arbitration</h1>
+              <p className="subtle">Create an extraction template first, then collect dual extraction responses.</p>
+            </div>
+          </section>
+          <section className="panel">
+            <EmptyState
+              icon={ClipboardCheck}
+              title="No active extraction template"
+              description="A project owner must define the extraction template before conflict flagging and arbitration can begin."
+            />
+          </section>
+        </div>
+      );
+    }
+
+    const requiredVotes = selectedProject.extractionRequiredVotes;
+    const consensusQueue = projectExtractionReports.map((report) => {
+      const submittedVotes = extractionResponses.filter(
+        (response) =>
+          response.projectId === selectedProject.id &&
+          response.reportId === report.id &&
+          response.templateId === activeExtractionTemplate.id &&
+          response.isSubmitted
+      ).length;
+      const record = extractionConsensus.find(
+        (consensus) =>
+          consensus.projectId === selectedProject.id &&
+          consensus.reportId === report.id &&
+          consensus.templateId === activeExtractionTemplate.id
+      );
+
+      return {
+        report,
+        submittedVotes,
+        record
+      };
+    });
+
+    const pendingConsensusCount = consensusQueue.filter(
+      (item) => item.submittedVotes >= requiredVotes && item.record?.status !== "finalized"
+    ).length;
+    const finalizedConsensusCount = consensusQueue.filter((item) => item.record?.status === "finalized").length;
+    const activeReportForConsensus = activeExtractionReport ?? projectExtractionReports[0];
+    const activeStudyForConsensus = activeReportForConsensus
+      ? projectScreeningStudies.find((study) => study.id === activeReportForConsensus.studyId)
+      : undefined;
+    const submittedResponsesForActiveReport = activeReportForConsensus
+      ? extractionResponses.filter(
+          (response) =>
+            response.projectId === selectedProject.id &&
+            response.reportId === activeReportForConsensus.id &&
+            response.templateId === activeExtractionTemplate.id &&
+            response.isSubmitted
+        )
+      : [];
+    const hasRequiredVotes = submittedResponsesForActiveReport.length >= requiredVotes;
+    const flaggedFieldIdSet = new Set(activeExtractionConsensus?.flaggedFieldIds ?? []);
+    const conflictedFields = activeExtractionTemplate.fields.filter((field) => flaggedFieldIdSet.has(field.id));
+
+    return (
+      <div className="viewStack">
+        <section className="overviewBand compactBand">
+          <div>
+            <p className="eyebrow">Consensus arbitration</p>
+            <h1>Conflict Flagging and Arbitration</h1>
+            <p className="subtle">Automated discrepancy detection, side-by-side review, and final consensus finalization.</p>
+          </div>
+          <div className="reportPicker">
+            <div>
+              <p className="eyebrow">Queue status</p>
+              <strong>{pendingConsensusCount} pending</strong>
+              <p className="subtle">{finalizedConsensusCount} finalized records</p>
+            </div>
+            <button className="ghostButton" type="button" onClick={() => setActiveView("extraction")}>
+              <ClipboardCheck size={16} />
+              Back To Extraction
+            </button>
+            <label className="fieldLabel" htmlFor="consensus-report-picker">
+              Study/report
+            </label>
+            <select
+              id="consensus-report-picker"
+              value={activeReportForConsensus?.id ?? ""}
+              onChange={(event) => setActiveExtractionReportId(event.target.value)}
+            >
+              {projectExtractionReports.map((report) => {
+                const item = consensusQueue.find((candidate) => candidate.report.id === report.id);
+                const statusLabel =
+                  item && item.submittedVotes >= requiredVotes
+                    ? item.record?.status === "finalized"
+                      ? "finalized"
+                      : "pending"
+                    : "collecting votes";
+                return (
+                  <option key={report.id} value={report.id}>
+                    {report.title} ({statusLabel})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        </section>
+
+        {consensusMessage ? (
+          <div className={consensusMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+            {consensusMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{consensusMessage}</span>
+          </div>
+        ) : null}
+
+        {!hasRequiredVotes ? (
+          <section className="panel">
+            <SectionTitle icon={AlertTriangle} title="Waiting For Independent Extractions" action="Automated gate" />
+            <div className="validationItem blocked">
+              <AlertTriangle size={17} />
+              <span>
+                {`This report has ${submittedResponsesForActiveReport.length}/${requiredVotes} submitted extraction vote${requiredVotes === 1 ? "" : "s"}.`}
+              </span>
+            </div>
+          </section>
+        ) : (
+          <section className="panel">
+            <SectionTitle icon={GitMerge} title="Automated Conflict Flagging" action={`${activeExtractionTemplate.fields.length} fields compared`} />
+            <p className="subtle">
+              {activeStudyForConsensus
+                ? `${activeStudyForConsensus.title} · ${activeExtractionConsensus?.status === "finalized" ? "finalized" : "pending arbitration"}`
+                : "Select a report to review extraction discrepancies."}
+            </p>
+            <div className="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    {submittedResponsesForActiveReport.map((response) => (
+                      <th key={response.id}>{response.userName}</th>
+                    ))}
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeExtractionTemplate.fields.map((field) => {
+                    const isFlagged = flaggedFieldIdSet.has(field.id);
+                    return (
+                      <tr key={field.id}>
+                        <td>
+                          <strong>{field.title}</strong>
+                        </td>
+                        {submittedResponsesForActiveReport.map((response) => (
+                          <td key={`${field.id}:${response.id}`}>{formatExtractionResponseValue(response.values[field.id])}</td>
+                        ))}
+                        <td>{isFlagged ? "Conflict" : "Match"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {activeExtractionConsensus?.status === "finalized" ? (
+              <div className="validationItem ok">
+                <Check size={17} />
+                <span>
+                  Finalized by {activeExtractionConsensus.finalizedByUserName || "System"} at {formatAuditTime(activeExtractionConsensus.finalizedAt || activeExtractionConsensus.updatedAt)}.
+                </span>
+              </div>
+            ) : null}
+          </section>
+        )}
+
+        {hasRequiredVotes && activeExtractionConsensus ? (
+          <section className="panel">
+            <SectionTitle icon={ClipboardCheck} title="Arbitration And Finalization" action={`${conflictedFields.length} conflicts`} />
+            {conflictedFields.length === 0 ? (
+              <div className="validationItem ok">
+                <Check size={17} />
+                <span>No conflicting extraction fields detected. This consensus record can be exported as finalized.</span>
+              </div>
+            ) : (
+              <form className="extractionForm" onSubmit={finalizeExtractionConsensus}>
+                {conflictedFields.map((field) => {
+                  const value = consensusFormValues[field.id];
+                  return (
+                    <fieldset className="extractionField" key={field.id}>
+                      <legend>{field.title}</legend>
+                      {field.type === "multiline_text" ? (
+                        <textarea
+                          value={typeof value === "string" ? value : ""}
+                          onChange={(event) => updateConsensusValue(field.id, event.target.value)}
+                        />
+                      ) : null}
+                      {field.type === "single_choice" ? (
+                        <div className="choiceList">
+                          {field.options.map((option) => (
+                            <label key={option}>
+                              <input
+                                type="radio"
+                                name={`consensus-${field.id}`}
+                                checked={value === option}
+                                onChange={() => updateConsensusValue(field.id, option)}
+                              />
+                              <span>{option}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+                      {field.type === "multiple_choice" ? (
+                        <div className="choiceList">
+                          {field.options.map((option) => {
+                            const checked = Array.isArray(value) && value.includes(option);
+                            return (
+                              <label key={option}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(event) => toggleConsensusChoice(field.id, option, event.target.checked)}
+                                />
+                                <span>{option}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </fieldset>
+                  );
+                })}
+
+                <button className="primaryButton" type="submit" disabled={!canArbitrate}>
+                  <Check size={17} />
+                  Finalize Consensus
+                </button>
+              </form>
+            )}
+          </section>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderRisk() {
     if (activeCounts.studiesIncluded === 0) {
       return (
@@ -3422,6 +3801,7 @@ export function PrismaReviewApp() {
   }
 
   function renderExports() {
+    const exportMessageIsSuccess = /downloaded|generated|exported/i.test(exportMessage);
     const validations = [
       {
         label: "Records identified reconcile with removals and screened records",
@@ -3454,16 +3834,29 @@ export function PrismaReviewApp() {
             <p className="subtle">Counts are generated from workflow events, current decisions, and report retrieval status.</p>
           </div>
           <div className="toolbarCluster">
-            <button className="ghostButton" type="button" title="Download CSV">
-              <FileText size={17} />
-              CSV
-            </button>
-            <button className="primaryButton" type="button" title="Download SVG">
+            <button className="ghostButton" type="button" title="Download SVG">
               <Download size={17} />
               SVG
             </button>
+            <button
+              className="primaryButton"
+              type="button"
+              title="Download consensus extraction CSV"
+              onClick={downloadConsensusExtractionCsv}
+              disabled={!activeExtractionTemplate || activeCounts.studiesIncluded === 0}
+            >
+              <FileText size={17} />
+              Export Extraction CSV
+            </button>
           </div>
         </section>
+
+        {exportMessage ? (
+          <div className={exportMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+            {exportMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{exportMessage}</span>
+          </div>
+        ) : null}
 
         <section className="exportLayout">
           <div className="panel">

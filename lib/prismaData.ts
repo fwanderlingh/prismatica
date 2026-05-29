@@ -8,6 +8,7 @@ export type ViewKey =
   | "screening"
   | "fullText"
   | "extraction"
+  | "consensus"
   | "risk"
   | "exports"
   | "audit"
@@ -170,6 +171,27 @@ export type ExtractionResponse = {
   createdAt: string;
   updatedAt: string;
   submittedAt?: string;
+};
+
+export type ExtractionConsensusStatus = "pending" | "finalized";
+
+export type ExtractionConsensus = {
+  id: string;
+  projectId: string;
+  studyId: string;
+  reportId: string;
+  templateId: string;
+  requiredVotes: number;
+  reviewerResponseIds: string[];
+  sourceFingerprint: string;
+  flaggedFieldIds: string[];
+  resolvedValues: Record<string, ExtractionResponseValue>;
+  status: ExtractionConsensusStatus;
+  createdAt: string;
+  updatedAt: string;
+  finalizedAt?: string;
+  finalizedByUserId?: string;
+  finalizedByUserName?: string;
 };
 
 export type DedupCandidate = {

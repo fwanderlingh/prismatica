@@ -2,6 +2,7 @@ import type {
   AppUser,
   Decision,
   DedupCandidate,
+  ExtractionConsensus,
   ExtractionResponse,
   ExtractionTemplate,
   ImportBatch,
@@ -26,6 +27,7 @@ export type AppStatePayload = {
   reports: Report[];
   extractionTemplates: ExtractionTemplate[];
   extractionResponses: ExtractionResponse[];
+  extractionConsensus: ExtractionConsensus[];
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];

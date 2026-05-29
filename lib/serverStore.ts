@@ -6,6 +6,7 @@ import {
   type AppUser,
   type Decision,
   type DedupCandidate,
+  type ExtractionConsensus,
   type ExtractionFieldType,
   type ExtractionResponse,
   type ExtractionResponseValue,
@@ -36,6 +37,7 @@ type PersistedState = {
   reports: Report[];
   extractionTemplates: ExtractionTemplate[];
   extractionResponses: ExtractionResponse[];
+  extractionConsensus: ExtractionConsensus[];
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
@@ -79,6 +81,13 @@ type ExtractionResponseInput = {
   reportId?: string;
   studyId?: string;
   values?: Record<string, unknown>;
+};
+
+type ExtractionConsensusInput = {
+  templateId?: string;
+  reportId?: string;
+  studyId?: string;
+  resolvedValues?: Record<string, unknown>;
 };
 
 type ParsedCitation = {
@@ -137,6 +146,7 @@ function createSeedState(): PersistedState {
     reports: [],
     extractionTemplates: [],
     extractionResponses: [],
+    extractionConsensus: [],
     decisions: [],
     events: [],
     dedupCandidates: []
@@ -320,6 +330,18 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
         )
         .map((response) => normalizeExtractionResponse(response))
     : [];
+  const extractionConsensus = Array.isArray(state.extractionConsensus)
+    ? state.extractionConsensus
+        .filter(
+          (consensus) =>
+            projectIds.has(consensus.projectId) &&
+            studyIds.has(consensus.studyId) &&
+            reportIds.has(consensus.reportId) &&
+            extractionTemplateIds.has(consensus.templateId) &&
+            (!consensus.finalizedByUserId || userIds.has(consensus.finalizedByUserId))
+        )
+        .map((consensus) => normalizeExtractionConsensus(consensus))
+    : [];
   const projectsWithImportState = projects.map((project) => {
     const importedRecordCount = imports
       .filter((batch) => batch.projectId === project.id)
@@ -357,6 +379,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     reports,
     extractionTemplates,
     extractionResponses,
+    extractionConsensus,
     decisions: Array.isArray(state.decisions)
       ? state.decisions.filter(
           (decision) =>
@@ -559,6 +582,9 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     extractionResponses: state.extractionResponses.filter(
       (response) => projectIds.has(response.projectId) && studyIds.has(response.studyId) && reportIds.has(response.reportId)
     ),
+    extractionConsensus: state.extractionConsensus.filter(
+      (consensus) => projectIds.has(consensus.projectId) && studyIds.has(consensus.studyId) && reportIds.has(consensus.reportId)
+    ),
     decisions: state.decisions.filter((decision) => {
       const project = projectById.get(decision.projectId);
       if (!project) {
@@ -601,6 +627,7 @@ export function deleteProjectForUser(userId: string, projectId: string): AppMuta
   state.reports = state.reports.filter((report) => report.projectId !== projectId);
   state.extractionTemplates = state.extractionTemplates.filter((template) => template.projectId !== projectId);
   state.extractionResponses = state.extractionResponses.filter((response) => response.projectId !== projectId);
+  state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.projectId !== projectId);
   state.decisions = state.decisions.filter((decision) => decision.projectId !== projectId && !removedStudyIds.has(decision.studyId) && !removedReportIds.has(decision.reportId ?? ""));
   state.events = state.events.filter((event) => event.entity !== projectId && !removedStudyIds.has(event.entity) && !removedReportIds.has(event.entity));
   state.dedupCandidates = state.dedupCandidates.filter(
@@ -840,6 +867,13 @@ export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: s
   state.imports = state.imports.filter((batch) => !solelyOwnedProjectIds.has(batch.projectId));
   state.studies = state.studies.filter((study) => !removedStudyIds.has(study.id));
   state.reports = state.reports.filter((report) => !solelyOwnedProjectIds.has(report.projectId) && !removedStudyIds.has(report.studyId));
+  state.extractionTemplates = state.extractionTemplates.filter((template) => !solelyOwnedProjectIds.has(template.projectId));
+  state.extractionResponses = state.extractionResponses.filter(
+    (response) => response.userId !== targetUserId && !solelyOwnedProjectIds.has(response.projectId) && !removedStudyIds.has(response.studyId)
+  );
+  state.extractionConsensus = state.extractionConsensus.filter(
+    (consensus) => !solelyOwnedProjectIds.has(consensus.projectId) && !removedStudyIds.has(consensus.studyId)
+  );
   state.decisions = state.decisions.filter(
     (decision) => decision.userId !== targetUserId && !solelyOwnedProjectIds.has(decision.projectId) && !removedStudyIds.has(decision.studyId)
   );
@@ -1135,6 +1169,7 @@ export function createExtractionTemplateForUser(userId: string, projectId: strin
       candidate.projectId === projectId && candidate.isActive ? { ...candidate, isActive: false, updatedAt: now } : candidate
     )
   ];
+  state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.projectId !== projectId);
   appendEvent(state, currentUser.name, `Created data template ${title}`, projectId);
   writeState(state);
   return buildPayload(state, userId);
@@ -1192,7 +1227,79 @@ export function saveExtractionResponseForUser(userId: string, projectId: string,
     ...state.extractionResponses.filter((response) => response.id !== existingResponse?.id),
     nextResponse
   ];
+  syncExtractionConsensusForReport(state, projectId, report.id, template.id);
   appendEvent(state, currentUser.name, `Submitted data extraction for ${report.title}`, report.id);
+  syncProjectWorkflowCounts(state, projectId);
+  writeState(state);
+  return buildPayload(state, userId);
+}
+
+export function saveExtractionConsensusForUser(userId: string, projectId: string, input: ExtractionConsensusInput): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  const project = requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const report = state.reports.find((candidate) => candidate.id === input.reportId && candidate.projectId === projectId);
+  if (!report) {
+    throw new ApiError("Choose an included report before finalizing consensus.", 404);
+  }
+
+  const template = state.extractionTemplates.find(
+    (candidate) => candidate.id === (input.templateId ?? "") && candidate.projectId === projectId && candidate.isActive
+  );
+  if (!template) {
+    throw new ApiError("Create an active data template before resolving extraction conflicts.", 404);
+  }
+
+  const draft = buildExtractionConsensusDraft(state, project, report.id, template);
+  if (!draft) {
+    throw new ApiError("Consensus is not ready yet. Collect all required independent extraction submissions first.", 400);
+  }
+
+  const mergedValues: Record<string, unknown> = { ...draft.autoResolvedValues };
+  const incomingValues = input.resolvedValues ?? {};
+  for (const fieldId of draft.flaggedFieldIds) {
+    if (!(fieldId in incomingValues)) {
+      const field = template.fields.find((candidate) => candidate.id === fieldId);
+      throw new ApiError(`${field?.title ?? "A flagged field"} requires an arbitration decision before finalization.`);
+    }
+    mergedValues[fieldId] = incomingValues[fieldId];
+  }
+
+  const resolvedValues = validateExtractionValues(template, mergedValues);
+  const now = new Date().toISOString();
+  const existingConsensus = state.extractionConsensus.find(
+    (consensus) =>
+      consensus.projectId === projectId && consensus.reportId === report.id && consensus.templateId === template.id
+  );
+
+  const finalizedConsensus: ExtractionConsensus = {
+    id: existingConsensus?.id ?? createId("consensus"),
+    projectId,
+    studyId: report.studyId,
+    reportId: report.id,
+    templateId: template.id,
+    requiredVotes: project.extractionRequiredVotes,
+    reviewerResponseIds: draft.reviewerResponseIds,
+    sourceFingerprint: draft.sourceFingerprint,
+    flaggedFieldIds: draft.flaggedFieldIds,
+    resolvedValues,
+    status: "finalized",
+    createdAt: existingConsensus?.createdAt ?? now,
+    updatedAt: now,
+    finalizedAt: now,
+    finalizedByUserId: currentUser.id,
+    finalizedByUserName: currentUser.name
+  };
+
+  state.extractionConsensus = [
+    ...state.extractionConsensus.filter((consensus) => consensus.id !== existingConsensus?.id),
+    finalizedConsensus
+  ];
+  appendEvent(state, currentUser.name, `Finalized extraction consensus for ${report.title}`, report.id);
   syncProjectWorkflowCounts(state, projectId);
   writeState(state);
   return buildPayload(state, userId);
@@ -1470,6 +1577,8 @@ export function deleteImportStudyForUser(userId: string, projectId: string, impo
 
   state.studies = state.studies.filter((candidate) => candidate.id !== studyId);
   state.reports = state.reports.filter((report) => report.studyId !== studyId);
+  state.extractionResponses = state.extractionResponses.filter((response) => response.studyId !== studyId);
+  state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.studyId !== studyId);
   state.decisions = state.decisions.filter((decision) => decision.studyId !== studyId);
   syncImportBatchAfterStudyChange(state, projectId, importId, batch.parserWarnings > 0 || batch.status === "needs_review");
   syncProjectAfterImportChange(state, projectId, `Deleted imported citation from ${batch.filename}`);
@@ -1546,6 +1655,96 @@ export function getReportsForProjectForUser(userId: string, projectId: string) {
   const state = readState();
   requireProjectMember(state, projectId, userId);
   return state.reports.filter((report) => report.projectId === projectId);
+}
+
+export function getConsensusExtractionCsvForUser(userId: string, projectId: string) {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  const project = requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const template = state.extractionTemplates.find((candidate) => candidate.projectId === projectId && candidate.isActive);
+  if (!template) {
+    throw new ApiError("Create and activate an extraction template before exporting CSV.", 404);
+  }
+
+  const includedStudies = state.studies.filter((study) => study.projectId === projectId && study.stage === "extraction");
+  if (includedStudies.length === 0) {
+    throw new ApiError("No included studies are ready for extraction export.", 400);
+  }
+
+  const includedStudyIds = new Set(includedStudies.map((study) => study.id));
+  const includedReports = state.reports.filter((report) => report.projectId === projectId && includedStudyIds.has(report.studyId));
+  if (includedReports.length === 0) {
+    throw new ApiError("No included reports are ready for extraction export.", 400);
+  }
+
+  const fieldsWithHeaders = buildConsensusFieldHeaders(template.fields);
+  const metadataHeaders = ["study_id", "report_id", "import_item_id", "study_title", "journal", "year", "doi"];
+  const headers = [...metadataHeaders, ...fieldsWithHeaders.map((field) => field.header)];
+  const rows: string[][] = [];
+  let unresolvedReports = 0;
+
+  for (const report of includedReports) {
+    const study = includedStudies.find((candidate) => candidate.id === report.studyId);
+    if (!study) {
+      continue;
+    }
+
+    const draft = buildExtractionConsensusDraft(state, project, report.id, template);
+    if (!draft) {
+      unresolvedReports += 1;
+      continue;
+    }
+
+    const finalizedConsensus = state.extractionConsensus.find(
+      (consensus) =>
+        consensus.projectId === projectId &&
+        consensus.reportId === report.id &&
+        consensus.templateId === template.id &&
+        consensus.status === "finalized"
+    );
+    const finalizedAt = Date.parse(finalizedConsensus?.finalizedAt ?? "");
+    const consensusIsCurrent = Boolean(finalizedConsensus && Number.isFinite(finalizedAt) && finalizedAt >= draft.latestSubmittedAt);
+    if (!consensusIsCurrent || !finalizedConsensus) {
+      unresolvedReports += 1;
+      continue;
+    }
+
+    const consensusValues = fieldsWithHeaders.map((field) => formatNormalizedExtractionValue(normalizeExtractionResponseValue(finalizedConsensus.resolvedValues[field.id])));
+
+    rows.push([
+      study.id,
+      report.id,
+      Number.isInteger(study.importItemId) ? String(study.importItemId) : "",
+      study.title,
+      study.journal,
+      study.year > 0 ? String(study.year) : "",
+      study.doi,
+      ...consensusValues
+    ]);
+  }
+
+  if (rows.length === 0) {
+    throw new ApiError(
+      "No consensus extraction records are exportable yet. Resolve extraction discrepancies and ensure required votes are submitted.",
+      400
+    );
+  }
+
+  const csv = toCsv([headers, ...rows]);
+  const fileName = `${slugify(project.title) || project.id}-consensus-extraction-${new Date().toISOString().slice(0, 10)}.csv`;
+  appendEvent(state, currentUser.name, `Exported consensus extraction CSV (${rows.length} studies)`, projectId);
+  writeState(state);
+
+  return {
+    fileName,
+    csv,
+    exportedRows: rows.length,
+    unresolvedReports
+  };
 }
 
 export function updateReportForUser(
@@ -1876,7 +2075,8 @@ function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: Rev
       if (study.id !== studyId || study.projectId !== project.id) {
         return study;
       }
-      transitionedToFullText = study.stage !== "full_text";
+      // Only transition from title/abstract to full-text; never downgrade extraction studies during resync.
+      transitionedToFullText = study.stage === "title_abstract";
       advancedStudy = transitionedToFullText ? { ...study, stage: "full_text" } : study;
       return advancedStudy;
     });
@@ -1901,6 +2101,215 @@ function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: Rev
   }
 
   syncProjectWorkflowCounts(state, project.id);
+}
+
+function buildConsensusFieldHeaders(fields: ExtractionTemplateField[]) {
+  const seenHeaders = new Set<string>();
+  return fields.map((field, index) => {
+    const base = slugify(field.title) || `field_${index + 1}`;
+    let header = base;
+    let suffix = 2;
+    while (seenHeaders.has(header)) {
+      header = `${base}_${suffix}`;
+      suffix += 1;
+    }
+    seenHeaders.add(header);
+    return {
+      ...field,
+      header
+    };
+  });
+}
+
+function buildExtractionConsensusDraft(state: PersistedState, project: ReviewProject, reportId: string, template: ExtractionTemplate) {
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === project.id);
+  if (!report) {
+    return undefined;
+  }
+
+  const study = state.studies.find((candidate) => candidate.id === report.studyId && candidate.projectId === project.id);
+  if (!study || study.stage !== "extraction") {
+    return undefined;
+  }
+
+  const submittedResponses = state.extractionResponses
+    .filter(
+      (response) =>
+        response.projectId === project.id &&
+        response.reportId === report.id &&
+        response.templateId === template.id &&
+        response.isSubmitted
+    )
+    .sort((left, right) => left.userId.localeCompare(right.userId));
+
+  if (submittedResponses.length < project.extractionRequiredVotes) {
+    return undefined;
+  }
+
+  const latestSubmittedAt = submittedResponses.reduce((latest, response) => {
+    const candidateTime = Date.parse(response.submittedAt ?? response.updatedAt ?? "");
+    if (!Number.isFinite(candidateTime)) {
+      return latest;
+    }
+    return Math.max(latest, candidateTime);
+  }, 0);
+
+  const autoResolvedValues: Record<string, ExtractionResponseValue> = {};
+  const flaggedFieldIds: string[] = [];
+
+  for (const field of template.fields) {
+    const normalizedValues = submittedResponses.map((response) => normalizeExtractionResponseValue(response.values[field.id]));
+    const firstValue = normalizedValues[0];
+    const firstSerialized = serializeNormalizedExtractionValue(firstValue);
+    const isConsensus = normalizedValues.every((value) => serializeNormalizedExtractionValue(value) === firstSerialized);
+    autoResolvedValues[field.id] = firstValue;
+    if (!isConsensus) {
+      flaggedFieldIds.push(field.id);
+    }
+  }
+
+  const sourceFingerprint = crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        reportId,
+        templateId: template.id,
+        reviewerPayload: submittedResponses.map((response) => ({
+          id: response.id,
+          userId: response.userId,
+          values: Object.fromEntries(
+            template.fields.map((field) => [field.id, normalizeExtractionResponseValue(response.values[field.id])])
+          )
+        }))
+      })
+    )
+    .digest("hex");
+
+  return {
+    report,
+    study,
+    template,
+    reviewerResponseIds: submittedResponses.map((response) => response.id),
+    sourceFingerprint,
+    flaggedFieldIds,
+    autoResolvedValues,
+    latestSubmittedAt
+  };
+}
+
+function syncExtractionConsensusForReport(state: PersistedState, projectId: string, reportId: string, templateId: string) {
+  const project = state.projects.find((candidate) => candidate.id === projectId);
+  const template = state.extractionTemplates.find(
+    (candidate) => candidate.projectId === projectId && candidate.id === templateId && candidate.isActive
+  );
+  if (!project || !template) {
+    state.extractionConsensus = state.extractionConsensus.filter(
+      (consensus) => !(consensus.projectId === projectId && consensus.reportId === reportId && consensus.templateId === templateId)
+    );
+    return;
+  }
+
+  const draft = buildExtractionConsensusDraft(state, project, reportId, template);
+  const existing = state.extractionConsensus.find(
+    (consensus) => consensus.projectId === projectId && consensus.reportId === reportId && consensus.templateId === template.id
+  );
+
+  if (!draft) {
+    state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.id !== existing?.id);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const hasConflicts = draft.flaggedFieldIds.length > 0;
+  const existingFinalizedAt = Date.parse(existing?.finalizedAt ?? "");
+  const canKeepExistingFinalization = Boolean(
+    existing &&
+      existing.status === "finalized" &&
+      Number.isFinite(existingFinalizedAt) &&
+      existingFinalizedAt >= draft.latestSubmittedAt
+  );
+  const status: ExtractionConsensus["status"] = hasConflicts
+    ? canKeepExistingFinalization
+      ? "finalized"
+      : "pending"
+    : "finalized";
+
+  const mergedValues = {
+    ...draft.autoResolvedValues,
+    ...(existing?.resolvedValues ?? {})
+  };
+  let resolvedValues: Record<string, ExtractionResponseValue>;
+  try {
+    resolvedValues = validateExtractionValues(template, mergedValues);
+  } catch {
+    resolvedValues = validateExtractionValues(template, draft.autoResolvedValues);
+  }
+
+  const finalizedBySystem = !hasConflicts;
+  const nextConsensus: ExtractionConsensus = {
+    id: existing?.id ?? createId("consensus"),
+    projectId,
+    studyId: draft.study.id,
+    reportId,
+    templateId: template.id,
+    requiredVotes: project.extractionRequiredVotes,
+    reviewerResponseIds: draft.reviewerResponseIds,
+    sourceFingerprint: draft.sourceFingerprint,
+    flaggedFieldIds: draft.flaggedFieldIds,
+    resolvedValues,
+    status,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    finalizedAt: status === "finalized" ? (canKeepExistingFinalization ? existing?.finalizedAt ?? now : now) : undefined,
+    finalizedByUserId:
+      status === "finalized"
+        ? canKeepExistingFinalization
+          ? existing?.finalizedByUserId
+          : finalizedBySystem
+            ? "system"
+            : existing?.finalizedByUserId
+        : undefined,
+    finalizedByUserName:
+      status === "finalized"
+        ? canKeepExistingFinalization
+          ? existing?.finalizedByUserName
+          : finalizedBySystem
+            ? "System"
+            : existing?.finalizedByUserName
+        : undefined
+  };
+
+  state.extractionConsensus = [
+    ...state.extractionConsensus.filter((consensus) => consensus.id !== existing?.id),
+    nextConsensus
+  ];
+}
+
+function normalizeExtractionResponseValue(value: ExtractionResponseValue | undefined) {
+  if (Array.isArray(value)) {
+    return uniqueIds(value.map((entry) => entry.trim()).filter(Boolean)).sort((left, right) => left.localeCompare(right));
+  }
+  return (value ?? "").trim();
+}
+
+function serializeNormalizedExtractionValue(value: string | string[]) {
+  return Array.isArray(value) ? JSON.stringify(value) : value;
+}
+
+function formatNormalizedExtractionValue(value: string | string[]) {
+  return Array.isArray(value) ? value.join(" | ") : value;
+}
+
+function toCsv(rows: string[][]) {
+  return `${rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(",")).join("\n")}\n`;
+}
+
+function escapeCsvCell(value: string) {
+  const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
 }
 
 function syncStudyAfterFullTextDecision(state: PersistedState, project: ReviewProject, reportId: string) {
@@ -1982,18 +2391,35 @@ function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
     const activeExtractionTemplate = state.extractionTemplates.find(
       (template) => template.projectId === project.id && template.isActive
     );
+
+    if (activeExtractionTemplate) {
+      for (const report of reports) {
+        syncExtractionConsensusForReport(state, project.id, report.id, activeExtractionTemplate.id);
+      }
+    }
+
     const extractionReadyForCompletion =
       includedStudies > 0 &&
       Boolean(activeExtractionTemplate) &&
       includedReports.every((report) => {
-        const submittedVotes = state.extractionResponses.filter(
-          (response) =>
-            response.projectId === project.id &&
-            response.reportId === report.id &&
-            response.templateId === activeExtractionTemplate?.id &&
-            response.isSubmitted
-        ).length;
-        return submittedVotes >= project.extractionRequiredVotes;
+        if (!activeExtractionTemplate) {
+          return false;
+        }
+
+        const draft = buildExtractionConsensusDraft(state, project, report.id, activeExtractionTemplate);
+        if (!draft) {
+          return false;
+        }
+
+        const finalizedConsensus = state.extractionConsensus.find(
+          (consensus) =>
+            consensus.projectId === project.id &&
+            consensus.reportId === report.id &&
+            consensus.templateId === activeExtractionTemplate.id &&
+            consensus.status === "finalized"
+        );
+        const finalizedAt = Date.parse(finalizedConsensus?.finalizedAt ?? "");
+        return Boolean(finalizedConsensus && Number.isFinite(finalizedAt) && finalizedAt >= draft.latestSubmittedAt);
       });
 
     const conflictCount = countProjectWorkflowConflicts(state, project);
@@ -2026,6 +2452,16 @@ function resyncAllProjectWorkflowState(state: PersistedState) {
     const projectReports = state.reports.filter((report) => report.projectId === project.id);
     for (const report of projectReports) {
       syncStudyAfterFullTextDecision(state, project, report.id);
+    }
+    const activeExtractionTemplate = state.extractionTemplates.find(
+      (template) => template.projectId === project.id && template.isActive
+    );
+    if (activeExtractionTemplate) {
+      for (const report of projectReports) {
+        syncExtractionConsensusForReport(state, project.id, report.id, activeExtractionTemplate.id);
+      }
+    } else {
+      state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.projectId !== project.id);
     }
     syncProjectWorkflowCounts(state, project.id);
   }
@@ -2257,6 +2693,39 @@ function normalizeExtractionResponse(response: Partial<ExtractionResponse>): Ext
     updatedAt: response.updatedAt || new Date().toISOString(),
     submittedAt: response.submittedAt || undefined
   };
+}
+
+function normalizeExtractionConsensus(consensus: Partial<ExtractionConsensus>): ExtractionConsensus {
+  return {
+    id: consensus.id || createId("consensus"),
+    projectId: consensus.projectId || "",
+    studyId: consensus.studyId || "",
+    reportId: consensus.reportId || "",
+    templateId: consensus.templateId || "",
+    requiredVotes: typeof consensus.requiredVotes === "number" && Number.isFinite(consensus.requiredVotes) ? Math.max(1, Math.trunc(consensus.requiredVotes)) : 2,
+    reviewerResponseIds: Array.isArray(consensus.reviewerResponseIds) ? uniqueIds(consensus.reviewerResponseIds.map(String)) : [],
+    sourceFingerprint: typeof consensus.sourceFingerprint === "string" ? consensus.sourceFingerprint : "",
+    flaggedFieldIds: Array.isArray(consensus.flaggedFieldIds) ? uniqueIds(consensus.flaggedFieldIds.map(String)) : [],
+    resolvedValues: normalizeExtractionResolvedValues(consensus.resolvedValues),
+    status: consensus.status === "finalized" ? "finalized" : "pending",
+    createdAt: consensus.createdAt || new Date().toISOString(),
+    updatedAt: consensus.updatedAt || new Date().toISOString(),
+    finalizedAt: consensus.finalizedAt || undefined,
+    finalizedByUserId: consensus.finalizedByUserId || undefined,
+    finalizedByUserName: consensus.finalizedByUserName || undefined
+  };
+}
+
+function normalizeExtractionResolvedValues(values: Partial<Record<string, unknown>> | undefined): Record<string, ExtractionResponseValue> {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(values).map(([fieldId, value]) => [
+      fieldId,
+      Array.isArray(value) ? uniqueIds(value.map((entry) => String(entry).trim()).filter(Boolean)) : String(value ?? "").trim()
+    ])
+  );
 }
 
 function normalizeExtractionFields(fields: ExtractionTemplate["fields"] | undefined) {
