@@ -122,6 +122,9 @@ type WorkflowConflict = {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 const AUDIT_PAGE_SIZE = 10;
+const BRAND_NAME = "PRISMATICA";
+const BRAND_TAGLINE = "Open source PRISMA review platform";
+const BRAND_LOGO_ALT = `${BRAND_NAME} logo`;
 const defaultAuthSettings: AppAuthSettings = {
   registrationEnabled: true
 };
@@ -970,11 +973,11 @@ export function PrismaReviewApp() {
         <section className="loginPanel authLoadingPanel">
           <div className="brandBlock loginBrand">
             <div className="brandMark brandMarkImage">
-              <img src="/icon.svg" alt="Prismatica logo" width={30} height={30} />
+              <img src="/icon.svg" alt={BRAND_LOGO_ALT} width={30} height={30} />
             </div>
             <div>
-              <strong>Prismatica</strong>
-              <span>Open source PRISMA review platform</span>
+              <strong>{BRAND_NAME}</strong>
+              <span>{BRAND_TAGLINE}</span>
             </div>
           </div>
           <div className="authLoadingBody">
@@ -4329,11 +4332,11 @@ export function PrismaReviewApp() {
         <section className="loginPanel">
           <div className="brandBlock loginBrand">
             <div className="brandMark brandMarkImage">
-              <img src="/icon.svg" alt="Prismatica logo" width={30} height={30} />
+              <img src="/icon.svg" alt={BRAND_LOGO_ALT} width={30} height={30} />
             </div>
             <div>
-              <strong>Prismatica</strong>
-              <span>Open source PRISMA review platform</span>
+              <strong>{BRAND_NAME}</strong>
+              <span>{BRAND_TAGLINE}</span>
             </div>
           </div>
 
@@ -4474,11 +4477,11 @@ export function PrismaReviewApp() {
             }}
           >
             <div className="brandMark brandMarkImage">
-              <img src="/icon.svg" alt="PRISMATICA logo" width={30} height={30} />
+              <img src="/icon.svg" alt={BRAND_LOGO_ALT} width={30} height={30} />
             </div>
             <div>
-              <strong>PRISMATICA</strong>
-              <span>Open source PRISMA review platform</span>
+              <strong>{BRAND_NAME}</strong>
+              <span>{BRAND_TAGLINE}</span>
             </div>
           </button>
           <button
