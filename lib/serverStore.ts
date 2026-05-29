@@ -164,6 +164,69 @@ function writeState(state: PersistedState) {
   fs.renameSync(/*turbopackIgnore: true*/ tempPath, filePath);
 }
 
+function assignImportItemIds(studies: Study[]): Study[] {
+  const countByProject = new Map<string, Map<number, number>>();
+
+  for (const study of studies) {
+    if (!study.projectId || !Number.isInteger(study.importItemId) || (study.importItemId ?? 0) <= 0) {
+      continue;
+    }
+    const counts = countByProject.get(study.projectId) ?? new Map<number, number>();
+    counts.set(study.importItemId as number, (counts.get(study.importItemId as number) ?? 0) + 1);
+    countByProject.set(study.projectId, counts);
+  }
+
+  const consumedByProject = new Map<string, Set<number>>();
+  const nextByProject = new Map<string, number>();
+
+  for (const [projectId, counts] of countByProject.entries()) {
+    const maxUsed = counts.size > 0 ? Math.max(...counts.keys()) : 0;
+    nextByProject.set(projectId, maxUsed + 1);
+  }
+
+  return studies.map((study) => {
+    if (!study.projectId) {
+      return study;
+    }
+
+    const consumed = consumedByProject.get(study.projectId) ?? new Set<number>();
+    consumedByProject.set(study.projectId, consumed);
+
+    const currentImportItemId = Number.isInteger(study.importItemId) && (study.importItemId ?? 0) > 0 ? (study.importItemId as number) : 0;
+    const counts = countByProject.get(study.projectId) ?? new Map<number, number>();
+    let importItemId = currentImportItemId;
+
+    const canKeepCurrent = importItemId > 0 && (counts.get(importItemId) ?? 0) > 0 && !consumed.has(importItemId);
+
+    if (!canKeepCurrent) {
+      let next = nextByProject.get(study.projectId) ?? 1;
+      while (consumed.has(next) || counts.has(next)) {
+        next += 1;
+      }
+      importItemId = next;
+      nextByProject.set(study.projectId, next + 1);
+    }
+
+    consumed.add(importItemId);
+
+    if (currentImportItemId === importItemId) {
+      return study;
+    }
+
+    return {
+      ...study,
+      importItemId
+    };
+  });
+}
+
+function getNextImportItemId(state: PersistedState, projectId: string) {
+  const maxId = state.studies
+    .filter((study) => study.projectId === projectId)
+    .reduce((maxValue, study) => Math.max(maxValue, Number.isInteger(study.importItemId) ? (study.importItemId as number) : 0), 0);
+  return maxId + 1;
+}
+
 function normalizeState(state: Partial<PersistedState>): PersistedState {
   const now = new Date().toISOString();
   const authSettings = normalizeAuthSettings(state.authSettings);
@@ -229,7 +292,8 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
       }));
     })
   ];
-  const studyIds = new Set(studies.map((study) => study.id));
+  const studiesWithImportItemIds = assignImportItemIds(studies);
+  const studyIds = new Set(studiesWithImportItemIds.map((study) => study.id));
   const reports = Array.isArray(state.reports)
     ? state.reports
         .filter((report) => projectIds.has(report.projectId) && studyIds.has(report.studyId))
@@ -258,7 +322,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     const importedRecordCount = imports
       .filter((batch) => batch.projectId === project.id)
       .reduce((total, batch) => total + batch.records, 0);
-    const hasScreeningRecords = studies.some((study) => study.projectId === project.id && study.stage === "title_abstract");
+    const hasScreeningRecords = studiesWithImportItemIds.some((study) => study.projectId === project.id && study.stage === "title_abstract");
     if (!importedRecordCount || !hasScreeningRecords) {
       return project;
     }
@@ -287,7 +351,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     }),
     projects: projectsWithImportState,
     imports,
-    studies,
+    studies: studiesWithImportItemIds,
     reports,
     extractionTemplates,
     extractionResponses,
@@ -1176,22 +1240,24 @@ export function createImportBatchForUser(
     uploadedBy: currentUser.name,
     uploadedAt: now.toISOString().slice(0, 16).replace("T", " ")
   };
-  const importedStudies: Study[] = parsedCitations.map((citation) => ({
-    id: createId("study"),
-    projectId,
-    importBatchId: batch.id,
-    title: citation.title,
-    abstract: citation.abstract,
-    authors: citation.authors,
-    journal: citation.journal,
-    year: citation.year,
-    doi: citation.doi,
-    source: sourceName,
-    stage: "title_abstract",
-    keywords: citation.keywords,
-    rawCitation: citation.rawCitation,
-    parserWarnings: citation.warnings
-  }));
+  const nextImportItemId = getNextImportItemId(state, projectId);
+    const importedStudies: Study[] = parsedCitations.map((citation, index) => ({
+      id: createId("study"),
+    importItemId: nextImportItemId + index,
+      projectId,
+      importBatchId: batch.id,
+      title: citation.title,
+      abstract: citation.abstract,
+      authors: citation.authors,
+      journal: citation.journal,
+      year: citation.year,
+      doi: citation.doi,
+      source: sourceName,
+      stage: "title_abstract",
+      keywords: citation.keywords,
+      rawCitation: citation.rawCitation,
+      parserWarnings: citation.warnings
+    }));
 
   state.imports.unshift(batch);
   state.studies.unshift(...importedStudies);

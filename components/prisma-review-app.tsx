@@ -2248,7 +2248,7 @@ export function PrismaReviewApp() {
                       <>
                         <div className="importEntryHeader">
                           <div>
-                            <span className="entryReference">Record {index + 1}</span>
+                            <span className="entryReference">Record {study.importItemId ?? index + 1}</span>
                             <strong>{study.title}</strong>
                             <span>
                               {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} ·{" "}
@@ -2727,8 +2727,9 @@ export function PrismaReviewApp() {
     const pdfViewerUrl = activeReport.fileName
       ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
       : "";
-    const reportPreviewItems = [activeReport, ...projectReportQueue.filter((report) => report.id !== activeReport.id).slice(0, 3)];
-    const reportPreviewOverflow = Math.max(projectReportQueue.length - reportPreviewItems.length, 0);
+    const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
+    const canGoPreviousReport = activeReportIndex > 0;
+    const canGoNextReport = activeReportIndex >= 0 && activeReportIndex < projectReportQueue.length - 1;
 
     return (
       <div className="viewStack">
@@ -2742,7 +2743,7 @@ export function PrismaReviewApp() {
             <div>
               <p className="eyebrow">Report queue</p>
               <strong>{projectReportQueue.length} report{projectReportQueue.length === 1 ? "" : "s"}</strong>
-              <p className="subtle">Active report: {activeReport.title}</p>
+                <p className="subtle">Active report: #{currentReportStudy.importItemId ?? activeReportIndex + 1} · {activeReport.title}</p>
             </div>
             <label className="fieldLabel" htmlFor="full-text-report-picker">
               Jump to report
@@ -2757,26 +2758,44 @@ export function PrismaReviewApp() {
             >
               {projectReportQueue.map((report) => (
                 <option key={report.id} value={report.id}>
-                  {report.title}
+                  #{(hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === report.studyId)?.importItemId ?? projectReportQueue.findIndex((candidate) => candidate.id === report.id) + 1} · {report.title}
                 </option>
               ))}
             </select>
-            <div className="reportPreviewRow" aria-label="Report preview">
-              {reportPreviewItems.map((report) => (
-                <button
-                  className={report.id === activeReport.id ? "reportPreviewChip active" : "reportPreviewChip"}
-                  type="button"
-                  key={report.id}
-                  onClick={() => {
-                    setActiveReportId(report.id);
-                    setFullTextMessage("");
-                  }}
-                  title={report.title}
-                >
-                  {report.title}
-                </button>
-              ))}
-              {reportPreviewOverflow > 0 ? <span className="reportPreviewOverflow">+{reportPreviewOverflow} more</span> : null}
+            <div className="buttonRow" aria-label="Report navigation">
+              <button
+                className="ghostButton iconOnly"
+                type="button"
+                title="Previous report"
+                disabled={!canGoPreviousReport}
+                onClick={() => {
+                  if (!canGoPreviousReport) {
+                    return;
+                  }
+                  setActiveReportId(projectReportQueue[activeReportIndex - 1].id);
+                  setFullTextMessage("");
+                }}
+              >
+                <ArrowLeft size={17} />
+              </button>
+              <span>
+                {activeReportIndex + 1} of {projectReportQueue.length}
+              </span>
+              <button
+                className="ghostButton iconOnly"
+                type="button"
+                title="Next report"
+                disabled={!canGoNextReport}
+                onClick={() => {
+                  if (!canGoNextReport) {
+                    return;
+                  }
+                  setActiveReportId(projectReportQueue[activeReportIndex + 1].id);
+                  setFullTextMessage("");
+                }}
+              >
+                <ArrowRight size={17} />
+              </button>
             </div>
           </div>
         </section>

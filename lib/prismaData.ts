@@ -74,6 +74,7 @@ export type ImportBatch = {
 
 export type Study = {
   id: string;
+  importItemId?: number;
   projectId?: string;
   importBatchId?: string;
   title: string;
