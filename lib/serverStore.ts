@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import type { AppMutationPayload, AppStatePayload } from "./apiTypes";
+import type { AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import {
   type AppUser,
   type Decision,
@@ -28,6 +28,7 @@ type StoredUser = AppUser & {
 
 type PersistedState = {
   version: 1;
+  authSettings: AppAuthSettings;
   users: StoredUser[];
   projects: ReviewProject[];
   imports: ImportBatch[];
@@ -38,6 +39,12 @@ type PersistedState = {
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
+};
+
+type CaptchaPayload = {
+  answer: number;
+  expiresAt: number;
+  nonce: string;
 };
 
 type NewProjectInput = {
@@ -86,6 +93,7 @@ type ParsedCitation = {
 
 const demoUserIds = new Set(["user-rivera", "user-chen", "user-patel", "user-okafor"]);
 const adminUserId = "admin-root";
+const captchaTtlMs = 10 * 60 * 1000;
 
 export class ApiError extends Error {
   status: number;
@@ -103,9 +111,23 @@ function dataFilePath() {
   return path.join(process.cwd(), "data", "prismatica-state.json");
 }
 
+function defaultAuthSettings(): AppAuthSettings {
+  return {
+    registrationEnabled: process.env.PRISMATICA_REGISTRATION_ENABLED?.toLowerCase() === "false" ? false : true
+  };
+}
+
+function normalizeAuthSettings(settings: Partial<AppAuthSettings> | undefined): AppAuthSettings {
+  return {
+    ...defaultAuthSettings(),
+    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaultAuthSettings().registrationEnabled
+  };
+}
+
 function createSeedState(): PersistedState {
   return {
     version: 1,
+    authSettings: defaultAuthSettings(),
     users: [],
     projects: [],
     imports: [],
@@ -143,6 +165,7 @@ function writeState(state: PersistedState) {
 
 function normalizeState(state: Partial<PersistedState>): PersistedState {
   const now = new Date().toISOString();
+  const authSettings = normalizeAuthSettings(state.authSettings);
   const persistedUsers = Array.isArray(state.users) ? state.users.filter((user) => !demoUserIds.has(user.id)) : [];
   const users = ensureAdminUser(
     persistedUsers.map((user) => ({
@@ -248,6 +271,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
 
   return {
     version: 1,
+    authSettings,
     users: users.map((user) => {
       if (user.passwordHash && user.passwordSalt) {
         return user as StoredUser;
@@ -291,6 +315,58 @@ function verifyPassword(password: string, user: StoredUser) {
   const expected = Buffer.from(user.passwordHash, "hex");
   const actual = crypto.scryptSync(password, user.passwordSalt, 64);
   return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function captchaSecret() {
+  return process.env.PRISMATICA_CAPTCHA_SECRET ?? process.env.PRISMATICA_SESSION_SECRET ?? process.env.PRISMATICA_ADMIN_PASSWORD ?? "prismatica-local-captcha";
+}
+
+function signCaptchaPayload(encodedPayload: string) {
+  return crypto.createHmac("sha256", captchaSecret()).update(encodedPayload).digest("base64url");
+}
+
+function createRegistrationCaptcha() {
+  const left = crypto.randomInt(2, 10);
+  const right = crypto.randomInt(2, 10);
+  const payload: CaptchaPayload = {
+    answer: left + right,
+    expiresAt: Date.now() + captchaTtlMs,
+    nonce: crypto.randomBytes(12).toString("base64url")
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  return {
+    question: `${left} + ${right} =`,
+    token: `${encodedPayload}.${signCaptchaPayload(encodedPayload)}`
+  };
+}
+
+function verifyRegistrationCaptcha(token: string | undefined, answer: string | undefined) {
+  const [encodedPayload, signature] = (token ?? "").split(".");
+  if (!encodedPayload || !signature) {
+    throw new ApiError("Complete the captcha challenge to register.");
+  }
+
+  const expectedSignature = signCaptchaPayload(encodedPayload);
+  const actualSignature = Buffer.from(signature);
+  const expectedSignatureBuffer = Buffer.from(expectedSignature);
+  if (actualSignature.length !== expectedSignatureBuffer.length || !crypto.timingSafeEqual(actualSignature, expectedSignatureBuffer)) {
+    throw new ApiError("Captcha challenge expired. Try again.");
+  }
+
+  let payload: CaptchaPayload;
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as CaptchaPayload;
+  } catch {
+    throw new ApiError("Captcha challenge expired. Try again.");
+  }
+
+  if (payload.expiresAt < Date.now()) {
+    throw new ApiError("Captcha challenge expired. Try again.");
+  }
+
+  if (Number(answer) !== payload.answer) {
+    throw new ApiError("Captcha answer is incorrect.");
+  }
 }
 
 function publicUser(user: StoredUser): AppUser {
@@ -394,6 +470,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
 
   return {
     currentUser: publicUser(currentUser),
+    authSettings: state.authSettings,
     users: state.users.filter((user) => currentUser.isAdmin || !user.isAdmin).map(publicUser),
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
@@ -429,6 +506,29 @@ export function getAppStateForUser(userId: string): AppStatePayload {
   return buildPayload(readState(), userId);
 }
 
+export function getPublicAuthConfig(): PublicAuthConfigPayload {
+  const state = readState();
+  return {
+    authSettings: state.authSettings,
+    captcha: createRegistrationCaptcha()
+  };
+}
+
+export function updateAuthSettingsForUser(adminUserIdInput: string, settings: Partial<AppAuthSettings>): AppMutationPayload {
+  const state = readState();
+  const adminUser = requireAdminUser(state, adminUserIdInput);
+  state.authSettings = {
+    ...state.authSettings,
+    registrationEnabled: Boolean(settings.registrationEnabled)
+  };
+  appendEvent(state, adminUser.name, state.authSettings.registrationEnabled ? "Enabled public registration" : "Disabled public registration", adminUser.id);
+  writeState(state);
+  return {
+    ...buildPayload(state, adminUser.id),
+    message: state.authSettings.registrationEnabled ? "Public registration enabled." : "Public registration disabled."
+  };
+}
+
 export function loginUser(email: string, password: string): AppStatePayload {
   const normalizedEmail = email.trim().toLowerCase();
   const state = readState();
@@ -447,12 +547,20 @@ export function registerUser(input: {
   organization?: string;
   title?: string;
   password?: string;
+  captchaToken?: string;
+  captchaAnswer?: string;
 }): AppStatePayload {
   const state = readState();
   const name = input.name?.trim() ?? "";
   const email = input.email?.trim().toLowerCase() ?? "";
   const organization = input.organization?.trim() ?? "";
   const password = input.password?.trim() ?? "";
+
+  if (!state.authSettings.registrationEnabled) {
+    throw new ApiError("Public registration is disabled. Ask an administrator for an account.", 403);
+  }
+
+  verifyRegistrationCaptcha(input.captchaToken, input.captchaAnswer);
 
   if (!name || !email || !organization || !password) {
     throw new ApiError("Complete name, email, organization, and password to register.");

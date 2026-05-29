@@ -82,7 +82,7 @@ import {
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
-import type { ApiErrorPayload, AppMutationPayload, AppStatePayload } from "@/lib/apiTypes";
+import type { ApiErrorPayload, AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue } from "@/lib/workflow";
 
 type NavItem = {
@@ -110,6 +110,9 @@ type WorkflowConflict = {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 const AUDIT_PAGE_SIZE = 10;
+const defaultAuthSettings: AppAuthSettings = {
+  registrationEnabled: true
+};
 
 const globalNavItems: NavItem[] = [
   { key: "dashboard", label: "All Reviews", path: "/dashboard", Icon: Home },
@@ -289,6 +292,9 @@ export function PrismaReviewApp() {
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
+  const [authSettingsMessage, setAuthSettingsMessage] = useState("");
+  const [captchaChallenge, setCaptchaChallenge] = useState<PublicAuthConfigPayload["captcha"] | null>(null);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
   const [imports, setImports] = useState<ImportBatch[]>([]);
   const [studies, setStudies] = useState<Study[]>([]);
@@ -308,7 +314,8 @@ export function PrismaReviewApp() {
     email: "",
     organization: "",
     title: "Reviewer",
-    password: ""
+    password: "",
+    captchaAnswer: ""
   });
   const [teamUserId, setTeamUserId] = useState("");
   const [inviteForm, setInviteForm] = useState({
@@ -558,6 +565,15 @@ export function PrismaReviewApp() {
   const screeningProgress =
     projectScreeningStudies.length > 0 ? Math.round((screenedByMe / projectScreeningStudies.length) * 100) : 0;
 
+  async function loadAuthConfig() {
+    const payload = await apiRequest<PublicAuthConfigPayload>("/api/auth/config");
+    setAuthSettings(payload.authSettings);
+    setCaptchaChallenge(payload.captcha);
+    if (!payload.authSettings.registrationEnabled) {
+      setAuthMode("signIn");
+    }
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -572,6 +588,7 @@ export function PrismaReviewApp() {
         setIsAuthenticated(true);
       } catch {
         if (isMounted) {
+          await loadAuthConfig().catch(() => undefined);
           setIsAuthenticated(false);
         }
       } finally {
@@ -597,6 +614,19 @@ export function PrismaReviewApp() {
       setSelectedProjectId(userProjects[0].id);
     }
   }, [isAuthenticated, selectedProjectId, userProjects]);
+
+  useEffect(() => {
+    if (!authSettings.registrationEnabled && authMode === "register") {
+      setAuthMode("signIn");
+      setLoginError("");
+    }
+  }, [authMode, authSettings.registrationEnabled]);
+
+  useEffect(() => {
+    if (!isAuthenticated && authMode === "register" && authSettings.registrationEnabled && !captchaChallenge) {
+      loadAuthConfig().catch(() => undefined);
+    }
+  }, [authMode, authSettings.registrationEnabled, captchaChallenge, isAuthenticated]);
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
@@ -767,6 +797,7 @@ export function PrismaReviewApp() {
   }
 
   function applyAppState(payload: AppStatePayload | AppMutationPayload) {
+    setAuthSettings(payload.authSettings ?? defaultAuthSettings);
     setUsers(payload.users);
     setProjects(payload.projects);
     setImports(payload.imports);
@@ -821,12 +852,23 @@ export function PrismaReviewApp() {
 
   async function handleRegistration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!authSettings.registrationEnabled) {
+      setLoginError("Public registration is disabled. Ask an administrator for an account.");
+      setAuthMode("signIn");
+      return;
+    }
+
     const email = registerForm.email.trim().toLowerCase();
     const name = registerForm.name.trim();
     const organization = registerForm.organization.trim();
 
     if (!name || !email || !organization || !registerForm.password.trim()) {
       setLoginError("Complete name, email, organization, and password to register.");
+      return;
+    }
+
+    if (!registerForm.captchaAnswer.trim() || !captchaChallenge?.token) {
+      setLoginError("Complete the captcha challenge to register.");
       return;
     }
 
@@ -839,7 +881,9 @@ export function PrismaReviewApp() {
           email,
           organization,
           title: registerForm.title,
-          password: registerForm.password
+          password: registerForm.password,
+          captchaToken: captchaChallenge.token,
+          captchaAnswer: registerForm.captchaAnswer
         })
       });
       applyAppState(payload);
@@ -855,12 +899,15 @@ export function PrismaReviewApp() {
         email: "",
         organization: "",
         title: "Reviewer",
-        password: ""
+        password: "",
+        captchaAnswer: ""
       });
       setIsAuthenticated(true);
       setActiveView("dashboard");
     } catch (error) {
       setLoginError(getErrorMessage(error));
+      loadAuthConfig().catch(() => undefined);
+      setRegisterForm((previous) => ({ ...previous, captchaAnswer: "" }));
       if (getErrorMessage(error).includes("already has an account")) {
         setAuthMode("signIn");
         setLoginEmail(email);
@@ -1383,6 +1430,20 @@ export function PrismaReviewApp() {
       setAdminDirectoryMessage(payload.message ?? `Deleted account ${user.name}.`);
     } catch (error) {
       setAdminDirectoryMessage(getErrorMessage(error));
+    }
+  }
+
+  async function updateRegistrationSetting(registrationEnabled: boolean) {
+    setAuthSettingsMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>("/api/admin/auth-settings", {
+        method: "PATCH",
+        body: JSON.stringify({ registrationEnabled })
+      });
+      applyAppState(payload);
+      setAuthSettingsMessage(payload.message ?? (registrationEnabled ? "Public registration enabled." : "Public registration disabled."));
+    } catch (error) {
+      setAuthSettingsMessage(getErrorMessage(error));
     }
   }
 
@@ -3782,6 +3843,31 @@ export function PrismaReviewApp() {
               </div>
             ) : null}
           </div>
+
+          {currentUser.isAdmin ? (
+            <div className="panel">
+              <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
+              <label className="toggleRow">
+                <input
+                  type="checkbox"
+                  checked={authSettings.registrationEnabled}
+                  onChange={(event) => updateRegistrationSetting(event.target.checked)}
+                />
+                <span />
+                <strong>Allow public registration</strong>
+              </label>
+              <div className="stateRows">
+                <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
+                <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
+              </div>
+              {authSettingsMessage ? (
+                <div className={authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? "validationItem ok" : "validationItem blocked"}>
+                  {authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? <Check size={17} /> : <AlertTriangle size={17} />}
+                  <span>{authSettingsMessage}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <section className="panel">
@@ -3839,13 +3925,15 @@ export function PrismaReviewApp() {
             </div>
           </div>
 
-          <div className="segmented authTabs">
+          <div className={authSettings.registrationEnabled ? "segmented authTabs" : "segmented authTabs singleAuthTab"}>
             <button className={authMode === "signIn" ? "active" : ""} type="button" onClick={() => { setAuthMode("signIn"); setLoginError(""); }}>
               Sign In
             </button>
-            <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => { setAuthMode("register"); setLoginError(""); }}>
-              Register
-            </button>
+            {authSettings.registrationEnabled ? (
+              <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => { setAuthMode("register"); setLoginError(""); }}>
+                Register
+              </button>
+            ) : null}
           </div>
 
           {authMode === "signIn" ? (
@@ -3926,6 +4014,20 @@ export function PrismaReviewApp() {
                   onClick={() => setShowRegisterPassword((visible) => !visible)}
                 >
                   {showRegisterPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+            </label>
+            <label>
+              <span>Captcha</span>
+              <div className="captchaField">
+                <strong>{captchaChallenge?.question ?? "Loading..."}</strong>
+                <input
+                  inputMode="numeric"
+                  value={registerForm.captchaAnswer}
+                  onChange={(event) => setRegisterForm((previous) => ({ ...previous, captchaAnswer: event.target.value }))}
+                />
+                <button type="button" onClick={() => loadAuthConfig().catch(() => undefined)}>
+                  Refresh
                 </button>
               </div>
             </label>

@@ -18,6 +18,7 @@ export type DecisionActionPayload = {
 
 export type AppStatePayload = {
   currentUser: AppUser;
+  authSettings: AppAuthSettings;
   users: AppUser[];
   projects: ReviewProject[];
   imports: ImportBatch[];
@@ -28,6 +29,18 @@ export type AppStatePayload = {
   decisions: Decision[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
+};
+
+export type AppAuthSettings = {
+  registrationEnabled: boolean;
+};
+
+export type PublicAuthConfigPayload = {
+  authSettings: AppAuthSettings;
+  captcha: {
+    question: string;
+    token: string;
+  };
 };
 
 export type AppMutationPayload = AppStatePayload & {

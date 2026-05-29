@@ -10,7 +10,9 @@ export async function POST(request: Request) {
       email: String(body.email ?? ""),
       organization: String(body.organization ?? ""),
       title: String(body.title ?? ""),
-      password: String(body.password ?? "")
+      password: String(body.password ?? ""),
+      captchaToken: String(body.captchaToken ?? ""),
+      captchaAnswer: String(body.captchaAnswer ?? "")
     });
     await setSessionCookie(payload.currentUser.id);
     return jsonOk(payload);

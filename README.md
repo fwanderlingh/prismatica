@@ -13,7 +13,7 @@ Open source PRISMA review platform built with Next.js, React, and TypeScript.
 ## What Is Included
 
 - Project dashboard with PRISMA counts and audit trail
-- Sign-in and registration screens with HTTP-only server sessions
+- Sign-in and optional captcha-protected registration screens with HTTP-only server sessions
 - Seeded administrator account with admin-only password reset and account deletion controls
 - Multi-review dashboard showing each user's accessible review projects
 - Project-specific sidebar navigation after opening a review
@@ -114,10 +114,13 @@ Optional environment variables:
 export PRISMATICA_INVITE_PASSWORD="temporary-password-for-invited-users"
 export PRISMATICA_ADMIN_EMAIL="admin@example.com"
 export PRISMATICA_ADMIN_PASSWORD="replace-this-default-admin-password"
+export PRISMATICA_REGISTRATION_ENABLED="false"
+export PRISMATICA_CAPTCHA_SECRET="replace-with-a-long-random-string"
 export PRISMATICA_SECURE_COOKIES="true"
 ```
 
 Use `PRISMATICA_SECURE_COOKIES=true` only when the app is served over HTTPS.
+`PRISMATICA_REGISTRATION_ENABLED=false` initializes new data files with public registration disabled; administrators can also change this from the Profile page.
 
 For any environment beyond local development, set `PRISMATICA_ADMIN_PASSWORD` explicitly instead of relying on the built-in default.
 
@@ -131,7 +134,7 @@ For access from another machine on the same subnet, bind the dev server to all i
 npm run dev -- --hostname 0.0.0.0 --port 3000
 ```
 
-Then open `http://130.251.6.42:3000` from another machine. If the LAN IP changes, add the new IP to `allowedDevOrigins` in `next.config.mjs` and restart the dev server.
+Then open `http://<server-lan-ip>:3000` from another machine. If the LAN IP changes, add the new IP to `allowedDevOrigins` in `next.config.mjs` and restart the dev server.
 
 ## Network-Enabled Public Access
 
@@ -142,7 +145,7 @@ npm run build
 npm run start -- --hostname 0.0.0.0 --port 3000
 ```
 
-Then open `http://130.251.6.30:3000`.
+Then open `http://<server-hostname-or-ip>:3000`.
 
 If public clients cannot connect:
 
