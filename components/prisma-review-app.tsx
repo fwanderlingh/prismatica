@@ -154,6 +154,7 @@ const projectNavItems: NavItem[] = [
 ];
 
 const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "profile"];
+const reviewPhaseNavKeys = new Set<ViewKey>(["imports", "dedup", "screening", "fullText", "extraction", "consensus"]);
 const viewKeySet = new Set<ViewKey>([
   "dashboard",
   "projectDashboard",
@@ -4410,6 +4411,9 @@ export function PrismaReviewApp() {
               Prismatica is built as a transparent, auditable workspace for PRISMA-style review projects. It keeps project membership, imports, decisions, PDF metadata,
               extraction templates, and audit events behind server APIs while preserving a reviewer-friendly interface for day-to-day screening work.
             </p>
+            <div className="aboutPurposeLogo" aria-hidden="true">
+              <img src="/icon.svg" alt="Prismatica logo" />
+            </div>
           </div>
 
           <div className="panel aboutPanel">
@@ -4870,41 +4874,101 @@ export function PrismaReviewApp() {
             <div>
               <Badge label={formatProjectPhase(selectedProject.stage)} tone={projectPhaseBadgeTone(selectedProject.stage)} />
               <strong>{selectedProject.title}</strong>
-              <span>{selectedProject.protocolId}</span>
+              { /* <span>{selectedProject.protocolId}</span> */ }
             </div>
-            <div className="progressTrack">
+            { /* <div className="progressTrack">
               <i style={{ width: `${selectedProject.recordsTotal > 0 ? Math.round((selectedProject.recordsScreened / selectedProject.recordsTotal) * 100) : 0}%` }} />
-            </div>
+            </div> */ }
           </div>
         ) : null}
 
         <nav className="navList">
-          {(isProjectView
-            ? projectNavItems
-            : globalNavItems.filter((item) => !["adminReviews", "registeredUsers"].includes(item.key) || currentUser.isAdmin)
-          ).map(({ key, label, path, Icon }) => {
-            const phaseState = isProjectView ? getPhaseNavState(key, selectedProject.stage) : null;
-            const navClassName = ["navItem", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <button
-                className={navClassName}
-                type="button"
-                key={key}
-                aria-current={activeView === key ? "page" : undefined}
-                onClick={() => {
-                  setActiveView(key);
-                  setIsMobileNavOpen(false);
-                }}
-                title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
-              >
-                {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                <span>{label}</span>
-                {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
-              </button>
-            );
-          })}
+          {isProjectView ? (
+            <>
+              <div className="navSection">
+                <span className="navSectionTitle">Review Phases</span>
+                {projectNavItems
+                  .filter((item) => reviewPhaseNavKeys.has(item.key))
+                  .map(({ key, label, path, Icon }) => {
+                    const phaseState = getPhaseNavState(key, selectedProject.stage);
+                    const navClassName = ["navItem", "navItemPhase", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
+                      .filter(Boolean)
+                      .join(" ");
+                    return (
+                      <button
+                        className={navClassName}
+                        type="button"
+                        key={key}
+                        aria-current={activeView === key ? "page" : undefined}
+                        onClick={() => {
+                          setActiveView(key);
+                          setIsMobileNavOpen(false);
+                        }}
+                        title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
+                      >
+                        {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
+                        <span>{label}</span>
+                        {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
+                      </button>
+                    );
+                  })}
+              </div>
+
+              <div className="navSection">
+                <span className="navSectionTitle">Utilities</span>
+                {projectNavItems
+                  .filter((item) => !reviewPhaseNavKeys.has(item.key))
+                  .map(({ key, label, path, Icon }) => {
+                    const phaseState = getPhaseNavState(key, selectedProject.stage);
+                    const navClassName = ["navItem", "navItemUtility", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
+                      .filter(Boolean)
+                      .join(" ");
+                    return (
+                      <button
+                        className={navClassName}
+                        type="button"
+                        key={key}
+                        aria-current={activeView === key ? "page" : undefined}
+                        onClick={() => {
+                          setActiveView(key);
+                          setIsMobileNavOpen(false);
+                        }}
+                        title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
+                      >
+                        {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
+                        <span>{label}</span>
+                        {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
+                      </button>
+                    );
+                  })}
+              </div>
+            </>
+          ) : (
+            globalNavItems
+              .filter((item) => !["adminReviews", "registeredUsers"].includes(item.key) || currentUser.isAdmin)
+              .map(({ key, label, path, Icon }) => {
+                const phaseState = null;
+                const navClassName = ["navItem", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <button
+                    className={navClassName}
+                    type="button"
+                    key={key}
+                    aria-current={activeView === key ? "page" : undefined}
+                    onClick={() => {
+                      setActiveView(key);
+                      setIsMobileNavOpen(false);
+                    }}
+                    title={path}
+                  >
+                    {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
+                    <span>{label}</span>
+                  </button>
+                );
+              })
+          )}
         </nav>
 
         {/* <div className="sidebarFooter">

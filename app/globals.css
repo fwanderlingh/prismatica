@@ -201,6 +201,36 @@ h3 {
   gap: calc(6px * var(--ui-scale));
 }
 
+.navSection {
+  display: grid;
+  gap: calc(4px * var(--ui-scale));
+}
+
+.navSectionTitle {
+  padding: 0 calc(12px * var(--ui-scale));
+  color: #617079;
+  font-size: 0.72rem;
+  font-weight: 820;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.navItemPhase {
+  margin-left: calc(8px * var(--ui-scale));
+  border-left: calc(3px * var(--ui-scale)) solid #d2e4df;
+  border-top-left-radius: calc(4px * var(--ui-scale));
+  border-bottom-left-radius: calc(4px * var(--ui-scale));
+  background: #f8fcfb;
+}
+
+.navItemPhase.active {
+  border-left-color: var(--teal);
+}
+
+.navItemUtility {
+  opacity: 0.92;
+}
+
 .navItem {
   display: flex;
   align-items: center;
@@ -886,6 +916,20 @@ a.primaryButton[target="_blank"]:focus-visible {
 .aboutPanel p {
   color: var(--muted);
   line-height: 1.55;
+}
+
+.aboutPurposeLogo {
+  display: flex;
+  justify-content: center;
+  margin-top: calc(8px * var(--ui-scale));
+}
+
+.aboutPurposeLogo img {
+  display: block;
+  width: auto;
+  height: calc(150px * var(--ui-scale));
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .repoLink {
