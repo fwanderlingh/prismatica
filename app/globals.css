@@ -949,6 +949,7 @@ p {
 }
 
 .eventList,
+.conflictList,
 .queueList,
 .schemaList,
 .validationList,
@@ -967,6 +968,118 @@ p {
 
 .eventItem:last-child {
   border-bottom: 0;
+}
+
+.auditTrailActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.fullAuditList {
+  margin-top: 4px;
+}
+
+.paginationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.paginationBar span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.conflictItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.conflictItem:last-child {
+  border-bottom: 0;
+}
+
+.conflictMain {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.conflictMain h3 {
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.98rem;
+}
+
+.conflictMain p {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voteStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.votePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: 100%;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #eef2f4;
+  color: #45545c;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.votePill strong {
+  overflow: hidden;
+  max-width: 180px;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.votePill.success {
+  color: #165a33;
+  background: var(--green-soft);
+}
+
+.votePill.warning {
+  color: #7b4b05;
+  background: var(--amber-soft);
+}
+
+.votePill.danger {
+  color: #8b2f28;
+  background: var(--coral-soft);
+}
+
+.votePill.info {
+  color: #235281;
+  background: var(--blue-soft);
 }
 
 .eventItem strong,
@@ -1517,6 +1630,48 @@ td span {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
+}
+
+.queueBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.queueItem .queueBadges {
+  overflow: visible;
+  color: inherit;
+  font-size: inherit;
+  line-height: normal;
+  -webkit-box-orient: initial;
+  -webkit-line-clamp: initial;
+  line-clamp: initial;
+}
+
+.queueItem .badge {
+  display: inline-flex;
+  overflow: visible;
+  color: inherit;
+  font-size: 0.76rem;
+  line-height: normal;
+  -webkit-box-orient: initial;
+  -webkit-line-clamp: initial;
+  line-clamp: initial;
+}
+
+.conflictVotesBox {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #efc2bd;
+  border-radius: var(--radius);
+  background: var(--coral-soft);
+}
+
+.conflictVotesBox > strong {
+  color: #8b2f28;
+  font-size: 0.9rem;
 }
 
 .citationPanel {
@@ -2405,6 +2560,34 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .conflictItem {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .conflictItem .ghostButton {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .conflictMain h3,
+  .conflictMain p {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .auditTrailActions,
+  .paginationBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paginationBar span {
+    order: -1;
+    text-align: center;
+  }
+
   .formActions {
     align-items: stretch;
     flex-direction: column;
@@ -2448,5 +2631,34 @@ button:disabled {
   .paperPage {
     min-height: 620px;
     padding: 24px;
+  }
+
+  .conflictMain {
+    gap: 12px;
+  }
+
+  .voteStrip {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .votePill {
+    justify-content: space-between;
+    width: 100%;
+    border-radius: 8px;
+  }
+
+  .votePill strong {
+    max-width: min(58vw, 220px);
+  }
+
+  .queueBadges {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .queueBadges .badge {
+    justify-content: center;
+    width: 100%;
   }
 }

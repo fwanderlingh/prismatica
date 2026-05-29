@@ -97,7 +97,19 @@ type DecisionAction = {
   previousDecisionId?: string;
 };
 
+type WorkflowConflict = {
+  id: string;
+  stage: "title_abstract" | "full_text";
+  title: string;
+  subtitle: string;
+  label: string;
+  decisions: Decision[];
+  studyIndex?: number;
+  reportId?: string;
+};
+
 const numberFormatter = new Intl.NumberFormat("en-US");
+const AUDIT_PAGE_SIZE = 10;
 
 const globalNavItems: NavItem[] = [
   { key: "dashboard", label: "All Reviews", path: "/dashboard", Icon: Home },
@@ -114,6 +126,7 @@ const projectNavItems: NavItem[] = [
   { key: "extraction", label: "Extraction", path: "/project/current/extraction/consensus", Icon: ClipboardCheck },
   //{ key: "risk", label: "Risk of Bias", path: "/project/current/risk-of-bias", Icon: ShieldCheck },
   { key: "exports", label: "Exports", path: "/project/current/exports", Icon: Download },
+  { key: "audit", label: "Audit", path: "/project/current/audit", Icon: History },
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
 
@@ -317,6 +330,7 @@ export function PrismaReviewApp() {
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [screeningNote, setScreeningNote] = useState("");
   const [activeReportId, setActiveReportId] = useState(reportQueue[0].id);
+  const [auditPage, setAuditPage] = useState(1);
   const [activeExtractionReportId, setActiveExtractionReportId] = useState("");
   const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
   const [extractionFormValues, setExtractionFormValues] = useState<Record<string, ExtractionResponseValue>>({});
@@ -376,12 +390,118 @@ export function PrismaReviewApp() {
     () => getCountsForProject(selectedProject, projectReportQueue, decisions),
     [decisions, projectReportQueue, selectedProject]
   );
+  const titleAbstractEvaluations = useMemo(
+    () =>
+      new Map(
+        projectScreeningStudies.map((study) => {
+          const currentDecisions = decisions.filter(
+            (decision) =>
+              decision.projectId === selectedProject.id &&
+              decision.studyId === study.id &&
+              decision.stage === "title_abstract" &&
+              decision.isCurrent
+          );
+          return [
+            study.id,
+            evaluateStage(
+              "title_abstract",
+              currentDecisions.map((decision) => decision.decisionValue),
+              selectedProject.abstractRequiredVotes,
+              selectedProject.maybePolicy
+            )
+          ];
+        })
+      ),
+    [decisions, projectScreeningStudies, selectedProject.abstractRequiredVotes, selectedProject.id, selectedProject.maybePolicy]
+  );
+  const workflowConflicts = useMemo<WorkflowConflict[]>(() => {
+    const titleAbstractConflicts = projectScreeningStudies.flatMap((study, index) => {
+      const currentDecisions = decisions.filter(
+        (decision) =>
+          decision.projectId === selectedProject.id &&
+          decision.studyId === study.id &&
+          decision.stage === "title_abstract" &&
+          decision.isCurrent
+      );
+      const evaluation =
+        titleAbstractEvaluations.get(study.id) ??
+        evaluateStage(
+          "title_abstract",
+          currentDecisions.map((decision) => decision.decisionValue),
+          selectedProject.abstractRequiredVotes,
+          selectedProject.maybePolicy
+        );
+
+      if (evaluation.state !== "conflict" && evaluation.state !== "needs_third_vote") {
+        return [];
+      }
+
+      return [
+        {
+          id: `title_abstract:${study.id}`,
+          stage: "title_abstract" as const,
+          title: study.title,
+          subtitle: `${study.source} · ${study.year > 0 ? study.year : "Year needs review"}`,
+          label: evaluation.label,
+          decisions: currentDecisions,
+          studyIndex: index
+        }
+      ];
+    });
+
+    const fullTextConflicts = projectReportQueue.flatMap((report) => {
+      const currentDecisions = decisions.filter(
+        (decision) =>
+          decision.projectId === selectedProject.id &&
+          decision.reportId === report.id &&
+          decision.stage === "full_text" &&
+          decision.isCurrent
+      );
+      const evaluation = evaluateStage(
+        "full_text",
+        currentDecisions.map((decision) => decision.decisionValue),
+        report.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
+        selectedProject.maybePolicy
+      );
+
+      if (evaluation.state !== "conflict" && evaluation.state !== "needs_third_vote") {
+        return [];
+      }
+
+      return [
+        {
+          id: `full_text:${report.id}`,
+          stage: "full_text" as const,
+          title: report.title,
+          subtitle: report.citation,
+          label: evaluation.label,
+          decisions: currentDecisions,
+          reportId: report.id
+        }
+      ];
+    });
+
+    return [...titleAbstractConflicts, ...fullTextConflicts];
+  }, [
+    decisions,
+    projectReportQueue,
+    projectScreeningStudies,
+    selectedProject.abstractRequiredVotes,
+    selectedProject.fullTextRequiredVotes,
+    selectedProject.id,
+    selectedProject.maybePolicy,
+    titleAbstractEvaluations
+  ]);
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
   const projectStudyIds = new Set(projectScreeningStudies.map((study) => study.id));
   const projectReportIds = new Set(projectReportQueue.map((report) => report.id));
   const projectEvents = hasProjectSeedData
     ? events.filter((event) => !projectIdSet.has(event.entity) || event.entity === selectedProject.id)
     : events.filter((event) => event.entity === selectedProject.id || projectStudyIds.has(event.entity) || projectReportIds.has(event.entity));
+  const latestProjectEvents = projectEvents.slice(0, 5);
+  const auditPageCount = Math.max(1, Math.ceil(projectEvents.length / AUDIT_PAGE_SIZE));
+  const currentAuditPage = Math.min(auditPage, auditPageCount);
+  const pagedProjectEvents = projectEvents.slice((currentAuditPage - 1) * AUDIT_PAGE_SIZE, currentAuditPage * AUDIT_PAGE_SIZE);
   const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, extractionResponses, projectEvents);
   const currentStudy = projectScreeningStudies[studyIndex] ?? screeningStudies[0];
   const currentUserDecision = useMemo(
@@ -561,7 +681,14 @@ export function PrismaReviewApp() {
     setExtractionTemplateForm({ title: "Data Template", fields: [createBlankExtractionField()] });
     setExtractionFormValues({});
     setExtractionMessage("");
+    setAuditPage(1);
   }, [selectedProject.id]);
+
+  useEffect(() => {
+    if (auditPage > auditPageCount) {
+      setAuditPage(auditPageCount);
+    }
+  }, [auditPage, auditPageCount]);
 
   useEffect(() => {
     if (projectReportQueue.length === 0) {
@@ -755,6 +882,18 @@ export function PrismaReviewApp() {
     setStudyIndex(0);
     setActiveReportId(reportQueue[0].id);
     setFullTextMessage("");
+  }
+
+  function openConflict(conflict: WorkflowConflict) {
+    setIsMobileNavOpen(false);
+    setFullTextMessage("");
+    if (conflict.stage === "full_text" && conflict.reportId) {
+      setActiveReportId(conflict.reportId);
+      setActiveView("fullText");
+      return;
+    }
+    setStudyIndex(conflict.studyIndex ?? 0);
+    setActiveView("screening");
   }
 
   function updateNewProjectForm<Key extends keyof NewProjectForm>(key: Key, value: NewProjectForm[Key]) {
@@ -1394,6 +1533,8 @@ export function PrismaReviewApp() {
         return renderRisk();
       case "exports":
         return renderExports();
+      case "audit":
+        return renderAuditTrail();
       case "settings":
         return renderSettings();
       case "newProject":
@@ -1420,23 +1561,6 @@ export function PrismaReviewApp() {
               {currentUser.name} · {currentUser.organization} · {userProjects.length} accessible reviews
             </p>
           </div>
-          <div className="toolbarCluster">
-            <button className="ghostButton" type="button" title="Open profile" onClick={() => setActiveView("profile")}>
-              <UserCircle size={17} />
-              Profile
-            </button>
-            <button className="primaryButton" type="button" title="Create a new review" onClick={() => setActiveView("newProject")}>
-              <Plus size={17} />
-              New Review
-            </button>
-          </div>
-        </section>
-
-        <section className="metricGrid" aria-label="Portfolio metrics">
-          <Metric label="Accessible reviews" value={userProjects.length.toString()} tone="blue" detail={`${activeReviews} active review projects`} />
-          <Metric label="Records across reviews" value={formatNumber(totalRecords)} tone="teal" detail="Counts visible by membership" />
-          <Metric label="Open conflicts" value={totalConflicts.toString()} tone="amber" detail="Title/abstract and full-text queues" />
-          <Metric label="Team members" value={users.length.toString()} tone="green" detail="Users with review-specific access" />
         </section>
 
         {userProjects.length > 0 ? (
@@ -1507,6 +1631,13 @@ export function PrismaReviewApp() {
         </section>
         )}
 
+        <section className="metricGrid" aria-label="Portfolio metrics">
+          <Metric label="Accessible reviews" value={userProjects.length.toString()} tone="blue" detail={`${activeReviews} active review projects`} />
+          <Metric label="Records across reviews" value={formatNumber(totalRecords)} tone="teal" detail="Counts visible by membership" />
+          <Metric label="Open conflicts" value={totalConflicts.toString()} tone="amber" detail="Title/abstract and full-text queues" />
+          <Metric label="Team members" value={users.length.toString()} tone="green" detail="Users with review-specific access" />
+        </section>
+
         <section className="panel">
           <SectionTitle icon={Users} title="Users and Membership" action="Demo access model" />
           <div className="userGrid">
@@ -1559,6 +1690,37 @@ export function PrismaReviewApp() {
           <Metric label="Studies included" value={activeCounts.studiesIncluded.toString()} tone="green" detail={`${activeCounts.studiesIncludedMetaAnalysis} in meta-analysis`} />
         </section>
 
+        {workflowConflicts.length > 0 ? (
+          <section className="panel">
+            <SectionTitle icon={AlertTriangle} title="Conflict Resolution" action={`${workflowConflicts.length} open`} />
+            <div className="conflictList">
+              {workflowConflicts.map((conflict) => (
+                <article className="conflictItem" key={conflict.id}>
+                  <div className="conflictMain">
+                    <div>
+                      <Badge label={formatConflictStage(conflict.stage)} tone={conflict.stage === "full_text" ? "info" : "warning"} />
+                      <h3>{conflict.title}</h3>
+                      <p>{conflict.subtitle}</p>
+                    </div>
+                    <div className="voteStrip" aria-label={`${conflict.title} votes`}>
+                      {conflict.decisions.map((decision) => (
+                        <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
+                          <strong>{decision.userName}</strong>
+                          {formatDecision(decision.decisionValue)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <button className="ghostButton" type="button" onClick={() => openConflict(conflict)}>
+                    <ChevronRight size={17} />
+                    Resolve
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <section className="dashboardGrid">
           <div className="panel largePanel">
             <SectionTitle icon={Activity} title="Review Workflow" action="Live state machine" />
@@ -1590,21 +1752,29 @@ export function PrismaReviewApp() {
           </div>
 
           <div className="panel">
-            <SectionTitle icon={History} title="Audit Trail" action="Append-only" />
+            <SectionTitle icon={History} title="Audit Trail" action={projectEvents.length > 5 ? `Latest 5 of ${projectEvents.length}` : "Append-only"} />
             {projectEvents.length > 0 ? (
-            <div className="eventList">
-              {projectEvents.map((event) => (
-                <article className="eventItem" key={event.id}>
-                  <div>
-                    <strong>{event.action}</strong>
-                    <span>
-                      {event.actor} · {event.entity}
-                    </span>
-                  </div>
-                  <time>{event.time}</time>
-                </article>
-              ))}
-            </div>
+              <>
+                <div className="eventList">
+                  {latestProjectEvents.map((event) => (
+                    <article className="eventItem" key={event.id}>
+                      <div>
+                        <strong>{event.action}</strong>
+                        <span>
+                          {event.actor} · {event.entity}
+                        </span>
+                      </div>
+                      <time>{event.time}</time>
+                    </article>
+                  ))}
+                </div>
+                <div className="auditTrailActions">
+                  <button className="ghostButton" type="button" onClick={() => setActiveView("audit")}>
+                    <History size={17} />
+                    Full Audit
+                  </button>
+                </div>
+              </>
             ) : (
               <EmptyState
                 icon={History}
@@ -2142,6 +2312,8 @@ export function PrismaReviewApp() {
                     candidate.stage === "title_abstract" &&
                     candidate.isCurrent
                 );
+                const queueEvaluation = titleAbstractEvaluations.get(study.id);
+                const hasQueueConflict = queueEvaluation?.state === "conflict" || queueEvaluation?.state === "needs_third_vote";
                 return (
                   <button
                     className={index === studyIndex ? "queueItem active" : "queueItem"}
@@ -2150,7 +2322,10 @@ export function PrismaReviewApp() {
                     onClick={() => setStudyIndex(index)}
                   >
                     <span>{study.title}</span>
-                    {decision ? <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} /> : <Badge label="open" tone="neutral" />}
+                    <span className="queueBadges">
+                      {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
+                      {decision ? <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} /> : <Badge label="open" tone="neutral" />}
+                    </span>
                   </button>
                 );
               })}
@@ -2192,6 +2367,19 @@ export function PrismaReviewApp() {
               <span>My current vote</span>
               <strong>{currentUserDecision ? formatDecision(currentUserDecision.decisionValue) : "No vote"}</strong>
             </div>
+            {stageEvaluation.state === "conflict" || stageEvaluation.state === "needs_third_vote" ? (
+              <div className="conflictVotesBox">
+                <strong>{stageEvaluation.label}</strong>
+                <div className="voteStrip">
+                  {currentStageDecisions.map((decision) => (
+                    <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
+                      <strong>{decision.userName}</strong>
+                      {formatDecision(decision.decisionValue)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="decisionButtons">
               <button className="includeButton" type="button" onClick={() => addScreeningDecision("include")}>
                 <CheckCircle2 size={18} />
@@ -2441,6 +2629,19 @@ export function PrismaReviewApp() {
               <span>My current full-text vote</span>
               <strong>{selectedDecision ? formatDecision(selectedDecision) : "No vote"}</strong>
             </div>
+            {hasFullTextConflict ? (
+              <div className="conflictVotesBox">
+                <strong>{fullTextStatusLabel}</strong>
+                <div className="voteStrip">
+                  {visibleFullTextDecisions.map((decision) => (
+                    <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
+                      <strong>{decision.userName}</strong>
+                      {formatDecision(decision.decisionValue)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="decisionButtons compactButtons">
               <button
@@ -2956,6 +3157,81 @@ export function PrismaReviewApp() {
               <span>Audit CSV · generated yesterday at 18:05</span>
             </div>
           </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderAuditTrail() {
+    const firstEventIndex = projectEvents.length === 0 ? 0 : (currentAuditPage - 1) * AUDIT_PAGE_SIZE + 1;
+    const lastEventIndex = Math.min(currentAuditPage * AUDIT_PAGE_SIZE, projectEvents.length);
+
+    return (
+      <div className="viewStack">
+        <section className="overviewBand compactBand">
+          <div>
+            <p className="eyebrow">Project audit</p>
+            <h1>Full Audit Trail</h1>
+            <p className="subtle">
+              {selectedProject.title} · {projectEvents.length} append-only action{projectEvents.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <div className="toolbarCluster">
+            <button className="ghostButton" type="button" onClick={() => setActiveView("projectDashboard")}>
+              <ArrowLeft size={17} />
+              Overview
+            </button>
+          </div>
+        </section>
+
+        <section className="panel">
+          <SectionTitle icon={History} title="Audit Events" action={projectEvents.length > 0 ? `${firstEventIndex}-${lastEventIndex} of ${projectEvents.length}` : "No events"} />
+          {projectEvents.length > 0 ? (
+            <>
+              <div className="eventList fullAuditList">
+                {pagedProjectEvents.map((event) => (
+                  <article className="eventItem" key={event.id}>
+                    <div>
+                      <strong>{event.action}</strong>
+                      <span>
+                        {event.actor} · {event.entity}
+                      </span>
+                    </div>
+                    <time>{event.time}</time>
+                  </article>
+                ))}
+              </div>
+              <div className="paginationBar" aria-label="Audit pagination">
+                <button
+                  className="ghostButton"
+                  type="button"
+                  disabled={currentAuditPage === 1}
+                  onClick={() => setAuditPage((page) => Math.max(page - 1, 1))}
+                >
+                  <ArrowLeft size={17} />
+                  Previous
+                </button>
+                <span>
+                  Page {currentAuditPage} of {auditPageCount}
+                </span>
+                <button
+                  className="ghostButton"
+                  type="button"
+                  disabled={currentAuditPage === auditPageCount}
+                  onClick={() => setAuditPage((page) => Math.min(page + 1, auditPageCount))}
+                >
+                  Next
+                  <ArrowRight size={17} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              icon={History}
+              title="No audit events yet"
+              description="Imports, decisions, adjudications, and exports will appear here as append-only project history."
+            />
+          )}
         </section>
       </div>
     );
@@ -4157,6 +4433,10 @@ function formatDecision(value: DecisionValue) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatConflictStage(stage: WorkflowConflict["stage"]) {
+  return stage === "full_text" ? "Full text" : "Title/abstract";
 }
 
 function decisionTone(value: DecisionValue): "success" | "warning" | "danger" | "info" | "neutral" {

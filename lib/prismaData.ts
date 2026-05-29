@@ -10,6 +10,7 @@ export type ViewKey =
   | "extraction"
   | "risk"
   | "exports"
+  | "audit"
   | "settings"
   | "newProject"
   | "profile";
