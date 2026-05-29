@@ -49,6 +49,8 @@ type CaptchaPayload = {
   nonce: string;
 };
 
+type WebsiteTheme = "light" | "dark" | "system";
+
 type NewProjectInput = {
   title?: string;
   organization?: string;
@@ -133,6 +135,10 @@ function normalizeAuthSettings(settings: Partial<AppAuthSettings> | undefined): 
     ...defaultAuthSettings(),
     registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaultAuthSettings().registrationEnabled
   };
+}
+
+function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
+  return theme === "light" || theme === "dark" ? theme : "system";
 }
 
 function createSeedState(): PersistedState {
@@ -245,7 +251,8 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
   const users = ensureAdminUser(
     persistedUsers.map((user) => ({
       ...user,
-      isAdmin: Boolean(user.isAdmin)
+      isAdmin: Boolean(user.isAdmin),
+      websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme)
     })) as StoredUser[],
     now
   );
@@ -472,7 +479,8 @@ function publicUser(user: StoredUser): AppUser {
     organization: user.organization,
     title: user.title,
     timezone: user.timezone,
-    avatarColor: user.avatarColor
+    avatarColor: user.avatarColor,
+    websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme)
   };
 }
 
@@ -722,6 +730,7 @@ export function registerUser(input: {
     title: input.title?.trim() || "Reviewer",
     timezone: "Europe/Rome",
     avatarColor: pickAvatarColor(state.users.length),
+    websiteTheme: "system",
     ...hashPassword(password),
     createdAt: now,
     updatedAt: now
@@ -739,6 +748,7 @@ export function updateCurrentUserForUser(
     title?: string;
     currentPassword?: string;
     newPassword?: string;
+    websiteTheme?: string;
   }
 ): AppStatePayload {
   const state = readState();
@@ -750,6 +760,7 @@ export function updateCurrentUserForUser(
   const organization = input.organization?.trim() ?? user.organization;
   const title = input.title?.trim() ?? user.title;
   const newPassword = input.newPassword?.trim() ?? "";
+  const websiteTheme = normalizeWebsiteTheme(input.websiteTheme);
 
   if (!organization || !title) {
     throw new ApiError("Organization and role title are required.");
@@ -773,6 +784,7 @@ export function updateCurrentUserForUser(
           ...candidate,
           organization,
           title,
+          websiteTheme,
           ...(passwordUpdate ?? {}),
           updatedAt: new Date().toISOString()
         }
@@ -2597,7 +2609,8 @@ function ensureAdminUser(users: StoredUser[], now: string) {
             organization: user.organization || "Prismatica",
             title: user.title || "Administrator",
             timezone: user.timezone || "Europe/Rome",
-            avatarColor: user.avatarColor || "#42656d"
+            avatarColor: user.avatarColor || "#42656d",
+            websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme)
           }
         : user
     );
@@ -2614,6 +2627,7 @@ function ensureAdminUser(users: StoredUser[], now: string) {
       title: "Administrator",
       timezone: "Europe/Rome",
       avatarColor: "#42656d",
+      websiteTheme: "system",
       ...hashPassword(adminPassword),
       createdAt: now,
       updatedAt: now

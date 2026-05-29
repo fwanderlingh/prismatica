@@ -29,7 +29,10 @@ export type AppUser = {
   title: string;
   timezone: string;
   avatarColor: string;
+  websiteTheme?: WebsiteTheme;
 };
+
+export type WebsiteTheme = "light" | "dark" | "system";
 
 export type ProjectSummary = {
   id: string;

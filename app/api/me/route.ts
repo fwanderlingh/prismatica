@@ -5,12 +5,18 @@ export async function PATCH(request: Request) {
   try {
     const userId = await requireSessionUserId();
     const body = await readJsonBody(request);
+    const organization = typeof body.organization === "string" ? body.organization : undefined;
+    const title = typeof body.title === "string" ? body.title : undefined;
+    const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : undefined;
+    const newPassword = typeof body.newPassword === "string" ? body.newPassword : undefined;
+    const websiteTheme = typeof body.websiteTheme === "string" ? body.websiteTheme : undefined;
     return jsonOk(
       updateCurrentUserForUser(userId, {
-        organization: String(body.organization ?? ""),
-        title: String(body.title ?? ""),
-        currentPassword: String(body.currentPassword ?? ""),
-        newPassword: String(body.newPassword ?? "")
+        organization,
+        title,
+        currentPassword,
+        newPassword,
+        websiteTheme
       })
     );
   } catch (error) {

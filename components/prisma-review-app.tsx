@@ -81,6 +81,7 @@ import {
   type ReviewProject,
   type Report,
   type Study,
+  type WebsiteTheme,
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
@@ -415,7 +416,8 @@ const guestUser: AppUser = {
   organization: "Prismatica",
   title: "Reviewer",
   timezone: "Europe/Rome",
-  avatarColor: "#167d7f"
+  avatarColor: "#167d7f",
+  websiteTheme: "system"
 };
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -531,7 +533,8 @@ export function PrismaReviewApp() {
     organization: "",
     title: "",
     currentPassword: "",
-    newPassword: ""
+    newPassword: "",
+    websiteTheme: "system" as WebsiteTheme
   });
   const bibtexInputRef = useRef<HTMLInputElement>(null);
   const risInputRef = useRef<HTMLInputElement>(null);
@@ -890,10 +893,21 @@ export function PrismaReviewApp() {
       organization: currentUser.organization,
       title: currentUser.title,
       currentPassword: "",
-      newPassword: ""
+      newPassword: "",
+      websiteTheme: currentUser.websiteTheme ?? "system"
     }));
     setAccountMessage("");
-  }, [currentUser.id, currentUser.organization, currentUser.title]);
+  }, [currentUser.id, currentUser.organization, currentUser.title, currentUser.websiteTheme]);
+
+  useEffect(() => {
+    const theme = currentUser.websiteTheme ?? "system";
+    const root = document.documentElement;
+    if (theme === "system") {
+      root.removeAttribute("data-theme");
+      return;
+    }
+    root.setAttribute("data-theme", theme);
+  }, [currentUser.websiteTheme]);
 
   useEffect(() => {
     setProjectSettingsForm({
@@ -4682,6 +4696,32 @@ export function PrismaReviewApp() {
             <button className="primaryButton" type="submit">
               <Check size={17} />
               Save Account
+            </button>
+          </form>
+        </section>
+
+        <section className="panel">
+          <SectionTitle icon={Settings} title="Profile Preferences" action="Interface" />
+          <form className="accountForm" onSubmit={updateAccount}>
+            <label>
+              <span>Website theme</span>
+              <select
+                value={accountForm.websiteTheme}
+                onChange={(event) =>
+                  setAccountForm((previous) => ({
+                    ...previous,
+                    websiteTheme: event.target.value as WebsiteTheme
+                  }))
+                }
+              >
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="system">System</option>
+              </select>
+            </label>
+            <button className="primaryButton" type="submit">
+              <Check size={17} />
+              Save Preferences
             </button>
           </form>
         </section>
