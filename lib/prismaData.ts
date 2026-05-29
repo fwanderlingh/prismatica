@@ -202,6 +202,7 @@ export type PrismaCounts = {
   reportsAssessed: number;
   reportsExcludedWithReasons: Record<string, number>;
   studiesIncluded: number;
+  studiesExtracted: number;
   studiesIncludedMetaAnalysis: number;
 };
 
@@ -565,6 +566,7 @@ export const prismaCounts: PrismaCounts = {
     "Full text unavailable": 12
   },
   studiesIncluded: 121,
+  studiesExtracted: 46,
   studiesIncludedMetaAnalysis: 46
 };
 
@@ -591,6 +593,7 @@ export const projectCounts: Record<string, PrismaCounts> = {
       "Full text unavailable": 0
     },
     studiesIncluded: 0,
+    studiesExtracted: 0,
     studiesIncludedMetaAnalysis: 0
   },
   "ai-triage-review": {
@@ -614,6 +617,7 @@ export const projectCounts: Record<string, PrismaCounts> = {
       "Full text unavailable": 0
     },
     studiesIncluded: 0,
+    studiesExtracted: 0,
     studiesIncludedMetaAnalysis: 0
   }
 };

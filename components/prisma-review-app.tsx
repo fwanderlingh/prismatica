@@ -537,8 +537,8 @@ export function PrismaReviewApp() {
     : undefined;
   const activeReport = projectReportQueue.find((report) => report.id === activeReportId) ?? projectReportQueue[0] ?? reportQueue[0];
   const activeCounts = useMemo(
-    () => getCountsForProject(selectedProject, projectReportQueue, decisions),
-    [decisions, projectReportQueue, selectedProject]
+    () => getCountsForProject(selectedProject, projectScreeningStudies, projectReportQueue, decisions, extractionResponses, extractionTemplates),
+    [decisions, extractionResponses, extractionTemplates, projectReportQueue, projectScreeningStudies, selectedProject]
   );
   const titleAbstractEvaluations = useMemo(
     () =>
@@ -1962,7 +1962,7 @@ export function PrismaReviewApp() {
           <Metric label="Records identified" value={formatNumber(recordsIdentified)} tone="blue" detail="Database, register, and manual sources" />
           <Metric label="Duplicates removed" value={activeCounts.duplicateRecordsRemoved.toString()} tone="teal" detail="Preserved for PRISMA provenance" />
           <Metric label="Records screened" value={activeCounts.recordsScreened.toString()} tone="amber" detail={`${activeCounts.recordsExcluded} excluded at title/abstract`} />
-          <Metric label="Studies included" value={activeCounts.studiesIncluded.toString()} tone="green" detail={`${activeCounts.studiesIncludedMetaAnalysis} in meta-analysis`} />
+          <Metric label="Studies included" value={activeCounts.studiesIncluded.toString()} tone="green" detail={`${activeCounts.studiesExtracted} extracted`} />
         </section>
 
         {workflowConflicts.length > 0 ? (
@@ -4536,7 +4536,14 @@ export function PrismaReviewApp() {
   );
 }
 
-function getCountsForProject(project: ReviewProject, projectReports: Report[] = [], decisions: Decision[] = []): PrismaCounts {
+function getCountsForProject(
+  project: ReviewProject,
+  projectStudies: Study[] = [],
+  projectReports: Report[] = [],
+  decisions: Decision[] = [],
+  extractionResponses: ExtractionResponse[] = [],
+  extractionTemplates: ExtractionTemplate[] = []
+): PrismaCounts {
   const fullTextCurrentDecisions = decisions.filter(
     (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
   );
@@ -4566,6 +4573,24 @@ function getCountsForProject(project: ReviewProject, projectReports: Report[] = 
       (reportsExcludedWithReasons[reason as keyof typeof reportsExcludedWithReasons] ?? 0) + 1;
   }
 
+  const activeExtractionTemplate = extractionTemplates.find(
+    (template) => template.projectId === project.id && template.isActive
+  );
+  const includedStudyIds = new Set(projectStudies.filter((study) => study.projectId === project.id && study.stage === "extraction").map((study) => study.id));
+  const includedReports = projectReports.filter((report) => includedStudyIds.has(report.studyId));
+  const studiesExtracted = activeExtractionTemplate
+    ? includedReports.filter((report) => {
+        const submittedVotes = extractionResponses.filter(
+          (response) =>
+            response.projectId === project.id &&
+            response.reportId === report.id &&
+            response.templateId === activeExtractionTemplate.id &&
+            response.isSubmitted
+        ).length;
+        return submittedVotes >= project.extractionRequiredVotes;
+      }).length
+    : 0;
+
   return (
     seedProjectCounts[project.id] ?? {
       recordsIdentifiedDatabase: project.recordsTotal,
@@ -4581,6 +4606,7 @@ function getCountsForProject(project: ReviewProject, projectReports: Report[] = 
       reportsAssessed: new Set(fullTextCurrentDecisions.map((decision) => decision.reportId ?? decision.studyId)).size,
       reportsExcludedWithReasons,
       studiesIncluded: project.studiesIncluded,
+      studiesExtracted,
       studiesIncludedMetaAnalysis: 0
     }
   );
@@ -4710,7 +4736,7 @@ function PrismaFlow({ counts, reportsExcludedTotal }: { counts: PrismaCounts; re
         <FlowBox label="Records excluded" value={counts.recordsExcluded} icon={XCircle} tone="coral" />
         <FlowBox label="Reports not retrieved" value={counts.reportsNotRetrieved} icon={AlertTriangle} tone="amber" />
         <FlowBox label="Reports excluded with reasons" value={reportsExcludedTotal} icon={ListChecks} tone="coral" />
-        <FlowBox label="Included in meta-analysis" value={counts.studiesIncludedMetaAnalysis} icon={BarChart3} tone="green" />
+        <FlowBox label="Included for extraction" value={counts.studiesIncluded} icon={BarChart3} tone="green" />
       </div>
     </div>
   );
