@@ -235,6 +235,19 @@ h3 {
   white-space: nowrap;
 }
 
+.navAvatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: #ffffff;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .navItem:hover {
   border-color: var(--border);
   background: var(--surface-strong);
@@ -297,65 +310,12 @@ h3 {
   padding: 18px 22px 34px;
 }
 
-.topbar,
 .overviewBand,
 .sectionTitle,
 .toolbarCluster,
-.buttonRow,
-.projectCrumb,
-.topbarActions {
+.buttonRow {
   display: flex;
   align-items: center;
-}
-
-.topbar {
-  justify-content: space-between;
-  gap: 18px;
-  min-height: 54px;
-  margin-bottom: 14px;
-}
-
-.projectCrumb {
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
-.projectCrumb strong {
-  color: var(--text);
-}
-
-.topbarActions {
-  margin-left: auto;
-  gap: 9px;
-}
-
-.userPill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 11px 0 5px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-}
-
-.userPill span {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  color: #ffffff;
-  border-radius: 999px;
-  background: var(--violet);
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.userPill strong {
-  font-size: 0.88rem;
 }
 
 .loginShell {
@@ -690,10 +650,23 @@ h3 {
   color: #ffffff;
   border: 1px solid var(--teal);
   background: var(--teal);
+  text-decoration: none;
 }
 
 .primaryButton:hover {
+  color: #ffffff;
   background: #0f696b;
+}
+
+a.primaryButton[href^="http"],
+a.primaryButton[target="_blank"],
+a.primaryButton[href^="http"]:hover,
+a.primaryButton[href^="http"]:focus-visible,
+a.primaryButton[target="_blank"]:hover,
+a.primaryButton[target="_blank"]:focus-visible {
+  color: #ffffff;
+  text-decoration: none;
+  text-decoration-color: transparent;
 }
 
 .dangerButton {
@@ -876,6 +849,52 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.8fr);
   gap: 16px;
+}
+
+.aboutGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 16px;
+}
+
+.aboutPanel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.aboutPanel p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.repoLink {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.aboutFeatureGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.aboutFeature {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fbfcfd;
+}
+
+.aboutFeature p {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .sectionTitle {
@@ -2532,6 +2551,7 @@ button:disabled {
   }
 
   .dashboardGrid,
+  .aboutGrid,
   .importGrid,
   .importEditorLayout,
   .dedupGrid,
@@ -2600,7 +2620,6 @@ button:disabled {
     padding: 14px;
   }
 
-  .topbar,
   .overviewBand,
   .citationHeader,
   .importEntryHeader {
@@ -2608,7 +2627,6 @@ button:disabled {
     flex-direction: column;
   }
 
-  .topbarActions,
   .toolbarCluster {
     justify-content: flex-start;
   }
@@ -2618,6 +2636,7 @@ button:disabled {
   }
 
   .metricGrid,
+  .aboutFeatureGrid,
   .qualityGrid,
   .reviewGrid,
   .userGrid,

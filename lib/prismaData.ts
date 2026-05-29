@@ -13,6 +13,7 @@ export type ViewKey =
   | "audit"
   | "settings"
   | "newProject"
+  | "about"
   | "profile";
 
 export type AppUser = {

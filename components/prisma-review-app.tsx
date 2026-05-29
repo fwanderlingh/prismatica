@@ -31,6 +31,7 @@ import {
   GitMerge,
   History,
   Home,
+  Info,
   Import,
   LayoutDashboard,
   ListChecks,
@@ -89,7 +90,7 @@ type NavItem = {
   key: ViewKey;
   label: string;
   path: string;
-  Icon: LucideIcon;
+  Icon?: LucideIcon;
 };
 
 type DecisionAction = {
@@ -117,7 +118,8 @@ const defaultAuthSettings: AppAuthSettings = {
 const globalNavItems: NavItem[] = [
   { key: "dashboard", label: "All Reviews", path: "/dashboard", Icon: Home },
   { key: "newProject", label: "New Review", path: "/projects/new", Icon: FolderPlus },
-  { key: "profile", label: "Profile", path: "/profile", Icon: UserCircle }
+  { key: "about", label: "About", path: "/about", Icon: Info },
+  { key: "profile", label: "Profile", path: "/profile" }
 ];
 
 const projectNavItems: NavItem[] = [
@@ -369,7 +371,7 @@ export function PrismaReviewApp() {
     [currentUser.id, projects]
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
-  const isProjectView = activeView !== "dashboard" && activeView !== "newProject" && activeView !== "profile";
+  const isProjectView = !["dashboard", "newProject", "about", "profile"].includes(activeView);
   const hasProjectSeedData = selectedProject.id === "demo-review";
   const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
   const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
@@ -1600,6 +1602,8 @@ export function PrismaReviewApp() {
         return renderSettings();
       case "newProject":
         return renderNewProject();
+      case "about":
+        return renderAbout();
       case "profile":
         return renderProfile();
       default:
@@ -3722,6 +3726,59 @@ export function PrismaReviewApp() {
     );
   }
 
+  function renderAbout() {
+    return (
+      <div className="viewStack">
+        <section className="overviewBand">
+          <div>
+            <p className="eyebrow">About Prismatica</p>
+            <h1>Open Source PRISMA Review Platform</h1>
+            <p className="subtle">Prismatica supports systematic-review teams from citation intake through screening, full-text review, extraction, audit, and PRISMA-oriented export checks.</p>
+          </div>
+          <a className="primaryButton" href="https://github.com/fwanderlingh/prismatica" target="_blank" rel="noreferrer">
+            <GitMerge size={17} />
+            GitHub
+          </a>
+        </section>
+
+        <section className="aboutGrid">
+          <div className="panel aboutPanel">
+            <SectionTitle icon={Info} title="Purpose" action="Evidence workflow" />
+            <p>
+              Prismatica is built as a transparent, auditable workspace for PRISMA-style review projects. It keeps project membership, imports, decisions, PDF metadata,
+              extraction templates, and audit events behind server APIs while preserving a reviewer-friendly interface for day-to-day screening work.
+            </p>
+          </div>
+
+          <div className="panel aboutPanel">
+            <SectionTitle icon={GitMerge} title="Source Code" action="Public repository" />
+            <p>The website source is available in the public GitHub repository.</p>
+            <a className="repoLink" href="https://github.com/fwanderlingh/prismatica" target="_blank" rel="noreferrer">
+              github.com/fwanderlingh/prismatica
+            </a>
+          </div>
+        </section>
+
+        <section className="panel">
+          <SectionTitle icon={ListChecks} title="What It Covers" action="Current app surface" />
+          <div className="aboutFeatureGrid">
+            {[
+              ["Project governance", "Review setup, membership, owner controls, blind mode, vote thresholds, and registration security."],
+              ["Citation workflow", "RIS/BibTeX import, parser warning review, deduplication workspace, and title/abstract screening."],
+              ["Full-text review", "Report queues, PDF upload and validation, DOI links, retrieval status, exclusion reasons, and conflict handling."],
+              ["Audit and export", "Append-only workflow events, paged audit history, PRISMA count preview, and export validation checks."]
+            ].map(([title, description]) => (
+              <article className="aboutFeature" key={title}>
+                <strong>{title}</strong>
+                <p>{description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   function renderProfile() {
     const ownedProjects = projects.filter((project) => project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id);
 
@@ -4116,7 +4173,7 @@ export function PrismaReviewApp() {
                 }}
                 title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
               >
-                <Icon size={18} />
+                {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                 <span>{label}</span>
                 {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
               </button>
@@ -4131,22 +4188,6 @@ export function PrismaReviewApp() {
       </aside>
 
       <main className="mainArea">
-        <header className="topbar">
-          {!isProjectView ? (
-            <div className="projectCrumb">
-              <span>{currentUser.organization}</span>
-              <ChevronRight size={15} />
-              <strong>{activeView === "newProject" ? "New review" : activeView === "profile" ? "Profile" : "All reviews"}</strong>
-            </div>
-          ) : null}
-          <div className="topbarActions">
-            <button className="userPill" type="button" onClick={() => setActiveView("profile")} title="Open profile">
-              <span style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>
-              <strong>{currentUser.name}</strong>
-            </button>
-          </div>
-        </header>
-
         {renderActiveView()}
       </main>
     </div>
