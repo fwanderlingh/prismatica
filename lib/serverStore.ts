@@ -455,6 +455,10 @@ function requireProjectOwner(state: PersistedState, projectId: string, userId: s
 }
 
 function accessibleProjects(state: PersistedState, userId: string) {
+  const user = getUser(state, userId);
+  if (user?.isAdmin) {
+    return state.projects;
+  }
   return state.projects.filter((project) => isProjectMember(project, userId));
 }
 
@@ -511,6 +515,39 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
 
 export function getAppStateForUser(userId: string): AppStatePayload {
   return buildPayload(readState(), userId);
+}
+
+export function deleteProjectForUser(userId: string, projectId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = requireAdminUser(state, userId);
+  const project = getProject(state, projectId);
+
+  if (!project) {
+    throw new ApiError("Review not found.", 404);
+  }
+
+  const removedStudyIds = new Set(state.studies.filter((study) => study.projectId === projectId).map((study) => study.id));
+  const removedReportIds = new Set(state.reports.filter((report) => report.projectId === projectId).map((report) => report.id));
+
+  state.projects = state.projects.filter((candidate) => candidate.id !== projectId);
+  state.imports = state.imports.filter((batch) => batch.projectId !== projectId);
+  state.studies = state.studies.filter((study) => study.projectId !== projectId);
+  state.reports = state.reports.filter((report) => report.projectId !== projectId);
+  state.extractionTemplates = state.extractionTemplates.filter((template) => template.projectId !== projectId);
+  state.extractionResponses = state.extractionResponses.filter((response) => response.projectId !== projectId);
+  state.decisions = state.decisions.filter((decision) => decision.projectId !== projectId && !removedStudyIds.has(decision.studyId) && !removedReportIds.has(decision.reportId ?? ""));
+  state.events = state.events.filter((event) => event.entity !== projectId && !removedStudyIds.has(event.entity) && !removedReportIds.has(event.entity));
+  state.dedupCandidates = state.dedupCandidates.filter(
+    (candidate) => candidate.recordA.projectId !== projectId && candidate.recordB.projectId !== projectId
+  );
+
+  appendEvent(state, currentUser.name, `Deleted review ${project.title}`, projectId);
+  writeState(state);
+
+  return {
+    ...buildPayload(state, currentUser.id),
+    message: `Deleted review ${project.title}.`
+  };
 }
 
 export function getPublicAuthConfig(): PublicAuthConfigPayload {

@@ -449,6 +449,7 @@ export function PrismaReviewApp() {
     title: "Reviewer"
   });
   const [teamMessage, setTeamMessage] = useState("");
+  const [dashboardMessage, setDashboardMessage] = useState("");
   const [newProjectForm, setNewProjectForm] = useState<NewProjectForm>({
     ...emptyProjectForm,
     memberIds: []
@@ -490,7 +491,7 @@ export function PrismaReviewApp() {
 
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
   const userProjects = useMemo(
-    () => projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id),
+    () => (currentUser.isAdmin ? projects : projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id)),
     [currentUser.id, projects]
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
@@ -1215,6 +1216,10 @@ export function PrismaReviewApp() {
       return;
     }
 
+    if (!window.confirm(`Remove ${user.name} from ${selectedProject.title}?`)) {
+      return;
+    }
+
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/members/${userId}`, {
         method: "DELETE"
@@ -1223,6 +1228,22 @@ export function PrismaReviewApp() {
       setTeamMessage(`${user.name} removed from ${selectedProject.title}.`);
     } catch (error) {
       setTeamMessage(getErrorMessage(error));
+    }
+  }
+
+  async function adminDeleteProject(project: ReviewProject) {
+    if (!window.confirm(`Delete review "${project.title}"? This will remove its imports, studies, reports, decisions, and audit history.`)) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${project.id}`, {
+        method: "DELETE"
+      });
+      applyAppState(payload);
+      setDashboardMessage(payload.message ?? `Deleted review ${project.title}.`);
+    } catch (error) {
+      setDashboardMessage(getErrorMessage(error));
     }
   }
 
@@ -1780,10 +1801,19 @@ export function PrismaReviewApp() {
             <p className="eyebrow">Review dashboard</p>
             <h1>Review Projects</h1>
             <p className="subtle">
-              {currentUser.name} · {currentUser.organization} · {userProjects.length} accessible reviews
+              {currentUser.name} · {currentUser.organization} · {userProjects.length} accessible reviews{currentUser.isAdmin ? " · admin view" : ""}
             </p>
           </div>
         </section>
+
+        {dashboardMessage ? (
+          <section className="panel">
+            <div className={dashboardMessage.startsWith("Deleted review") ? "validationItem ok" : "validationItem blocked"}>
+              {dashboardMessage.startsWith("Deleted review") ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>{dashboardMessage}</span>
+            </div>
+          </section>
+        ) : null}
 
         {userProjects.length > 0 ? (
         <section className="reviewGrid">
@@ -4116,6 +4146,7 @@ export function PrismaReviewApp() {
                   <th>Status</th>
                   <th>Updated</th>
                   <th>Open</th>
+                  {currentUser.isAdmin ? <th>Delete</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -4136,6 +4167,13 @@ export function PrismaReviewApp() {
                         Open
                       </button>
                     </td>
+                    {currentUser.isAdmin ? (
+                      <td>
+                        <button className="dangerButton" type="button" onClick={() => adminDeleteProject(project)}>
+                          Delete
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
