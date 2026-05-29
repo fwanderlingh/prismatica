@@ -269,7 +269,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     };
   });
 
-  return {
+  const normalizedState: PersistedState = {
     version: 1,
     authSettings,
     users: users.map((user) => {
@@ -303,6 +303,8 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
       : [],
     dedupCandidates: Array.isArray(state.dedupCandidates) ? state.dedupCandidates.filter(() => projectIds.has("demo-review")) : []
   };
+  resyncAllProjectWorkflowState(normalizedState);
+  return normalizedState;
 }
 
 function hashPassword(password: string) {
@@ -460,7 +462,10 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
   }
 
-  const projects = accessibleProjects(state, userId);
+  const projects = accessibleProjects(state, userId).map((project) => ({
+    ...project,
+    conflicts: countProjectWorkflowConflicts(state, project)
+  }));
   const projectIds = new Set(projects.map((project) => project.id));
   const studyIds = new Set(state.studies.filter((study) => study.projectId && projectIds.has(study.projectId)).map((study) => study.id));
   const reportIds = new Set(state.reports.filter((report) => projectIds.has(report.projectId)).map((report) => report.id));
@@ -1863,6 +1868,20 @@ function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
       updatedAt: toEuToday()
     };
   });
+}
+
+function resyncAllProjectWorkflowState(state: PersistedState) {
+  for (const project of state.projects) {
+    const projectStudies = state.studies.filter((study) => study.projectId === project.id);
+    for (const study of projectStudies) {
+      syncStudyAfterTitleAbstractDecision(state, project, study.id, "System");
+    }
+    const projectReports = state.reports.filter((report) => report.projectId === project.id);
+    for (const report of projectReports) {
+      syncStudyAfterFullTextDecision(state, project, report.id);
+    }
+    syncProjectWorkflowCounts(state, project.id);
+  }
 }
 
 function countProjectWorkflowConflicts(state: PersistedState, project: ReviewProject) {

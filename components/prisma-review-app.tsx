@@ -2431,6 +2431,7 @@ export function PrismaReviewApp() {
             {stageEvaluation.state === "conflict" || stageEvaluation.state === "needs_third_vote" ? (
               <div className="conflictVotesBox">
                 <strong>{stageEvaluation.label}</strong>
+                <p>{formatConflictResolutionHint(selectedProject.abstractRequiredVotes)}</p>
                 <div className="voteStrip">
                   {currentStageDecisions.map((decision) => (
                     <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
@@ -2693,6 +2694,7 @@ export function PrismaReviewApp() {
             {hasFullTextConflict ? (
               <div className="conflictVotesBox">
                 <strong>{fullTextStatusLabel}</strong>
+                <p>{formatConflictResolutionHint(fullTextRequiredVotes)}</p>
                 <div className="voteStrip">
                   {visibleFullTextDecisions.map((decision) => (
                     <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
@@ -4539,6 +4541,10 @@ function formatDecision(value: DecisionValue) {
 
 function formatConflictStage(stage: WorkflowConflict["stage"]) {
   return stage === "full_text" ? "Full text" : "Title/abstract";
+}
+
+function formatConflictResolutionHint(requiredVotes: number) {
+  return `A conflict remains only while Include and Exclude are tied or neither side has reached ${requiredVotes} required vote${requiredVotes === 1 ? "" : "s"}.`;
 }
 
 function decisionTone(value: DecisionValue): "success" | "warning" | "danger" | "info" | "neutral" {

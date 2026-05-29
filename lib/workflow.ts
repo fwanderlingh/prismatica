@@ -28,8 +28,20 @@ export function evaluateStage(
   const hasInclude = decisions.includes("include");
   const hasExclude = decisions.includes("exclude");
   const hasMaybe = decisions.includes("maybe");
+  const includeCount = decisions.filter((decision) => decision === "include").length;
+  const excludeCount = decisions.filter((decision) => decision === "exclude").length;
 
   if (hasInclude && hasExclude) {
+    if (includeCount >= requiredVotes && includeCount > excludeCount) {
+      return stage === "title_abstract"
+        ? { state: "advance_full_text", label: "Advance to full text" }
+        : { state: "advance_extraction", label: "Advance to extraction" };
+    }
+    if (excludeCount >= requiredVotes && excludeCount > includeCount) {
+      return stage === "title_abstract"
+        ? { state: "excluded_abstract", label: "Excluded at abstract" }
+        : { state: "excluded_full_text", label: "Excluded with reason" };
+    }
     return { state: "conflict", label: "Resolve conflict" };
   }
 

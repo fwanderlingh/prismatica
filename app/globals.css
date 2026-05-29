@@ -1731,6 +1731,12 @@ td span {
   font-size: 0.9rem;
 }
 
+.conflictVotesBox p {
+  color: #8b2f28;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .citationPanel {
   min-height: 570px;
 }
