@@ -4,7 +4,7 @@
 
 # PRISMATICA
 
-A production-oriented PRISMA review platform built with Next.js, React, and TypeScript.
+An open source review platform,following the PRISMA protocol, built with Next.js, React, and TypeScript.
 
 ![Dashboard](images/dashboard_1.png "Dashboard")
 
