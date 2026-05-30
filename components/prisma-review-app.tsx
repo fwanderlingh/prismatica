@@ -2044,9 +2044,18 @@ export function PrismaReviewApp() {
             </p>
           </div>
           <div className="toolbarCluster">
-            <button className="ghostButton" type="button" title="View notifications">
+            <button
+              className="ghostButton"
+              type="button"
+              title={workflowConflicts.length > 0 ? "Open the first unresolved conflict" : "No open conflicts"}
+              onClick={() => {
+                if (workflowConflicts.length > 0) {
+                  openConflict(workflowConflicts[0]);
+                }
+              }}
+            >
               <Bell size={17} />
-              Alerts
+              Alerts ({workflowConflicts.length})
             </button>
             <button className="primaryButton" type="button" title="Open export preview" onClick={() => setActiveView("exports")}>
               <Download size={17} />
