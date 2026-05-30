@@ -1,58 +1,112 @@
 <p align="center">
-    <img src="./app/icon.svg" alt="Logo" style="max-width:150px">
+  <img src="./app/icon.svg" alt="Prismatica logo" style="max-width:150px">
 </p>
-
 
 # PRISMATICA
 
-Open source PRISMA review platform built with Next.js, React, and TypeScript.
-
+A production-oriented PRISMA review platform built with Next.js, React, and TypeScript.
 
 ![Dashboard](images/dashboard_1.png "Dashboard")
 
-## What Is Included
+## Why Prismatica
 
-- Project dashboard with PRISMA counts and audit trail
-- Sign-in and optional captcha-protected registration screens with HTTP-only server sessions
-- Seeded administrator account with admin-only password reset and account deletion controls
-- Multi-review dashboard showing each user's accessible review projects
-- Project-specific sidebar navigation after opening a review
-- Profile page with account details, project membership, and team directory
-- New review project form with team membership, EU-format due date (`dd-mm-yyyy`), and screening policy controls
-- Project settings team management for adding existing users, inviting new users, and removing non-owner members
-- Empty/waiting states for newly created reviews before imports, deduplication, screening, and full-text work begin
-- Import batch/provenance view for RIS and BibTeX
-- Deduplication candidate review with side-by-side metadata and scoring
-- High-velocity title/abstract screening with append-only decision state
-- Full-text review workspace with real PDF streaming, upload/validation controls, DOI links, retrieval status, exclusion reasons, and dual-review vote state
-- Extraction workflow with owner-created data templates, included-report queue, PDF viewer, reviewer form submission, and two-reviewer submission tracking
-- Data template fields for multiline text, single choice, and multiple choice extraction questions
-- Per-user project statistics for screened records, uploaded PDFs, full-text reviews, and submitted extractions
-- Risk-of-bias workspace scaffold
-- PRISMA export preview with validation checks
-- Role, blind-mode, and state-machine settings views
+Prismatica is designed for teams running evidence reviews that need both speed and auditability:
 
-Registered users, the seeded administrator account, newly created reviews, team membership, screening decisions, duplicate-candidate statuses, extraction templates, extraction responses, report metadata, and workflow events are stored server-side. By default the Node server writes a JSON data file at `data/prismatica-state.json`; set `PRISMATICA_DATA_FILE` to place it somewhere durable.
+- Structured PRISMA workflow from import to export
+- Multi-user collaboration with role-aware controls
+- Server-side state and signed HTTP-only sessions
+- Full-text PDF handling with validation and provenance
+- Configurable review thresholds and conflict handling
+- Audit trail and project-level traceability
 
-This is the Node storage adapter for the current Next.js app. The API routes keep project, user, decision, and audit mutations behind server boundaries so a PostgreSQL/NestJS adapter from `prisma_website_specifications.md` can replace the JSON file later.
+## Quick Start
 
-## Workflow
+### 1) Install dependencies
 
-1. Create an account, sign in, and create a review project with owners, reviewers, vote thresholds, blind-mode visibility, and maybe-vote policy.
-2. Import records from RIS or BibTeX files. Each batch keeps provenance, parser warnings, and editable citation entries.
-3. Review deduplication candidates when generated. If no duplicate candidates are produced, screening can continue with the imported citations.
-4. Screen titles and abstracts. Reviewers vote include, maybe, or exclude; blind mode hides other reviewers' votes from non-owners while aggregate workflow state is tracked.
-5. Advance included studies to full-text review. Upload and validate PDFs, use DOI links for retrieval, set retrieval status, and record full-text include/exclude votes with exclusion reasons.
-6. Resolve full-text outcomes. Unanimous include votes advance the report to extraction, unanimous exclude votes exclude it at full text, and mixed include/exclude votes enter conflict resolution.
-7. Create the extraction data template. A project owner defines reusable fields as multiline text, single choice, or multiple choice questions.
-8. Extract data from included reports. Reviewers work with the PDF viewer on the left and the active extraction template on the right; at least two submitted extractions are tracked for each report.
-9. Export and validate PRISMA outputs from the accumulated import, screening, full-text, extraction, and audit state.
+```bash
+npm install
+```
 
-## System Dependencies
+### 2) Run locally (HTTP)
 
-Prismatica requires Node.js 20.9 or newer and npm.
+```bash
+npm run dev -- --hostname 127.0.0.1 --port 3000
+```
 
-On Ubuntu/Debian, install the required system dependencies with:
+Open `http://127.0.0.1:3000`.
+
+### 3) Run locally (HTTPS)
+
+```bash
+npm run dev:https -- --hostname 127.0.0.1 --port 3000
+```
+
+This uses Next.js experimental local HTTPS support.
+
+## What You Get Today
+
+- Dashboard with PRISMA counts, audit trail, and progress indicators
+- Sign-in, optional captcha-protected registration, and server-managed sessions
+- Admin controls for password reset, account deletion, and registration policy
+- Multi-project workspace with per-project navigation
+- Team membership management with owner safeguards
+- RIS and BibTeX import with provenance and review flow
+- Dedup candidate review with side-by-side comparisons
+- Title/abstract screening with append-only decisions and undo route support
+- Full-text review with PDF upload, validation, streaming, and DOI linking
+- Conflict handling in full-text and extraction phases
+- Extraction templates (text, single-choice, multi-choice)
+- Extraction submissions, consensus routes, and configurable extraction voting
+- Export and report validation endpoints
+- Theme preferences (light, dark, system)
+- Path-based routing and refined UI components
+
+## Recent Milestones
+
+Based on the latest commit history, recent work includes:
+
+- HTTPS runbooks for local and production deployments
+- Theme system with Light, Dark, and System modes
+- Conflict flagging/arbitration and extraction workflow hardening
+- Configurable extraction vote thresholds integrated into phase completion
+- Path-based routing and audit formatting improvements
+- Registration hardening with admin security controls and captcha
+- Continued UI improvements in export and full-text areas
+
+## Workflow Overview
+
+1. Create an account, sign in, and create a review project.
+2. Import records from RIS or BibTeX with batch provenance.
+3. Review deduplication candidates (when present).
+4. Screen title/abstract decisions (include/maybe/exclude).
+5. Advance studies to full-text, upload/validate PDFs, and review outcomes.
+6. Resolve conflicts and advance eligible studies to extraction.
+7. Define extraction templates and collect reviewer submissions.
+8. Build extraction consensus and validate/export reporting output.
+
+## Architecture Snapshot
+
+- Frontend: Next.js App Router + React UI
+- Backend: Next API routes under `app/api`
+- State: Server-side JSON store with atomic writes
+- Auth: Signed HTTP-only cookies and session checks in server routes
+- Files: Uploaded PDFs stored on disk alongside the configured data store
+
+Core modules:
+
+- `lib/serverStore.ts`: persistence, business logic, and workflow mutations
+- `lib/serverAuth.ts`: session and cookie handling
+- `lib/serverRoute.ts`: route helpers (auth, JSON, file responses)
+- `lib/workflow.ts`: stage and decision-state progression logic
+- `components/prisma-review-app.tsx`: main application shell and view orchestration
+- `components/prisma-review-ui.tsx`: reusable UI presentation components
+
+## System Requirements
+
+- Node.js 20.9 or newer
+- npm
+
+Ubuntu/Debian install example:
 
 ```bash
 sudo apt-get update
@@ -62,52 +116,41 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
 
-Verify the installation:
+Verify:
 
 ```bash
 node --version
 npm --version
 ```
 
-## Install
+## Scripts
 
 ```bash
-npm install
+npm run dev          # Next.js development server
+npm run dev:https    # Dev server with experimental HTTPS
+npm run build        # Production build
+npm run start        # Production server (defaults)
+npm run start:prod   # Production server bound to 127.0.0.1:3000
+npm run check        # TypeScript type-check
 ```
 
-## Development Server
+## Accounts and Access
 
-```bash
-npm run dev -- --hostname 127.0.0.1 --port 3000
-```
+No demo reviewer accounts are pre-created.
 
-Open `http://127.0.0.1:3000`.
+- Register the first reviewer from the sign-in page.
+- Create projects and invite members from project settings.
 
-For encrypted local development, run:
-
-```bash
-npm run dev:https -- --hostname 127.0.0.1 --port 3000
-```
-
-This uses Next.js experimental HTTPS support with a local certificate.
-
-No demo reviewer accounts are pre-created. Register the first reviewer account from the sign-in screen, then create review projects and invite team members from project settings.
-
-A separate administrator account is created automatically on startup. By default it uses:
+A separate administrator account is seeded on startup by default:
 
 - Email: `admin@prismatica.local`
 - Password: `change-me-admin`
 
-Use that account to open the Profile page and manage server accounts from the Team Directory, including:
+For non-local environments, set `PRISMATICA_ADMIN_PASSWORD` explicitly.
 
-- generating a temporary password for a user who lost access
-- deleting a user account
+## Server Storage and Sessions
 
-Deleting an account also removes that user from project membership and deletes projects they own.
-
-## Server Storage And Sessions
-
-For production, set a stable session secret and keep the data file outside the repo:
+For production, set a stable session secret and move data outside the repo:
 
 ```bash
 export PRISMATICA_SESSION_SECRET="replace-with-a-long-random-string"
@@ -127,26 +170,25 @@ export PRISMATICA_CAPTCHA_SECRET="replace-with-a-long-random-string"
 export PRISMATICA_SECURE_COOKIES="true"
 ```
 
-Use `PRISMATICA_SECURE_COOKIES=true` only when the app is served over HTTPS.
-`PRISMATICA_REGISTRATION_ENABLED=false` initializes new data files with public registration disabled; administrators can also change this from the Profile page.
+Notes:
 
-For any environment beyond local development, set `PRISMATICA_ADMIN_PASSWORD` explicitly instead of relying on the built-in default.
+- Use `PRISMATICA_SECURE_COOKIES=true` only when serving over HTTPS.
+- `PRISMATICA_REGISTRATION_ENABLED=false` disables public registration for new data files.
+- Uploaded PDFs are stored under a sibling `pdfs/` folder near `PRISMATICA_DATA_FILE`.
 
-Uploaded PDFs are stored on disk next to the configured data file, under a `pdfs/` directory. For example, if `PRISMATICA_DATA_FILE` is `/var/lib/prismatica/prismatica-state.json`, uploaded report PDFs are saved under `/var/lib/prismatica/pdfs/<project-id>/`.
+## Network Access Patterns
 
-## Subnetwork Development Access
-
-For access from another machine on the same subnet, bind the dev server to all interfaces:
+### Local subnet development
 
 ```bash
 npm run dev -- --hostname 0.0.0.0 --port 3000
 ```
 
-Then open `http://<server-lan-ip>:3000` from another machine. If the LAN IP changes, add the new IP to `allowedDevOrigins` in `next.config.mjs` and restart the dev server.
+Then open `http://<server-lan-ip>:3000`.
 
-## Network-Enabled Public Access
+If the LAN IP changes, add it in `next.config.mjs` under `allowedDevOrigins` and restart the dev server.
 
-For access from outside the local subnet, build the app and run the production server bound to all interfaces:
+### Public HTTP access (not recommended for production)
 
 ```bash
 npm run build
@@ -155,26 +197,29 @@ npm run start -- --hostname 0.0.0.0 --port 3000
 
 Then open `http://<server-hostname-or-ip>:3000`.
 
-If public clients cannot connect:
+## Recommended Production TLS: Caddy Reverse Proxy
 
-- Ensure inbound TCP `3000` is allowed by the host firewall and any upstream network firewall.
-- Ensure the server process is still running and listening on `0.0.0.0:3000`.
+Prismatica is intended to run behind Caddy with Next.js bound to localhost (`127.0.0.1:3000`).
 
-## HTTPS In Production (Let's Encrypt)
+Deployment assets:
 
-Recommended production setup is to keep Next.js on localhost and terminate TLS at Caddy.
+- `deploy/caddy/Caddyfile`: IP mode with `tls internal`
+- `deploy/caddy/Caddyfile.letsencrypt`: domain mode with public certificates
+- `deploy/caddy/prismatica.service`: systemd service for the Next.js app
 
-1. Point your domain DNS A/AAAA record to this server.
-2. Install Caddy on the host.
-3. Copy `deploy/caddy/Caddyfile` to `/etc/caddy/Caddyfile` and replace `prismatica.example.com` with your real domain.
-4. Build and run Prismatica behind localhost:
+### Mode A: IP-only HTTPS (Caddy Internal CA)
+
+Use this when no domain is available.
+
+1. Edit `deploy/caddy/Caddyfile` and replace `203.0.113.10` with your server IP.
+2. Activate config:
 
 ```bash
-npm install
-npm run build
+sudo cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl reload caddy
 ```
 
-5. Install the systemd service from `deploy/caddy/prismatica.service`:
+3. Install and start app service:
 
 ```bash
 sudo cp deploy/caddy/prismatica.service /etc/systemd/system/prismatica.service
@@ -182,30 +227,82 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now prismatica
 ```
 
-6. Reload Caddy:
+4. Trust Caddy local root certificate on each client:
 
 ```bash
+# On server
+sudo cp /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt /tmp/caddy-local-root.crt
+```
+
+Debian/Ubuntu client trust:
+
+```bash
+sudo cp caddy-local-root.crt /usr/local/share/ca-certificates/caddy-local-root.crt
+sudo update-ca-certificates
+```
+
+Fedora/RHEL client trust:
+
+```bash
+sudo cp caddy-local-root.crt /etc/pki/ca-trust/source/anchors/caddy-local-root.crt
+sudo update-ca-trust
+```
+
+### Mode B: Domain HTTPS (Let's Encrypt)
+
+Use this for browser-trusted public certificates.
+
+1. Point DNS A/AAAA records to your server.
+2. Edit `deploy/caddy/Caddyfile.letsencrypt` and set your domain.
+3. Activate config:
+
+```bash
+sudo cp deploy/caddy/Caddyfile.letsencrypt /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-Caddy will automatically request and renew a trusted Let's Encrypt certificate.
+Caddy will automatically request and renew certificates.
 
-Important:
+### Switching TLS modes
 
-- Keep `PRISMATICA_SECURE_COOKIES=true` in production.
-- Keep Next.js bound to `127.0.0.1:3000` when reverse-proxied by Caddy.
-- Open inbound TCP ports 80 and 443 in your firewall.
+```bash
+# IP-only mode (internal CA)
+sudo cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
 
-## Type Check
+# Domain mode (Let's Encrypt)
+sudo cp deploy/caddy/Caddyfile.letsencrypt /etc/caddy/Caddyfile
+
+sudo systemctl reload caddy
+```
+
+## Production Hardening Checklist
+
+- Set a strong `PRISMATICA_SESSION_SECRET`
+- Set a strong `PRISMATICA_ADMIN_PASSWORD`
+- Enable `PRISMATICA_SECURE_COOKIES=true` when using HTTPS
+- Keep Next.js behind localhost and reverse proxy through Caddy
+- Restrict filesystem permissions on data and PDF storage
+- Open only required firewall ports (`443`; optionally `80` for ACME HTTP challenge)
+- Keep Caddy internal CA materials restricted to trusted admins (if using internal CA mode)
+
+## Validation and Quality
+
+Run type checks:
 
 ```bash
 npm run check
 ```
 
-## Production Build
+Create production build:
 
 ```bash
 npm run build
 ```
 
-Run the production server with `npm run start -- --hostname 0.0.0.0 --port 3000`.
+Start production server directly (without reverse proxy):
+
+```bash
+npm run start -- --hostname 0.0.0.0 --port 3000
+```
+
+For production deployments, prefer the Caddy reverse-proxy pattern above.

@@ -1,7 +1,5 @@
-# Replace 203.0.113.10 with your server IP before deploying.
-https://203.0.113.10 {
-  tls internal
-
+# Replace prismatica.example.com with your real domain before deploying.
+https://prismatica.example.com {
   encode zstd gzip
 
   # Reverse proxy to the local Next.js process.
@@ -9,7 +7,7 @@ https://203.0.113.10 {
 
   # Security headers for browser hardening.
   header {
-    Strict-Transport-Security "max-age=31536000"
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     X-Content-Type-Options "nosniff"
     X-Frame-Options "SAMEORIGIN"
     Referrer-Policy "strict-origin-when-cross-origin"
