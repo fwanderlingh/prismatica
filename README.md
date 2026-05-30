@@ -43,7 +43,7 @@ npm run dev:https -- --hostname 127.0.0.1 --port 3000
 
 This uses Next.js experimental local HTTPS support.
 
-## What You Get Today
+## Features
 
 - Dashboard with PRISMA counts, audit trail, and progress indicators
 - Sign-in, optional captcha-protected registration, and server-managed sessions
@@ -61,17 +61,6 @@ This uses Next.js experimental local HTTPS support.
 - Theme preferences (light, dark, system)
 - Path-based routing and refined UI components
 
-## Recent Milestones
-
-Based on the latest commit history, recent work includes:
-
-- HTTPS runbooks for local and production deployments
-- Theme system with Light, Dark, and System modes
-- Conflict flagging/arbitration and extraction workflow hardening
-- Configurable extraction vote thresholds integrated into phase completion
-- Path-based routing and audit formatting improvements
-- Registration hardening with admin security controls and captcha
-- Continued UI improvements in export and full-text areas
 
 ## Workflow Overview
 
