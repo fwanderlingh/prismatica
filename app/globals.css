@@ -566,10 +566,33 @@ h3 {
 .loginShell {
   display: grid;
   grid-template-columns: minmax(calc(320px * var(--ui-scale)), calc(460px * var(--ui-scale)));
+  gap: calc(12px * var(--ui-scale));
   justify-content: center;
   align-content: center;
   min-height: 100vh;
   padding: calc(28px * var(--ui-scale));
+}
+
+.loginNotice {
+  display: flex;
+  gap: calc(9px * var(--ui-scale));
+  align-items: flex-start;
+  padding: calc(11px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-tint) 72%, var(--teal-soft) 28%);
+  color: color-mix(in srgb, var(--text) 70%, var(--teal) 30%);
+  line-height: 1.45;
+}
+
+.loginNotice a {
+  color: color-mix(in srgb, var(--teal) 70%, var(--text) 30%);
+  text-decoration-thickness: calc(1px * var(--ui-scale));
+  text-underline-offset: calc(2px * var(--ui-scale));
+}
+
+.loginNotice a:hover {
+  color: var(--teal);
 }
 
 .loginPanel {
@@ -2948,6 +2971,7 @@ button:disabled {
 @media (max-width: 860px) {
   .loginShell {
     grid-template-columns: 1fr;
+    gap: calc(10px * var(--ui-scale));
     padding: calc(14px * var(--ui-scale));
   }
 

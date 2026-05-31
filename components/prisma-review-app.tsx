@@ -3660,6 +3660,16 @@ export function PrismaReviewApp() {
   if (!isAuthenticated) {
     return (
       <main className="loginShell">
+        {!authSettings.registrationEnabled ? (
+          <div className="loginNotice" role="status" aria-live="polite">
+            <Info size={17} />
+            <span>
+              The website is currently invitation only. To request an invitation, write to{" "}
+              <a href="mailto:francesco.wanderlingh@unige.it">francesco.wanderlingh@unige.it</a>.
+            </span>
+          </div>
+        ) : null}
+
         <section className="loginPanel">
           <div className="brandBlock loginBrand">
             <div className="brandMark brandMarkImage">
