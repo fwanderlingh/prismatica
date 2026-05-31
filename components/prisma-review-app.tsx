@@ -42,7 +42,6 @@ import {
   Minus,
   PenLine,
   PanelRight,
-  Plus,
   Search,
   Settings,
   ShieldCheck,
@@ -103,6 +102,9 @@ import { ExtractionSection } from "./review-sections/extraction-section";
 import { ConsensusSection } from "./review-sections/consensus-section";
 import { SettingsSection } from "./review-sections/settings-section";
 import { ProfileSection } from "./review-sections/profile-section";
+import { NewProjectSection } from "./review-sections/new-project-section";
+import { useNewProjectState, type NewProjectForm } from "./use-new-project-state";
+import { useAuthState } from "./use-auth-state";
 
 type NavItem = {
   key: ViewKey;
@@ -294,21 +296,6 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
   };
 }
 
-type NewProjectForm = {
-  title: string;
-  organization: string;
-  protocolId: string;
-  description: string;
-  searchStrategies: string;
-  dueDate: string;
-  blindMode: boolean;
-  abstractRequiredVotes: number;
-  fullTextRequiredVotes: number;
-  extractionRequiredVotes: number;
-  maybePolicy: "advance_to_full_text" | "conflict" | "third_vote";
-  memberIds: string[];
-};
-
 type ProjectSettingsForm = Omit<NewProjectForm, "memberIds">;
 
 type ImportDetailForm = {
@@ -349,21 +336,6 @@ type ProjectUserStats = {
 type PhaseNavState = "done" | "current" | "pending";
 
 const exclusionReasons = Object.keys(prismaCounts.reportsExcludedWithReasons);
-
-const emptyProjectForm: NewProjectForm = {
-  title: "",
-  organization: "Evidence Methods Unit",
-  protocolId: "",
-  description: "",
-  searchStrategies: "",
-  dueDate: "",
-  blindMode: true,
-  abstractRequiredVotes: 2,
-  fullTextRequiredVotes: 2,
-  extractionRequiredVotes: 2,
-  maybePolicy: "advance_to_full_text",
-  memberIds: []
-};
 
 const emptyProjectSettingsForm: ProjectSettingsForm = {
   title: "",
@@ -481,20 +453,6 @@ export function PrismaReviewApp() {
   const [extractionConsensus, setExtractionConsensus] = useState<ExtractionConsensus[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
-  const [authMode, setAuthMode] = useState<"signIn" | "register">("signIn");
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
-  const [loginError, setLoginError] = useState("");
-  const [registerForm, setRegisterForm] = useState({
-    name: "",
-    email: "",
-    organization: "",
-    title: "Reviewer",
-    password: "",
-    captchaAnswer: ""
-  });
   const [teamUserId, setTeamUserId] = useState("");
   const [inviteForm, setInviteForm] = useState({
     name: "",
@@ -503,10 +461,6 @@ export function PrismaReviewApp() {
   });
   const [teamMessage, setTeamMessage] = useState("");
   const [dashboardMessage, setDashboardMessage] = useState("");
-  const [newProjectForm, setNewProjectForm] = useState<NewProjectForm>({
-    ...emptyProjectForm,
-    memberIds: []
-  });
   const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsForm>(emptyProjectSettingsForm);
   const [projectSettingsMessage, setProjectSettingsMessage] = useState("");
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
@@ -546,7 +500,34 @@ export function PrismaReviewApp() {
   const risInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
+  const {
+    authMode,
+    loginEmail,
+    loginPassword,
+    showLoginPassword,
+    showRegisterPassword,
+    loginError,
+    registerForm,
+    setLoginEmail,
+    setLoginPassword,
+    setLoginError,
+    switchAuthMode,
+    toggleLoginPasswordVisibility,
+    toggleRegisterPasswordVisibility,
+    updateRegisterForm,
+    resetRegisterForm,
+    clearRegisterCaptcha,
+    applySuccessfulRegistration,
+    clearLoginPassword
+  } = useAuthState({
+    registrationEnabled: authSettings.registrationEnabled,
+    isAuthenticated,
+    hasCaptchaChallenge: Boolean(captchaChallenge),
+    loadAuthConfig
+  });
+
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
+  const { newProjectForm, canCreate, creationStatus, creationSummary, updateNewProjectForm, toggleProjectMember, syncNewProjectUserContext, resetNewProjectForm } = useNewProjectState(currentUser);
   const userProjects = useMemo(
     () => (currentUser.isAdmin ? projects : projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id)),
     [currentUser.id, currentUser.isAdmin, projects]
@@ -877,19 +858,6 @@ export function PrismaReviewApp() {
   }, [isAuthenticated, selectedProjectId, userProjects]);
 
   useEffect(() => {
-    if (!authSettings.registrationEnabled && authMode === "register") {
-      setAuthMode("signIn");
-      setLoginError("");
-    }
-  }, [authMode, authSettings.registrationEnabled]);
-
-  useEffect(() => {
-    if (!isAuthenticated && authMode === "register" && authSettings.registrationEnabled && !captchaChallenge) {
-      loadAuthConfig().catch(() => undefined);
-    }
-  }, [authMode, authSettings.registrationEnabled, captchaChallenge, isAuthenticated]);
-
-  useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
       if (activeView !== "screening") {
         return;
@@ -1094,11 +1062,7 @@ export function PrismaReviewApp() {
     setEvents(payload.events);
     setDedupCandidates(payload.dedupCandidates);
     setCurrentUserId(payload.currentUser.id);
-    setNewProjectForm((previous) => ({
-      ...previous,
-      organization: payload.currentUser.organization,
-      memberIds: Array.from(new Set([payload.currentUser.id, ...previous.memberIds]))
-    }));
+    syncNewProjectUserContext(payload.currentUser);
     setSelectedProjectId((previousProjectId) => {
       if ("selectedProjectId" in payload && payload.selectedProjectId) {
         return payload.selectedProjectId;
@@ -1139,7 +1103,7 @@ export function PrismaReviewApp() {
     event.preventDefault();
     if (!authSettings.registrationEnabled) {
       setLoginError("Public registration is disabled. Ask an administrator for an account.");
-      setAuthMode("signIn");
+      switchAuthMode("signIn");
       return;
     }
 
@@ -1172,29 +1136,16 @@ export function PrismaReviewApp() {
         })
       });
       applyAppState(payload);
-      setLoginEmail(payload.currentUser.email);
-      setLoginPassword(registerForm.password);
-      setNewProjectForm({
-        ...emptyProjectForm,
-        organization: payload.currentUser.organization,
-        memberIds: [payload.currentUser.id]
-      });
-      setRegisterForm({
-        name: "",
-        email: "",
-        organization: "",
-        title: "Reviewer",
-        password: "",
-        captchaAnswer: ""
-      });
+      applySuccessfulRegistration(payload.currentUser.email, registerForm.password);
+      resetNewProjectForm(payload.currentUser);
       setIsAuthenticated(true);
       setActiveView("dashboard");
     } catch (error) {
       setLoginError(getErrorMessage(error));
       loadAuthConfig().catch(() => undefined);
-      setRegisterForm((previous) => ({ ...previous, captchaAnswer: "" }));
+      clearRegisterCaptcha();
       if (getErrorMessage(error).includes("already has an account")) {
-        setAuthMode("signIn");
+        switchAuthMode("signIn");
         setLoginEmail(email);
       }
     }
@@ -1204,7 +1155,7 @@ export function PrismaReviewApp() {
     await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setIsAuthenticated(false);
     setActiveView("dashboard");
-    setLoginPassword("");
+    clearLoginPassword();
   }
 
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
@@ -1228,30 +1179,11 @@ export function PrismaReviewApp() {
     setActiveView("screening");
   }
 
-  function updateNewProjectForm<Key extends keyof NewProjectForm>(key: Key, value: NewProjectForm[Key]) {
-    setNewProjectForm((previous) => ({
-      ...previous,
-      [key]: value
-    }));
-  }
-
   function updateProjectSettingsForm<Key extends keyof ProjectSettingsForm>(key: Key, value: ProjectSettingsForm[Key]) {
     setProjectSettingsForm((previous) => ({
       ...previous,
       [key]: value
     }));
-  }
-
-  function toggleProjectMember(userId: string) {
-    setNewProjectForm((previous) => {
-      const nextMemberIds = previous.memberIds.includes(userId)
-        ? previous.memberIds.filter((memberId) => memberId !== userId)
-        : [...previous.memberIds, userId];
-      return {
-        ...previous,
-        memberIds: nextMemberIds.length > 0 ? nextMemberIds : [currentUser.id]
-      };
-    });
   }
 
   async function updateProjectMembers(projectId: string, memberIds: string[], ownerIds: string[], eventLabel: string) {
@@ -1413,11 +1345,7 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setSelectedProjectId(payload.selectedProjectId ?? selectedProjectId);
-      setNewProjectForm({
-        ...emptyProjectForm,
-        organization: currentUser.organization,
-        memberIds: [currentUser.id]
-      });
+      resetNewProjectForm(currentUser);
       setActiveView("projectDashboard");
     } catch (error) {
       setLoginError(getErrorMessage(error));
@@ -3238,190 +3166,29 @@ export function PrismaReviewApp() {
   }
 
   function renderNewProject() {
-    const dueDate = newProjectForm.dueDate.trim();
-    const hasTitle = newProjectForm.title.trim().length > 0;
-    const hasValidDueDate = dueDate.length === 0 || isEuDate(dueDate);
-    const canCreate = hasTitle && hasValidDueDate;
-    const creationStatus = canCreate ? "Ready to create" : hasTitle ? "Use dd-mm-yyyy if you add a due date" : "Review title required";
-    const creationSummary = "New reviews start as drafts with zero imports, open settings, and the selected users as members.";
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">New review</p>
-            <h1>Create Review Project</h1>
-            <p className="subtle">Set up the project shell, blind voting policy, and team membership before importing citations.</p>
-          </div>
-          <button className="ghostButton" type="button" onClick={() => setActiveView("dashboard")}>
-            <ArrowLeft size={17} />
-            Back
-          </button>
-        </section>
-
-        <form className="projectForm" onSubmit={createProject}>
-          <section className="panel formActions formActionsProminent">
-            <div>
-              <strong>{creationStatus}</strong>
-              <span>{creationSummary}</span>
-            </div>
-            <button className="primaryButton" type="submit" disabled={!canCreate}>
-              <Plus size={17} />
-              Create Review
-            </button>
-          </section>
-
-          <section className="panel">
-            <SectionTitle icon={FileText} title="Review Details" action="Required setup" />
-            <div className="formGrid">
-              <label>
-                <span>Review title</span>
-                <input
-                  value={newProjectForm.title}
-                  onChange={(event) => updateNewProjectForm("title", event.target.value)}
-                  placeholder="Ultimate Question of Life, the Universe, and Everything"
-                />
-              </label>
-              <label>
-                <span>Organization</span>
-                <input
-                  value={newProjectForm.organization}
-                  onChange={(event) => updateNewProjectForm("organization", event.target.value)}
-                  placeholder="Evidence Methods Unit"
-                />
-              </label>
-              <label>
-                <span>Protocol ID</span>
-                <input
-                  value={newProjectForm.protocolId}
-                  onChange={(event) => updateNewProjectForm("protocolId", event.target.value)}
-                  placeholder="PROSPERO or draft protocol"
-                />
-              </label>
-              <label>
-                <span>Due date (dd-mm-yyyy)</span>
-                <input
-                  inputMode="numeric"
-                  pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}"
-                  value={newProjectForm.dueDate}
-                  onChange={(event) => updateNewProjectForm("dueDate", event.target.value)}
-                  placeholder="30-09-2026"
-                />
-              </label>
-            </div>
-            <label className="wideField">
-              <span>Description</span>
-              <textarea
-                value={newProjectForm.description}
-                onChange={(event) => updateNewProjectForm("description", event.target.value)}
-                placeholder="Briefly describe the review question and scope."
-              />
-            </label>
-            <label className="wideField">
-              <span>Search strategies backup</span>
-              <textarea
-                className="strategyTextarea"
-                value={newProjectForm.searchStrategies}
-                onChange={(event) => updateNewProjectForm("searchStrategies", event.target.value)}
-                placeholder={"Optional. Paste database names, keywords, Boolean strings, dates, filters, and search-platform notes."}
-              />
-            </label>
-          </section>
-
-          <section className="settingsGrid">
-            <div className="panel">
-              <SectionTitle icon={Lock} title="Screening Policy" action="Workflow state machine" />
-              <label className="toggleRow">
-                <input
-                  type="checkbox"
-                  checked={newProjectForm.blindMode}
-                  onChange={(event) => updateNewProjectForm("blindMode", event.target.checked)}
-                />
-                <span />
-                <strong>Enable blind mode</strong>
-              </label>
-              <div className="formGrid compactFormGrid">
-                <label>
-                  <span>Title/abstract votes</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={newProjectForm.abstractRequiredVotes}
-                    onChange={(event) => updateNewProjectForm("abstractRequiredVotes", Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  <span>Full-text votes</span>
-                  <input
-                    type="number"
-                    min={2}
-                    max={4}
-                    value={newProjectForm.fullTextRequiredVotes}
-                    onChange={(event) => updateNewProjectForm("fullTextRequiredVotes", Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  <span>Extraction votes</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={newProjectForm.extractionRequiredVotes}
-                    onChange={(event) => updateNewProjectForm("extractionRequiredVotes", Number(event.target.value))}
-                  />
-                </label>
-              </div>
-              <label className="fieldLabel" htmlFor="new-project-maybe-policy">
-                Maybe policy
-              </label>
-              <select
-                id="new-project-maybe-policy"
-                value={newProjectForm.maybePolicy}
-                onChange={(event) => updateNewProjectForm("maybePolicy", event.target.value as NewProjectForm["maybePolicy"])}
-              >
-                <option value="advance_to_full_text">Advance to full text</option>
-                <option value="third_vote">Request third vote</option>
-                <option value="conflict">Treat as conflict</option>
-              </select>
-            </div>
-
-            <div className="panel">
-              <SectionTitle icon={Users} title="Team" action={`${newProjectForm.memberIds.length} selected`} />
-              <div className="memberPicker">
-                {users.map((user) => (
-                  <label className="memberOption" key={user.id}>
-                    <input
-                      type="checkbox"
-                      checked={newProjectForm.memberIds.includes(user.id)}
-                      onChange={() => toggleProjectMember(user.id)}
-                      disabled={user.id === currentUser.id}
-                    />
-                    <span className="avatar" style={{ background: user.avatarColor }}>
-                      {user.initials}
-                    </span>
-                    <div>
-                      <strong>{user.name}</strong>
-                      <small>{user.title}</small>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="panel formActions">
-            <div>
-              <strong>{creationStatus}</strong>
-              <span>{creationSummary}</span>
-            </div>
-            <button className="primaryButton" type="submit" disabled={!canCreate}>
-              <Plus size={17} />
-              Create Review
-            </button>
-          </section>
-        </form>
-      </div>
+      <NewProjectSection
+        currentUser={currentUser}
+        users={users}
+        newProjectForm={newProjectForm}
+        canCreate={canCreate}
+        creationStatus={creationStatus}
+        creationSummary={creationSummary}
+        onBack={() => setActiveView("dashboard")}
+        onSubmit={createProject}
+        onTitleChange={(value) => updateNewProjectForm("title", value)}
+        onOrganizationChange={(value) => updateNewProjectForm("organization", value)}
+        onProtocolIdChange={(value) => updateNewProjectForm("protocolId", value)}
+        onDueDateChange={(value) => updateNewProjectForm("dueDate", value)}
+        onDescriptionChange={(value) => updateNewProjectForm("description", value)}
+        onSearchStrategiesChange={(value) => updateNewProjectForm("searchStrategies", value)}
+        onBlindModeChange={(value) => updateNewProjectForm("blindMode", value)}
+        onAbstractVotesChange={(value) => updateNewProjectForm("abstractRequiredVotes", value)}
+        onFullTextVotesChange={(value) => updateNewProjectForm("fullTextRequiredVotes", value)}
+        onExtractionVotesChange={(value) => updateNewProjectForm("extractionRequiredVotes", value)}
+        onMaybePolicyChange={(value) => updateNewProjectForm("maybePolicy", value)}
+        toggleProjectMember={toggleProjectMember}
+      />
     );
   }
 
@@ -3701,11 +3468,11 @@ export function PrismaReviewApp() {
           </div>
 
           <div className={authSettings.registrationEnabled ? "segmented authTabs" : "segmented authTabs singleAuthTab"}>
-            <button className={authMode === "signIn" ? "active" : ""} type="button" onClick={() => { setAuthMode("signIn"); setLoginError(""); }}>
+            <button className={authMode === "signIn" ? "active" : ""} type="button" onClick={() => switchAuthMode("signIn")}>
               Sign In
             </button>
             {authSettings.registrationEnabled ? (
-              <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => { setAuthMode("register"); setLoginError(""); }}>
+              <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => switchAuthMode("register")}>
                 Register
               </button>
             ) : null}
@@ -3734,7 +3501,7 @@ export function PrismaReviewApp() {
                   type="button"
                   title={showLoginPassword ? "Hide password" : "Show password"}
                   aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                  onClick={() => setShowLoginPassword((visible) => !visible)}
+                  onClick={toggleLoginPasswordVisibility}
                 >
                   {showLoginPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
@@ -3760,19 +3527,19 @@ export function PrismaReviewApp() {
             </div>
             <label>
               <span>Name</span>
-              <input value={registerForm.name} onChange={(event) => setRegisterForm((previous) => ({ ...previous, name: event.target.value }))} />
+              <input value={registerForm.name} onChange={(event) => updateRegisterForm("name", event.target.value)} />
             </label>
             <label>
               <span>Email</span>
-              <input value={registerForm.email} onChange={(event) => setRegisterForm((previous) => ({ ...previous, email: event.target.value }))} />
+              <input value={registerForm.email} onChange={(event) => updateRegisterForm("email", event.target.value)} />
             </label>
             <label>
               <span>Organization</span>
-              <input value={registerForm.organization} onChange={(event) => setRegisterForm((previous) => ({ ...previous, organization: event.target.value }))} />
+              <input value={registerForm.organization} onChange={(event) => updateRegisterForm("organization", event.target.value)} />
             </label>
             <label>
               <span>Role title</span>
-              <input value={registerForm.title} onChange={(event) => setRegisterForm((previous) => ({ ...previous, title: event.target.value }))} />
+              <input value={registerForm.title} onChange={(event) => updateRegisterForm("title", event.target.value)} />
             </label>
             <label>
               <span>Password</span>
@@ -3780,13 +3547,13 @@ export function PrismaReviewApp() {
                 <input
                   type={showRegisterPassword ? "text" : "password"}
                   value={registerForm.password}
-                  onChange={(event) => setRegisterForm((previous) => ({ ...previous, password: event.target.value }))}
+                  onChange={(event) => updateRegisterForm("password", event.target.value)}
                 />
                 <button
                   type="button"
                   title={showRegisterPassword ? "Hide password" : "Show password"}
                   aria-label={showRegisterPassword ? "Hide password" : "Show password"}
-                  onClick={() => setShowRegisterPassword((visible) => !visible)}
+                  onClick={toggleRegisterPasswordVisibility}
                 >
                   {showRegisterPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
@@ -3799,7 +3566,7 @@ export function PrismaReviewApp() {
                 <input
                   inputMode="numeric"
                   value={registerForm.captchaAnswer}
-                  onChange={(event) => setRegisterForm((previous) => ({ ...previous, captchaAnswer: event.target.value }))}
+                  onChange={(event) => updateRegisterForm("captchaAnswer", event.target.value)}
                 />
                 <button type="button" onClick={() => loadAuthConfig().catch(() => undefined)}>
                   Refresh
