@@ -1,0 +1,356 @@
+import type { ChangeEvent, RefObject } from "react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  Check,
+  CheckCircle2,
+  FileCheck2,
+  Upload,
+  XCircle
+} from "lucide-react";
+import { type AppUser, type Decision, type Report, type ReviewProject, screeningStudies, type Study } from "@/lib/prismaData";
+import { type DecisionValue, evaluateStage } from "@/lib/workflow";
+import { EmptyState, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
+
+type FullTextUpdateInput = {
+  retrievalStatus?: Report["retrievalStatus"];
+  decisionValue?: DecisionValue;
+  exclusionReasonId?: string;
+};
+
+type FullTextSectionProps = {
+  hasProjectSeedData: boolean;
+  projectReportQueue: Report[];
+  activeReport: Report;
+  decisions: Decision[];
+  selectedProject: ReviewProject;
+  currentUser: AppUser;
+  fullTextMessage: string;
+  setActiveReportId: (reportId: string) => void;
+  setFullTextMessage: (message: string) => void;
+  pdfInputRef: RefObject<HTMLInputElement | null>;
+  uploadReportPdf: (event: ChangeEvent<HTMLInputElement>) => void;
+  validateReportPdf: () => void;
+  updateFullTextReport: (input: FullTextUpdateInput) => void;
+  formatDecision: (value: DecisionValue) => string;
+  formatConflictResolutionHint: (requiredVotes: number) => string;
+  decisionTone: (value: DecisionValue) => "success" | "warning" | "danger" | "info" | "neutral";
+  fullTextReason: string;
+  setFullTextReason: (reason: string) => void;
+  exclusionReasons: string[];
+  studies: Study[];
+};
+
+export function FullTextSection({
+  hasProjectSeedData,
+  projectReportQueue,
+  activeReport,
+  decisions,
+  selectedProject,
+  currentUser,
+  fullTextMessage,
+  setActiveReportId,
+  setFullTextMessage,
+  pdfInputRef,
+  uploadReportPdf,
+  validateReportPdf,
+  updateFullTextReport,
+  formatDecision,
+  formatConflictResolutionHint,
+  decisionTone,
+  fullTextReason,
+  setFullTextReason,
+  exclusionReasons,
+  studies
+}: FullTextSectionProps) {
+  if (projectReportQueue.length === 0) {
+    return (
+      <div className="viewStack">
+        <section className="overviewBand compactBand">
+          <div>
+            <p className="eyebrow">Full-text screening</p>
+            <h1>Report Review</h1>
+            <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
+          </div>
+        </section>
+        <section className="panel">
+          <EmptyState
+            icon={BookOpen}
+            title="No full-text reports"
+            description="No reports have been sought or uploaded for this review yet."
+          />
+        </section>
+      </div>
+    );
+  }
+
+  const currentReportStudy = (hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === activeReport.studyId) ?? screeningStudies[0];
+  const activeFullTextDecision = decisions.find(
+    (decision) =>
+      decision.projectId === selectedProject.id &&
+      decision.reportId === activeReport.id &&
+      decision.userId === currentUser.id &&
+      decision.stage === "full_text" &&
+      decision.isCurrent
+  );
+  const visibleFullTextDecisions = decisions.filter(
+    (decision) =>
+      decision.projectId === selectedProject.id &&
+      decision.reportId === activeReport.id &&
+      decision.stage === "full_text" &&
+      decision.isCurrent
+  );
+  const visibleFullTextEvaluation = evaluateStage(
+    "full_text",
+    visibleFullTextDecisions.map((decision) => decision.decisionValue),
+    activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
+    selectedProject.maybePolicy
+  );
+  const selectedDecision = activeFullTextDecision?.decisionValue;
+  const canExclude = selectedDecision === "exclude";
+  const pdfDisplayName = activeReport.fileName || activeReport.pdfName || "No PDF uploaded";
+  const pdfStatus = activeReport.isPdfValidated ? "Validated" : activeReport.fileName ? "Uploaded, not validated" : "Missing PDF";
+  const canInclude = activeReport.retrievalStatus === "retrieved" && activeReport.isPdfValidated;
+  const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
+  const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
+  const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
+  const fullTextStatusLabel = activeReport.fullTextStatusLabel ?? visibleFullTextEvaluation.label;
+  const hasFullTextConflict = fullTextStatus === "conflict" || fullTextStatus === "needs_third_vote";
+  const messageIsSuccess = /updated|saved|uploaded|completed/i.test(fullTextMessage);
+  const pdfViewerUrl = activeReport.fileName
+    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
+    : "";
+  const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
+  const canGoPreviousReport = activeReportIndex > 0;
+  const canGoNextReport = activeReportIndex >= 0 && activeReportIndex < projectReportQueue.length - 1;
+
+  return (
+    <div className="viewStack">
+      <section className="overviewBand compactBand">
+        <div>
+          <p className="eyebrow">Full-text screening</p>
+          <h1>Report Review</h1>
+          <p className="subtle">Retrieval status and report-level exclusion reasons feed the PRISMA export.</p>
+        </div>
+        <div className="reportPicker">
+          <div>
+            <p className="eyebrow">Report queue</p>
+            <strong>{projectReportQueue.length} report{projectReportQueue.length === 1 ? "" : "s"}</strong>
+            <p className="subtle">Active report: #{currentReportStudy.importItemId ?? activeReportIndex + 1} · {activeReport.title}</p>
+          </div>
+          <label className="fieldLabel" htmlFor="full-text-report-picker">
+            Jump to report
+          </label>
+          <select
+            id="full-text-report-picker"
+            value={activeReport.id}
+            onChange={(event) => {
+              setActiveReportId(event.target.value);
+              setFullTextMessage("");
+            }}
+          >
+            {projectReportQueue.map((report) => (
+              <option key={report.id} value={report.id}>
+                #{(hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === report.studyId)?.importItemId ?? projectReportQueue.findIndex((candidate) => candidate.id === report.id) + 1} · {report.title}
+              </option>
+            ))}
+          </select>
+          <div className="buttonRow" aria-label="Report navigation">
+            <button
+              className="ghostButton iconOnly"
+              type="button"
+              title="Previous report"
+              disabled={!canGoPreviousReport}
+              onClick={() => {
+                if (!canGoPreviousReport) {
+                  return;
+                }
+                setActiveReportId(projectReportQueue[activeReportIndex - 1].id);
+                setFullTextMessage("");
+              }}
+            >
+              <ArrowLeft size={17} />
+            </button>
+            <span>
+              {activeReportIndex + 1} of {projectReportQueue.length}
+            </span>
+            <button
+              className="ghostButton iconOnly"
+              type="button"
+              title="Next report"
+              disabled={!canGoNextReport}
+              onClick={() => {
+                if (!canGoNextReport) {
+                  return;
+                }
+                setActiveReportId(projectReportQueue[activeReportIndex + 1].id);
+                setFullTextMessage("");
+              }}
+            >
+              <ArrowRight size={17} />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {fullTextMessage ? (
+        <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+          {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <span>{fullTextMessage}</span>
+        </div>
+      ) : null}
+
+      <section className="fullTextLayout">
+        <div className="pdfPane">
+          <div className="pdfToolbar">
+            <strong className="pdfTitle" title={pdfDisplayName}>
+              {pdfDisplayName}
+            </strong>
+            <div className="toolbarCluster">
+              <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
+              <button className="ghostButton" type="button" title="Upload PDF" onClick={() => pdfInputRef.current?.click()}>
+                <Upload size={16} />
+                PDF
+              </button>
+              <button className="ghostButton" type="button" title="Validate PDF" disabled={!activeReport.fileName} onClick={validateReportPdf}>
+                <FileCheck2 size={16} />
+                Validate
+              </button>
+            </div>
+          </div>
+          <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
+            {pdfViewerUrl ? (
+              <iframe className="pdfViewer" src={pdfViewerUrl} title={`${activeReport.title} PDF`} />
+            ) : (
+              <div className="paperPage emptyPdfPage">
+                <p className="paperEyebrow">{pdfStatus}</p>
+                <h2>{currentReportStudy.title}</h2>
+                {activeReport.validationNotes.length > 0 ? (
+                  <div className="pdfValidationNotes">
+                    {activeReport.validationNotes.slice(0, 4).map((note) => (
+                      <span key={note}>{note}</span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="paperLine wide" />
+                <div className="paperLine" />
+                <div className="paperLine short" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <aside className="panel fullTextPanel">
+          <SectionTitle icon={BookOpen} title="Report Metadata" action={`${activeReport.notes} notes`} />
+          <h2>{activeReport.title}</h2>
+          <p className="subtle">{activeReport.citation}</p>
+          <div className="metaStrip">
+            <span>
+              DOI {renderDoiLink(currentReportStudy.doi, currentReportStudy.doi || "Missing")}
+            </span>
+          </div>
+
+          <div className="pdfStatusGrid">
+            <StatusRow label="PDF" value={pdfStatus} tone={activeReport.isPdfValidated ? "secure" : activeReport.fileName ? "warning" : "danger"} />
+            <StatusRow
+              label="Full-text status"
+              value={fullTextStatusLabel}
+              tone={
+                hasFullTextConflict || fullTextStatus === "excluded_full_text" || fullTextStatus === "report_not_retrieved"
+                  ? "danger"
+                  : fullTextStatus === "advance_extraction"
+                    ? "secure"
+                    : "warning"
+              }
+            />
+            <StatusRow label="Full-text votes" value={`${fullTextVoteCount}/${fullTextRequiredVotes}`} tone={fullTextVoteCount >= fullTextRequiredVotes ? "secure" : "warning"} />
+            <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
+          </div>
+
+          <label className="fieldLabel" htmlFor="retrieval-status">
+            Retrieval status
+          </label>
+          <select
+            id="retrieval-status"
+            value={activeReport.retrievalStatus}
+            onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
+          >
+            <option value="not_sought">Not sought</option>
+            <option value="sought">Sought</option>
+            <option value="retrieved">Retrieved</option>
+            <option value="not_retrieved">Not retrieved</option>
+          </select>
+
+          <div className="decisionState">
+            <span>My current full-text vote</span>
+            <strong>{selectedDecision ? formatDecision(selectedDecision) : "No vote"}</strong>
+          </div>
+          {hasFullTextConflict ? (
+            <div className="conflictVotesBox">
+              <strong>{fullTextStatusLabel}</strong>
+              <p>{formatConflictResolutionHint(fullTextRequiredVotes)}</p>
+              <div className="voteStrip">
+                {visibleFullTextDecisions.map((decision) => (
+                  <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
+                    <strong>{decision.userName}</strong>
+                    {formatDecision(decision.decisionValue)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="decisionButtons compactButtons">
+            <button
+              className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
+              type="button"
+              disabled={!canInclude}
+              onClick={() => updateFullTextReport({ retrievalStatus: "retrieved", decisionValue: "include" })}
+            >
+              <CheckCircle2 size={18} />
+              Include
+            </button>
+            <button
+              className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
+              type="button"
+              onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
+            >
+              <XCircle size={18} />
+              Exclude
+            </button>
+          </div>
+
+          <label className="fieldLabel" htmlFor="exclusion-reason">
+            Exclusion reason
+          </label>
+          <select id="exclusion-reason" value={fullTextReason} onChange={(event) => setFullTextReason(event.target.value)}>
+            {exclusionReasons.map((reason) => (
+              <option value={reason} key={reason}>
+                {reason}
+              </option>
+            ))}
+          </select>
+
+          <div className={canInclude && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
+            {canInclude && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>
+              {hasFullTextConflict
+                ? "This report is in resolve-conflict state and cannot advance to extraction until the votes are reconciled."
+                : canInclude
+                ? "Include is available for this retrieved and validated report."
+                : "Include requires retrieved status and a validated PDF."}
+            </span>
+          </div>
+          {canExclude ? (
+            <div className="validationBox ok">
+              <Check size={17} />
+              <span>{`Current exclusion reason: ${activeFullTextDecision?.exclusionReasonId ?? fullTextReason}.`}</span>
+            </div>
+          ) : null}
+        </aside>
+      </section>
+    </div>
+  );
+}

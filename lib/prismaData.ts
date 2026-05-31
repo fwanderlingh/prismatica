@@ -246,9 +246,9 @@ export type WorkflowEvent = {
 
 export const projectSummary: ProjectSummary = {
   id: "demo-review",
-  title: "Digital Health Interventions for Chronic Disease Self-Management",
-  organization: "Evidence Methods Unit",
-  protocolId: "PROSPERO CRD42026002184",
+  title: "Collaborative Evidence Synthesis Workflow Benchmark",
+  organization: "Methods Sandbox",
+  protocolId: "PROTO-2026-0001",
   blindMode: true,
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
@@ -261,7 +261,7 @@ export const projectSummary: ProjectSummary = {
 export const reviewProjects: ReviewProject[] = [
   {
     ...projectSummary,
-    description: "Evaluate randomized and pragmatic trials of digital self-management support for chronic disease.",
+    description: "Evaluate reproducibility and workflow quality across collaborative evidence synthesis studies.",
     searchStrategies: "",
     status: "active",
     stage: "screening",
@@ -275,179 +275,74 @@ export const reviewProjects: ReviewProject[] = [
     recordsScreened: 924,
     conflicts: 5,
     studiesIncluded: 121
-  },
-  {
-    id: "maternal-telehealth",
-    title: "Telehealth Follow-Up After High-Risk Pregnancy",
-    organization: "Community Health Reviews",
-    protocolId: "PROSPERO CRD42026004419",
-    blindMode: true,
-    abstractRequiredVotes: 2,
-    fullTextRequiredVotes: 2,
-    extractionRequiredVotes: 2,
-    maybePolicy: "third_vote",
-    reviewers: 5,
-    lastEvent: "Import batch parsed 2 hours ago",
-    description: "Review remote monitoring and telehealth follow-up models after high-risk pregnancy discharge.",
-    searchStrategies: "",
-    status: "active",
-    stage: "import",
-    ownerId: "user-patel",
-    ownerIds: ["user-patel"],
-    memberIds: ["user-patel", "user-rivera", "user-okafor"],
-    createdAt: "2026-05-10",
-    updatedAt: "2026-05-27",
-    dueDate: "03-08-2026",
-    recordsTotal: 684,
-    recordsScreened: 138,
-    conflicts: 2,
-    studiesIncluded: 0
-  },
-  {
-    id: "ai-triage-review",
-    title: "AI-Assisted Triage Safety in Emergency Care",
-    organization: "Clinical Evidence Lab",
-    protocolId: "Draft protocol",
-    blindMode: false,
-    abstractRequiredVotes: 2,
-    fullTextRequiredVotes: 2,
-    extractionRequiredVotes: 2,
-    maybePolicy: "conflict",
-    reviewers: 4,
-    lastEvent: "Project settings created yesterday",
-    description: "Map clinical safety outcomes and implementation factors in AI triage studies.",
-    searchStrategies: "",
-    status: "draft",
-    stage: "setup",
-    ownerId: "user-okafor",
-    ownerIds: ["user-okafor"],
-    memberIds: ["user-okafor", "user-chen"],
-    createdAt: "2026-05-26",
-    updatedAt: "2026-05-26",
-    dueDate: "12-09-2026",
-    recordsTotal: 0,
-    recordsScreened: 0,
-    conflicts: 0,
-    studiesIncluded: 0
-  }
-];
-
-export const importBatches: ImportBatch[] = [
-  {
-    id: "imp-001",
-    projectId: "demo-review",
-    sourceName: "PubMed",
-    format: "ris",
-    filename: "pubmed_chronic_digital_health.ris",
-    status: "committed",
-    records: 412,
-    parserWarnings: 3,
-    uploadedBy: "M. Rivera",
-    uploadedAt: "2026-05-22 09:18"
-  },
-  {
-    id: "imp-002",
-    projectId: "demo-review",
-    sourceName: "Embase",
-    format: "ris",
-    filename: "embase_export_week20.ris",
-    status: "committed",
-    records: 536,
-    parserWarnings: 11,
-    uploadedBy: "A. Chen",
-    uploadedAt: "2026-05-22 11:42"
-  },
-  {
-    id: "imp-003",
-    projectId: "demo-review",
-    sourceName: "ClinicalTrials.gov",
-    format: "csv",
-    filename: "registry_trials.csv",
-    status: "parsed",
-    records: 126,
-    parserWarnings: 0,
-    uploadedBy: "S. Patel",
-    uploadedAt: "2026-05-24 14:05"
-  },
-  {
-    id: "imp-004",
-    projectId: "demo-review",
-    sourceName: "Scopus",
-    format: "bib",
-    filename: "scopus_citations.bib",
-    status: "needs_review",
-    records: 332,
-    parserWarnings: 24,
-    uploadedBy: "M. Rivera",
-    uploadedAt: "2026-05-25 16:40"
   }
 ];
 
 export const screeningStudies: Study[] = [
   {
     id: "study-001",
-    title: "Remote blood pressure self-monitoring supported by pharmacist messaging in adults with hypertension",
+    title: "Asynchronous task hand-off with structured reviewer prompts in distributed teams",
     abstract:
-      "Adults with uncontrolled hypertension were randomized to connected home monitoring with pharmacist messaging or usual care. The intervention improved systolic blood pressure control at six months and increased medication adherence without increasing emergency visits.",
+      "Teams were randomized to structured hand-off prompts or standard unstructured notes. The intervention improved completion consistency and reduced rework in multi-reviewer workflows.",
     authors: ["Nolan P", "Rivera M", "Sharma T"],
-    journal: "Journal of Digital Therapeutics",
+    journal: "Journal of Collaborative Systems",
     year: 2025,
-    doi: "10.1186/jdt.2025.0142",
-    source: "PubMed",
+    doi: "10.5555/jcs.2025.0142",
+    source: "IEEE Xplore",
     stage: "title_abstract",
-    keywords: ["hypertension", "remote monitoring", "adherence"]
+    keywords: ["handoff", "asynchronous", "workflow"]
   },
   {
     id: "study-002",
-    title: "Mobile coaching for glycemic control in type 2 diabetes: a pragmatic cluster trial",
+    title: "Automated reviewer coaching for consistency in document screening: a pragmatic cluster trial",
     abstract:
-      "Primary care practices were allocated to a mobile coaching pathway or usual education. Participants receiving coaching reported higher self-efficacy and a moderate reduction in HbA1c after twelve months. The intervention combined automated prompts, nurse review, and shared dashboards.",
+      "Project teams were allocated to an automated coaching pathway or usual onboarding. Teams using coaching reported higher screening agreement and faster onboarding with shared dashboards.",
     authors: ["Ibrahim H", "Kwon J", "Foster L", "Bell G"],
-    journal: "Implementation Science in Health",
+    journal: "Implementation Practice Quarterly",
     year: 2024,
-    doi: "10.1097/ish.2024.0761",
-    source: "Embase",
+    doi: "10.5555/ipq.2024.0761",
+    source: "Scopus",
     stage: "title_abstract",
-    keywords: ["diabetes", "mobile coaching", "HbA1c"]
+    keywords: ["coaching", "screening", "agreement"]
   },
   {
     id: "study-003",
-    title: "Protocol for a wearable step-count intervention in people with multimorbidity",
+    title: "Protocol for a dashboard-based prioritization intervention in large review queues",
     abstract:
-      "This protocol describes the design of a planned randomized feasibility study. No participant outcomes are reported. The future intervention will combine wearable activity tracking with weekly digital encouragement.",
+      "This protocol describes a planned randomized feasibility study. No operational outcomes are reported yet. The intervention will combine queue scoring with weekly reviewer calibration.",
     authors: ["Larsson E", "De Luca F"],
     journal: "Trials Protocols",
     year: 2023,
-    doi: "10.21203/trials.2023.2031",
+    doi: "10.5555/trials.2023.2031",
     source: "Scopus",
     stage: "title_abstract",
-    keywords: ["protocol", "wearable", "multimorbidity"]
+    keywords: ["protocol", "prioritization", "queue"]
   },
   {
     id: "study-004",
-    title: "Digital pulmonary rehabilitation after hospitalization for COPD exacerbation",
+    title: "Interactive reviewer training after major workflow migration",
     abstract:
-      "Patients discharged after COPD exacerbation used a tablet-based rehabilitation program with asynchronous therapist review. The comparative cohort showed fewer readmissions at 90 days and better activity tolerance, although attrition was higher in older participants.",
+      "Teams used a tablet-based training module with asynchronous mentor review. The comparative cohort showed fewer process regressions at 90 days, with some attrition in later phases.",
     authors: ["McArthur L", "Nguyen P", "Osei K"],
-    journal: "Respiratory Care Research",
+    journal: "Operations Learning Review",
     year: 2022,
-    doi: "10.1378/rcr.2022.088",
-    source: "PubMed",
+    doi: "10.5555/olr.2022.088",
+    source: "IEEE Xplore",
     stage: "title_abstract",
-    keywords: ["COPD", "rehabilitation", "readmission"]
+    keywords: ["training", "migration", "regression"]
   },
   {
     id: "study-005",
-    title: "Consumer sleep apps and self-management of chronic pain: cross-sectional survey",
+    title: "Consumer productivity tools and team self-management: cross-sectional survey",
     abstract:
-      "The survey explored associations between commercial sleep app use and pain coping behaviors. Because the design was cross-sectional and lacked a clinical intervention, the paper may not satisfy the review protocol eligibility criteria.",
+      "The survey explored associations between commercial productivity tool use and collaboration behaviors. Because the design was cross-sectional and lacked an intervention, the paper may not satisfy protocol eligibility criteria.",
     authors: ["Ramos V", "Archer K", "Singh N"],
-    journal: "JMIR Formative Research",
+    journal: "Digital Work Practices",
     year: 2024,
-    doi: "10.2196/57110",
+    doi: "10.5555/dwp.57110",
     source: "Manual",
     stage: "title_abstract",
-    keywords: ["cross-sectional", "pain", "sleep app"]
+    keywords: ["cross-sectional", "productivity", "tooling"]
   }
 ];
 
@@ -456,11 +351,11 @@ export const reportQueue: Report[] = [
     id: "report-001",
     projectId: "demo-review",
     studyId: "study-001",
-    title: "Remote blood pressure self-monitoring supported by pharmacist messaging in adults with hypertension",
-    citation: "Nolan P, Rivera M, Sharma T. Journal of Digital Therapeutics. 2025;18(2):101-114.",
+    title: "Asynchronous task hand-off with structured reviewer prompts in distributed teams",
+    citation: "Nolan P, Rivera M, Sharma T. Journal of Collaborative Systems. 2025;18(2):101-114.",
     retrievalStatus: "retrieved",
-    pdfName: "nolan-2025-hypertension-monitoring.pdf",
-    fileName: "nolan-2025-hypertension-monitoring.pdf",
+    pdfName: "nolan-2025-handoff-prompts.pdf",
+    fileName: "nolan-2025-handoff-prompts.pdf",
     mimeType: "application/pdf",
     size: 3145728,
     checksum: "demo-report-001",
@@ -473,11 +368,11 @@ export const reportQueue: Report[] = [
     id: "report-002",
     projectId: "demo-review",
     studyId: "study-004",
-    title: "Digital pulmonary rehabilitation after hospitalization for COPD exacerbation",
-    citation: "McArthur L, Nguyen P, Osei K. Respiratory Care Research. 2022;41(7):619-631.",
+    title: "Interactive reviewer training after major workflow migration",
+    citation: "McArthur L, Nguyen P, Osei K. Operations Learning Review. 2022;41(7):619-631.",
     retrievalStatus: "sought",
-    pdfName: "mcarthur-2022-copd-rehab.pdf",
-    fileName: "mcarthur-2022-copd-rehab.pdf",
+    pdfName: "mcarthur-2022-workflow-migration.pdf",
+    fileName: "mcarthur-2022-workflow-migration.pdf",
     mimeType: "application/pdf",
     size: 0,
     checksum: "",
@@ -535,9 +430,9 @@ export const dedupCandidates: DedupCandidate[] = [
     recordB: {
       ...screeningStudies[0],
       id: "record-duplicate-001",
-      source: "Embase",
-      title: "Remote BP self-monitoring supported by pharmacist messaging among adults with hypertension",
-      doi: "https://doi.org/10.1186/jdt.2025.0142"
+      source: "Scopus",
+      title: "Asynchronous reviewer handoff supported by structured prompts in distributed teams",
+      doi: "https://doi.org/10.5555/jcs.2025.0142"
     },
     explanation: {
       title: 0.94,
@@ -557,7 +452,7 @@ export const dedupCandidates: DedupCandidate[] = [
       ...screeningStudies[4],
       id: "record-duplicate-002",
       source: "Scopus",
-      title: "Commercial sleep applications for chronic pain self-management",
+      title: "Commercial productivity applications for team self-management",
       doi: ""
     },
     explanation: {
@@ -583,11 +478,11 @@ export const prismaCounts: PrismaCounts = {
   reportsNotRetrieved: 21,
   reportsAssessed: 271,
   reportsExcludedWithReasons: {
-    "Wrong population": 42,
-    "Wrong intervention": 31,
+    "Wrong domain": 42,
+    "Wrong method": 31,
     "Wrong comparator": 28,
     "Wrong outcome": 19,
-    "Wrong study design": 18,
+    "Wrong publication type": 18,
     "Full text unavailable": 12
   },
   studiesIncluded: 121,
@@ -596,64 +491,16 @@ export const prismaCounts: PrismaCounts = {
 };
 
 export const projectCounts: Record<string, PrismaCounts> = {
-  "demo-review": prismaCounts,
-  "maternal-telehealth": {
-    recordsIdentifiedDatabase: 604,
-    recordsIdentifiedRegisters: 42,
-    recordsIdentifiedOther: 38,
-    duplicateRecordsRemoved: 87,
-    automationRemoved: 12,
-    removedOtherReasons: 4,
-    recordsScreened: 138,
-    recordsExcluded: 86,
-    reportsSought: 52,
-    reportsNotRetrieved: 0,
-    reportsAssessed: 0,
-    reportsExcludedWithReasons: {
-      "Wrong population": 0,
-      "Wrong intervention": 0,
-      "Wrong comparator": 0,
-      "Wrong outcome": 0,
-      "Wrong study design": 0,
-      "Full text unavailable": 0
-    },
-    studiesIncluded: 0,
-    studiesExtracted: 0,
-    studiesIncludedMetaAnalysis: 0
-  },
-  "ai-triage-review": {
-    recordsIdentifiedDatabase: 0,
-    recordsIdentifiedRegisters: 0,
-    recordsIdentifiedOther: 0,
-    duplicateRecordsRemoved: 0,
-    automationRemoved: 0,
-    removedOtherReasons: 0,
-    recordsScreened: 0,
-    recordsExcluded: 0,
-    reportsSought: 0,
-    reportsNotRetrieved: 0,
-    reportsAssessed: 0,
-    reportsExcludedWithReasons: {
-      "Wrong population": 0,
-      "Wrong intervention": 0,
-      "Wrong comparator": 0,
-      "Wrong outcome": 0,
-      "Wrong study design": 0,
-      "Full text unavailable": 0
-    },
-    studiesIncluded: 0,
-    studiesExtracted: 0,
-    studiesIncludedMetaAnalysis: 0
-  }
+  "demo-review": prismaCounts
 };
 
 export const highlightRules: HighlightRule[] = [
   { term: "randomized", type: "include" },
-  { term: "intervention", type: "include" },
-  { term: "self-monitoring", type: "include" },
-  { term: "usual care", type: "neutral" },
+  { term: "controlled", type: "include" },
+  { term: "benchmark", type: "include" },
+  { term: "baseline", type: "neutral" },
   { term: "protocol", type: "exclude" },
-  { term: "cross-sectional", type: "exclude" }
+  { term: "editorial", type: "exclude" }
 ];
 
 export const initialWorkflowEvents: WorkflowEvent[] = [
@@ -687,37 +534,6 @@ export const initialWorkflowEvents: WorkflowEvent[] = [
   }
 ];
 
-export const extractionRows = [
-  {
-    field: "Country",
-    reviewerA: "United States",
-    reviewerB: "USA",
-    consensus: "United States",
-    status: "normalized"
-  },
-  {
-    field: "Sample size",
-    reviewerA: "248",
-    reviewerB: "248",
-    consensus: "248",
-    status: "matched"
-  },
-  {
-    field: "Study design",
-    reviewerA: "Cluster RCT",
-    reviewerB: "Pragmatic RCT",
-    consensus: "Cluster randomized trial",
-    status: "resolved"
-  },
-  {
-    field: "Primary outcome",
-    reviewerA: "HbA1c at 12 months",
-    reviewerB: "Change in HbA1c",
-    consensus: "Change in HbA1c at 12 months",
-    status: "resolved"
-  }
-];
-
 export const qualityDomains = [
   {
     domain: "Randomization process",
@@ -727,7 +543,7 @@ export const qualityDomains = [
   {
     domain: "Deviations from intended intervention",
     judgement: "Some concerns",
-    support: "Participants were not masked, but outcomes were objective."
+    support: "Reviewers were not masked, but outcomes were objectively logged."
   },
   {
     domain: "Missing outcome data",

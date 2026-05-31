@@ -98,6 +98,11 @@ import {
   StatusRow,
   renderDoiLink
 } from "./prisma-review-ui";
+import { FullTextSection } from "./review-sections/full-text-section";
+import { ExtractionSection } from "./review-sections/extraction-section";
+import { ConsensusSection } from "./review-sections/consensus-section";
+import { SettingsSection } from "./review-sections/settings-section";
+import { ProfileSection } from "./review-sections/profile-section";
 
 type NavItem = {
   key: ViewKey;
@@ -2857,922 +2862,89 @@ export function PrismaReviewApp() {
   }
 
   function renderFullText() {
-    if (projectReportQueue.length === 0) {
-      return (
-        <div className="viewStack">
-          <section className="overviewBand compactBand">
-            <div>
-              <p className="eyebrow">Full-text screening</p>
-              <h1>Report Review</h1>
-              <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
-            </div>
-          </section>
-          <section className="panel">
-            <EmptyState
-              icon={BookOpen}
-              title="No full-text reports"
-              description="No reports have been sought or uploaded for this review yet."
-            />
-          </section>
-        </div>
-      );
-    }
-
-    const currentReportStudy = (hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === activeReport.studyId) ?? screeningStudies[0];
-    const activeFullTextDecision = decisions.find(
-      (decision) =>
-        decision.projectId === selectedProject.id &&
-        decision.reportId === activeReport.id &&
-        decision.userId === currentUser.id &&
-        decision.stage === "full_text" &&
-        decision.isCurrent
-    );
-    const visibleFullTextDecisions = decisions.filter(
-      (decision) =>
-        decision.projectId === selectedProject.id &&
-        decision.reportId === activeReport.id &&
-        decision.stage === "full_text" &&
-        decision.isCurrent
-    );
-    const visibleFullTextEvaluation = evaluateStage(
-      "full_text",
-      visibleFullTextDecisions.map((decision) => decision.decisionValue),
-      activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
-      selectedProject.maybePolicy
-    );
-    const selectedDecision = activeFullTextDecision?.decisionValue;
-    const canExclude = selectedDecision === "exclude";
-    const pdfDisplayName = activeReport.fileName || activeReport.pdfName || "No PDF uploaded";
-    const pdfStatus = activeReport.isPdfValidated ? "Validated" : activeReport.fileName ? "Uploaded, not validated" : "Missing PDF";
-    const canInclude = activeReport.retrievalStatus === "retrieved" && activeReport.isPdfValidated;
-    const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
-    const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
-    const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
-    const fullTextStatusLabel = activeReport.fullTextStatusLabel ?? visibleFullTextEvaluation.label;
-    const hasFullTextConflict = fullTextStatus === "conflict" || fullTextStatus === "needs_third_vote";
-    const messageIsSuccess = /updated|saved|uploaded|completed/i.test(fullTextMessage);
-    const pdfViewerUrl = activeReport.fileName
-      ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
-      : "";
-    const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
-    const canGoPreviousReport = activeReportIndex > 0;
-    const canGoNextReport = activeReportIndex >= 0 && activeReportIndex < projectReportQueue.length - 1;
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand compactBand">
-          <div>
-            <p className="eyebrow">Full-text screening</p>
-            <h1>Report Review</h1>
-            <p className="subtle">Retrieval status and report-level exclusion reasons feed the PRISMA export.</p>
-          </div>
-          <div className="reportPicker">
-            <div>
-              <p className="eyebrow">Report queue</p>
-              <strong>{projectReportQueue.length} report{projectReportQueue.length === 1 ? "" : "s"}</strong>
-                <p className="subtle">Active report: #{currentReportStudy.importItemId ?? activeReportIndex + 1} · {activeReport.title}</p>
-            </div>
-            <label className="fieldLabel" htmlFor="full-text-report-picker">
-              Jump to report
-            </label>
-            <select
-              id="full-text-report-picker"
-              value={activeReport.id}
-              onChange={(event) => {
-                setActiveReportId(event.target.value);
-                setFullTextMessage("");
-              }}
-            >
-              {projectReportQueue.map((report) => (
-                <option key={report.id} value={report.id}>
-                  #{(hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === report.studyId)?.importItemId ?? projectReportQueue.findIndex((candidate) => candidate.id === report.id) + 1} · {report.title}
-                </option>
-              ))}
-            </select>
-            <div className="buttonRow" aria-label="Report navigation">
-              <button
-                className="ghostButton iconOnly"
-                type="button"
-                title="Previous report"
-                disabled={!canGoPreviousReport}
-                onClick={() => {
-                  if (!canGoPreviousReport) {
-                    return;
-                  }
-                  setActiveReportId(projectReportQueue[activeReportIndex - 1].id);
-                  setFullTextMessage("");
-                }}
-              >
-                <ArrowLeft size={17} />
-              </button>
-              <span>
-                {activeReportIndex + 1} of {projectReportQueue.length}
-              </span>
-              <button
-                className="ghostButton iconOnly"
-                type="button"
-                title="Next report"
-                disabled={!canGoNextReport}
-                onClick={() => {
-                  if (!canGoNextReport) {
-                    return;
-                  }
-                  setActiveReportId(projectReportQueue[activeReportIndex + 1].id);
-                  setFullTextMessage("");
-                }}
-              >
-                <ArrowRight size={17} />
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {fullTextMessage ? (
-          <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-            <span>{fullTextMessage}</span>
-          </div>
-        ) : null}
-
-        <section className="fullTextLayout">
-          <div className="pdfPane">
-            <div className="pdfToolbar">
-              <strong className="pdfTitle" title={pdfDisplayName}>
-                {pdfDisplayName}
-              </strong>
-              <div className="toolbarCluster">
-                <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
-                <button className="ghostButton" type="button" title="Upload PDF" onClick={() => pdfInputRef.current?.click()}>
-                  <Upload size={16} />
-                  PDF
-                </button>
-                <button className="ghostButton" type="button" title="Validate PDF" disabled={!activeReport.fileName} onClick={validateReportPdf}>
-                  <FileCheck2 size={16} />
-                  Validate
-                </button>
-                {/*<button className="ghostButton iconOnly" type="button" title="Search PDF">
-                  <Search size={16} />
-                </button>
-                <button className="ghostButton iconOnly" type="button" title="Zoom in">
-                  <ZoomIn size={16} />
-                </button>
-                <button className="ghostButton iconOnly" type="button" title="Show notes">
-                  <MessageSquareText size={16} />
-                </button>*/}
-              </div>
-            </div>
-            <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
-              {pdfViewerUrl ? (
-                <iframe className="pdfViewer" src={pdfViewerUrl} title={`${activeReport.title} PDF`} />
-              ) : (
-                <div className="paperPage emptyPdfPage">
-                  <p className="paperEyebrow">{pdfStatus}</p>
-                  <h2>{currentReportStudy.title}</h2>
-                  {activeReport.validationNotes.length > 0 ? (
-                    <div className="pdfValidationNotes">
-                      {activeReport.validationNotes.slice(0, 4).map((note) => (
-                        <span key={note}>{note}</span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="paperLine wide" />
-                  <div className="paperLine" />
-                  <div className="paperLine short" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <aside className="panel fullTextPanel">
-            <SectionTitle icon={BookOpen} title="Report Metadata" action={`${activeReport.notes} notes`} />
-            <h2>{activeReport.title}</h2>
-            <p className="subtle">{activeReport.citation}</p>
-            <div className="metaStrip">
-              <span>
-                DOI {renderDoiLink(currentReportStudy.doi, currentReportStudy.doi || "Missing")}
-              </span>
-            </div>
-
-            <div className="pdfStatusGrid">
-              <StatusRow label="PDF" value={pdfStatus} tone={activeReport.isPdfValidated ? "secure" : activeReport.fileName ? "warning" : "danger"} />
-              <StatusRow
-                label="Full-text status"
-                value={fullTextStatusLabel}
-                tone={
-                  hasFullTextConflict || fullTextStatus === "excluded_full_text" || fullTextStatus === "report_not_retrieved"
-                    ? "danger"
-                    : fullTextStatus === "advance_extraction"
-                      ? "secure"
-                      : "warning"
-                }
-              />
-              <StatusRow label="Full-text votes" value={`${fullTextVoteCount}/${fullTextRequiredVotes}`} tone={fullTextVoteCount >= fullTextRequiredVotes ? "secure" : "warning"} />
-              <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
-            </div>
-
-            <label className="fieldLabel" htmlFor="retrieval-status">
-              Retrieval status
-            </label>
-            <select
-              id="retrieval-status"
-              value={activeReport.retrievalStatus}
-              onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
-            >
-              <option value="not_sought">Not sought</option>
-              <option value="sought">Sought</option>
-              <option value="retrieved">Retrieved</option>
-              <option value="not_retrieved">Not retrieved</option>
-            </select>
-
-            <div className="decisionState">
-              <span>My current full-text vote</span>
-              <strong>{selectedDecision ? formatDecision(selectedDecision) : "No vote"}</strong>
-            </div>
-            {hasFullTextConflict ? (
-              <div className="conflictVotesBox">
-                <strong>{fullTextStatusLabel}</strong>
-                <p>{formatConflictResolutionHint(fullTextRequiredVotes)}</p>
-                <div className="voteStrip">
-                  {visibleFullTextDecisions.map((decision) => (
-                    <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
-                      <strong>{decision.userName}</strong>
-                      {formatDecision(decision.decisionValue)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="decisionButtons compactButtons">
-              <button
-                className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
-                type="button"
-                disabled={!canInclude}
-                onClick={() => updateFullTextReport({ retrievalStatus: "retrieved", decisionValue: "include" })}
-              >
-                <CheckCircle2 size={18} />
-                Include
-              </button>
-              <button
-                className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
-                type="button"
-                onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
-              >
-                <XCircle size={18} />
-                Exclude
-              </button>
-            </div>
-
-            <label className="fieldLabel" htmlFor="exclusion-reason">
-              Exclusion reason
-            </label>
-            <select id="exclusion-reason" value={fullTextReason} onChange={(event) => setFullTextReason(event.target.value)}>
-              {exclusionReasons.map((reason) => (
-                <option value={reason} key={reason}>
-                  {reason}
-                </option>
-              ))}
-            </select>
-
-            <div className={canInclude && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
-              {canInclude && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>
-                {hasFullTextConflict
-                  ? "This report is in resolve-conflict state and cannot advance to extraction until the votes are reconciled."
-                  : canInclude
-                  ? "Include is available for this retrieved and validated report."
-                  : "Include requires retrieved status and a validated PDF."}
-              </span>
-            </div>
-            {canExclude ? (
-              <div className="validationBox ok">
-                <Check size={17} />
-                <span>{`Current exclusion reason: ${activeFullTextDecision?.exclusionReasonId ?? fullTextReason}.`}</span>
-              </div>
-            ) : null}
-          </aside>
-        </section>
-      </div>
+      <FullTextSection
+        hasProjectSeedData={hasProjectSeedData}
+        projectReportQueue={projectReportQueue}
+        activeReport={activeReport}
+        decisions={decisions}
+        selectedProject={selectedProject}
+        currentUser={currentUser}
+        fullTextMessage={fullTextMessage}
+        setActiveReportId={setActiveReportId}
+        setFullTextMessage={setFullTextMessage}
+        pdfInputRef={pdfInputRef}
+        uploadReportPdf={uploadReportPdf}
+        validateReportPdf={validateReportPdf}
+        updateFullTextReport={updateFullTextReport}
+        formatDecision={formatDecision}
+        formatConflictResolutionHint={formatConflictResolutionHint}
+        decisionTone={decisionTone}
+        fullTextReason={fullTextReason}
+        setFullTextReason={setFullTextReason}
+        exclusionReasons={exclusionReasons}
+        studies={studies}
+      />
     );
   }
 
   function renderExtraction() {
-    const validatedPdfCount = projectReportQueue.filter((report) => report.fileName && report.isPdfValidated).length;
-    const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
-    const extractionMessageIsSuccess = /created|submitted|saved/i.test(extractionMessage);
-
-    if (activeCounts.studiesIncluded === 0) {
-      return (
-        <div className="viewStack">
-          <section className="overviewBand">
-            <div>
-              <p className="eyebrow">Data extraction</p>
-              <h1>Dual Independent Extraction</h1>
-              <p className="subtle">Extraction forms and assignments become available after studies are included.</p>
-            </div>
-          </section>
-          <section className="settingsGrid">
-            <div className="panel">
-              <EmptyState
-                icon={ClipboardCheck}
-                title="No included studies yet"
-                description="Files appear here after a report is retrieved, its PDF is validated, and the full-text decision reaches Include."
-              />
-            </div>
-            <div className="panel">
-              <SectionTitle icon={BookOpen} title="File Readiness" action="Full-text gate" />
-              <div className="stateRows">
-                <StatusRow label="Full-text reports" value={projectReportQueue.length.toString()} tone={projectReportQueue.length > 0 ? "info" : "warning"} />
-                <StatusRow label="Validated PDFs" value={validatedPdfCount.toString()} tone={validatedPdfCount > 0 ? "secure" : "warning"} />
-                <StatusRow label="Included for extraction" value={activeCounts.studiesIncluded.toString()} tone="danger" />
-              </div>
-              {projectReportQueue.length > 0 ? (
-                <div className="tableWrap compactTableWrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Report</th>
-                        <th>PDF</th>
-                        <th>Extraction gate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {projectReportQueue.map((report) => (
-                        <tr key={report.id}>
-                          <td>
-                            <strong>{report.title}</strong>
-                          </td>
-                          <td>{report.fileName ? (report.isPdfValidated ? "Validated" : "Needs validation") : "Missing"}</td>
-                          <td>{projectExtractionStudyIds.has(report.studyId) ? "Visible" : "Awaiting Include"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </div>
-          </section>
-        </div>
-      );
-    }
-
-    if (!activeExtractionTemplate) {
-      return (
-        <div className="viewStack">
-          <section className="overviewBand">
-            <div>
-              <p className="eyebrow">Data extraction</p>
-              <h1>Data Template</h1>
-              <p className="subtle">Project owners define the extraction fields before reviewers extract data from included reports.</p>
-            </div>
-          </section>
-
-          {extractionMessage ? (
-            <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-              {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{extractionMessage}</span>
-            </div>
-          ) : null}
-
-          {canManageProject ? (
-            <form className="panel templateBuilder" onSubmit={createExtractionTemplate}>
-              <SectionTitle icon={ClipboardCheck} title="Create Data Template" action={`${extractionTemplateForm.fields.length} fields`} />
-              <label>
-                <span>Template title</span>
-                <input
-                  value={extractionTemplateForm.title}
-                  onChange={(event) => setExtractionTemplateForm((previous) => ({ ...previous, title: event.target.value }))}
-                />
-              </label>
-
-              <div className="templateFieldList">
-                {extractionTemplateForm.fields.map((field, index) => (
-                  <div className="templateFieldEditor" key={field.id}>
-                    <div className="templateFieldHeader">
-                      <strong>Field {index + 1}</strong>
-                      <button className="ghostButton iconOnly" type="button" title="Remove field" onClick={() => removeExtractionTemplateField(field.id)}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                    <div className="formGrid compactFormGrid">
-                      <label>
-                        <span>Title</span>
-                        <input
-                          value={field.title}
-                          onChange={(event) => updateExtractionTemplateField(field.id, { title: event.target.value })}
-                          placeholder="Population characteristics"
-                        />
-                      </label>
-                      <label>
-                        <span>Type</span>
-                        <select
-                          value={field.type}
-                          onChange={(event) => updateExtractionTemplateField(field.id, { type: event.target.value as ExtractionFieldType })}
-                        >
-                          <option value="multiline_text">Multiline Text</option>
-                          <option value="single_choice">Single Choice</option>
-                          <option value="multiple_choice">Multiple Choice</option>
-                        </select>
-                      </label>
-                    </div>
-                    {field.type !== "multiline_text" ? (
-                      <label>
-                        <span>Choices</span>
-                        <textarea
-                          value={field.optionsText}
-                          onChange={(event) => updateExtractionTemplateField(field.id, { optionsText: event.target.value })}
-                          placeholder={"Option A\nOption B"}
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-
-              <div className="buttonRow">
-                <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("multiline_text")}>
-                  <Plus size={17} />
-                  Text
-                </button>
-                <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("single_choice")}>
-                  <Plus size={17} />
-                  Single Choice
-                </button>
-                <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("multiple_choice")}>
-                  <Plus size={17} />
-                  Multiple Choice
-                </button>
-                <button className="primaryButton" type="submit">
-                  <Check size={17} />
-                  Create Template
-                </button>
-              </div>
-            </form>
-          ) : (
-            <section className="panel">
-              <EmptyState
-                icon={ClipboardCheck}
-                title="No data template"
-                description="A project owner needs to create the extraction template before reviewers can extract data."
-              />
-            </section>
-          )}
-        </div>
-      );
-    }
-
-    const activeReportForExtraction = activeExtractionReport ?? projectExtractionReports[0];
-    const activeStudyForExtraction = activeReportForExtraction
-      ? projectScreeningStudies.find((study) => study.id === activeReportForExtraction.studyId)
-      : undefined;
-    const extractionPdfUrl = activeReportForExtraction?.fileName
-      ? `/api/projects/${selectedProject.id}/reports/${activeReportForExtraction.id}?pdf=1&checksum=${encodeURIComponent(activeReportForExtraction.checksum ?? "")}`
-      : "";
-    const submittedResponsesForActiveReport = activeReportForExtraction
-      ? extractionResponses.filter(
-          (response) =>
-            response.projectId === selectedProject.id &&
-            response.reportId === activeReportForExtraction.id &&
-            response.templateId === activeExtractionTemplate.id &&
-            response.isSubmitted
-        )
-      : [];
-    const requiredExtractionVotes = selectedProject.extractionRequiredVotes;
-    const hasMyExtraction = Boolean(activeExtractionResponse?.isSubmitted);
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand compactBand">
-          <div>
-            <p className="eyebrow">Data extraction</p>
-            <h1>Dual Independent Extraction</h1>
-            <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
-          </div>
-          <div className="reportPicker">
-            <div>
-              <p className="eyebrow">Included reports</p>
-              <strong>{projectExtractionReports.length} report{projectExtractionReports.length === 1 ? "" : "s"}</strong>
-              <p className="subtle">At least {requiredExtractionVotes} submitted extraction vote{requiredExtractionVotes === 1 ? "" : "s"} required.</p>
-            </div>
-            <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
-              <GitMerge size={16} />
-              Resolve Conflicts
-            </button>
-            <label className="fieldLabel" htmlFor="extraction-report-picker">
-              Jump to report
-            </label>
-            <select
-              id="extraction-report-picker"
-              value={activeReportForExtraction?.id ?? ""}
-              onChange={(event) => setActiveExtractionReportId(event.target.value)}
-            >
-              {projectExtractionReports.map((report) => (
-                <option key={report.id} value={report.id}>
-                  {report.title}
-                </option>
-              ))}
-            </select>
-          </div>
-        </section>
-
-        {extractionMessage ? (
-          <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-            <span>{extractionMessage}</span>
-          </div>
-        ) : null}
-
-        <section className="extractionWorkspace">
-          <div className="pdfPane">
-            <div className="pdfToolbar">
-              <strong className="pdfTitle" title={activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}>
-                {activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}
-              </strong>
-              {activeReportForExtraction ? (
-                <button
-                  className="ghostButton"
-                  type="button"
-                  onClick={() => {
-                    setActiveReportId(activeReportForExtraction.id);
-                    setActiveView("fullText");
-                  }}
-                >
-                  <BookOpen size={16} />
-                  Full Text
-                </button>
-              ) : null}
-            </div>
-            <div className={extractionPdfUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="Extraction PDF review pane">
-              {extractionPdfUrl ? (
-                <iframe className="pdfViewer" src={extractionPdfUrl} title={`${activeReportForExtraction?.title ?? "Included report"} PDF`} />
-              ) : (
-                <div className="paperPage emptyPdfPage">
-                  <p className="paperEyebrow">PDF unavailable</p>
-                  <h2>{activeReportForExtraction?.title ?? "No included report selected"}</h2>
-                  <div className="paperLine wide" />
-                  <div className="paperLine" />
-                  <div className="paperLine short" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <aside className="panel extractionFormPanel">
-            <SectionTitle
-              icon={ClipboardCheck}
-              title="Extraction Form"
-              action={`${submittedResponsesForActiveReport.length}/${requiredExtractionVotes} submitted`}
-            />
-            <h2>{activeReportForExtraction?.title ?? "Included report"}</h2>
-            <p className="subtle">
-              {activeStudyForExtraction
-                ? `${activeStudyForExtraction.authors.join(", ") || "No authors parsed"} · ${activeStudyForExtraction.journal} · ${
-                    activeStudyForExtraction.year > 0 ? activeStudyForExtraction.year : "Year needs review"
-                  }`
-                : "Select an included report to extract data."}
-            </p>
-            <div className="stateRows">
-              <StatusRow label="Template" value={`${activeExtractionTemplate.fields.length} fields`} tone="info" />
-              <StatusRow
-                label="Extraction votes"
-                value={
-                  submittedResponsesForActiveReport.length >= requiredExtractionVotes
-                    ? "Ready for comparison"
-                    : `${submittedResponsesForActiveReport.length}/${requiredExtractionVotes} submitted`
-                }
-                tone={submittedResponsesForActiveReport.length >= requiredExtractionVotes ? "secure" : "warning"}
-              />
-              <StatusRow label="My extraction" value={hasMyExtraction ? "Submitted" : "Open"} tone={hasMyExtraction ? "secure" : "warning"} />
-            </div>
-
-            <form className="extractionForm" onSubmit={submitExtractionResponse}>
-              {activeExtractionTemplate.fields.map((field) => {
-                const value = extractionFormValues[field.id];
-                return (
-                  <fieldset className="extractionField" key={field.id}>
-                    <legend>{field.title}</legend>
-                    {field.type === "multiline_text" ? (
-                      <textarea
-                        value={typeof value === "string" ? value : ""}
-                        onChange={(event) => updateExtractionValue(field.id, event.target.value)}
-                      />
-                    ) : null}
-                    {field.type === "single_choice" ? (
-                      <div className="choiceList">
-                        {field.options.map((option) => (
-                          <label key={option}>
-                            <input
-                              type="radio"
-                              name={field.id}
-                              checked={value === option}
-                              onChange={() => updateExtractionValue(field.id, option)}
-                            />
-                            <span>{option}</span>
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-                    {field.type === "multiple_choice" ? (
-                      <div className="choiceList">
-                        {field.options.map((option) => {
-                          const checked = Array.isArray(value) && value.includes(option);
-                          return (
-                            <label key={option}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(event) => toggleExtractionChoice(field.id, option, event.target.checked)}
-                              />
-                              <span>{option}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </fieldset>
-                );
-              })}
-
-              <button className="primaryButton" type="submit" disabled={!activeReportForExtraction}>
-                <Check size={17} />
-                Submit Extraction
-              </button>
-            </form>
-          </aside>
-        </section>
-      </div>
+      <ExtractionSection
+        activeCounts={activeCounts}
+        projectReportQueue={projectReportQueue}
+        projectExtractionStudyIds={projectExtractionStudyIds}
+        selectedProject={selectedProject}
+        currentUser={currentUser}
+        extractionMessage={extractionMessage}
+        activeExtractionTemplate={activeExtractionTemplate}
+        createExtractionTemplate={createExtractionTemplate}
+        extractionTemplateForm={extractionTemplateForm}
+        setExtractionTemplateTitle={(title) =>
+          setExtractionTemplateForm((previous) => ({ ...previous, title }))
+        }
+        removeExtractionTemplateField={removeExtractionTemplateField}
+        updateExtractionTemplateField={updateExtractionTemplateField}
+        addExtractionTemplateField={addExtractionTemplateField}
+        activeExtractionReport={activeExtractionReport}
+        projectExtractionReports={projectExtractionReports}
+        setActiveView={setActiveView}
+        setActiveExtractionReportId={setActiveExtractionReportId}
+        setActiveReportId={setActiveReportId}
+        projectScreeningStudies={projectScreeningStudies}
+        extractionResponses={extractionResponses}
+        activeExtractionResponse={activeExtractionResponse}
+        submitExtractionResponse={submitExtractionResponse}
+        extractionFormValues={extractionFormValues}
+        updateExtractionValue={updateExtractionValue}
+        toggleExtractionChoice={toggleExtractionChoice}
+      />
     );
   }
 
   function renderConsensus() {
-    const canArbitrate =
-      selectedProject.memberIds.includes(currentUser.id) ||
-      selectedProject.ownerIds.includes(currentUser.id) ||
-      selectedProject.ownerId === currentUser.id;
-    const consensusMessageIsSuccess = /finalized|saved|resolved/i.test(consensusMessage);
-
-    if (activeCounts.studiesIncluded === 0) {
-      return (
-        <div className="viewStack">
-          <section className="overviewBand">
-            <div>
-              <p className="eyebrow">Consensus arbitration</p>
-              <h1>Conflict Flagging and Arbitration</h1>
-              <p className="subtle">This workspace opens after dual extraction submissions are collected for included studies.</p>
-            </div>
-          </section>
-          <section className="panel">
-            <EmptyState
-              icon={GitMerge}
-              title="No reports in extraction"
-              description="Complete inclusion and independent extraction before running discrepancy arbitration."
-            />
-          </section>
-        </div>
-      );
-    }
-
-    if (!activeExtractionTemplate) {
-      return (
-        <div className="viewStack">
-          <section className="overviewBand">
-            <div>
-              <p className="eyebrow">Consensus arbitration</p>
-              <h1>Conflict Flagging and Arbitration</h1>
-              <p className="subtle">Create an extraction template first, then collect dual extraction responses.</p>
-            </div>
-          </section>
-          <section className="panel">
-            <EmptyState
-              icon={ClipboardCheck}
-              title="No active extraction template"
-              description="A project owner must define the extraction template before conflict flagging and arbitration can begin."
-            />
-          </section>
-        </div>
-      );
-    }
-
-    const requiredVotes = selectedProject.extractionRequiredVotes;
-    const consensusQueue = projectExtractionReports.map((report) => {
-      const submittedVotes = extractionResponses.filter(
-        (response) =>
-          response.projectId === selectedProject.id &&
-          response.reportId === report.id &&
-          response.templateId === activeExtractionTemplate.id &&
-          response.isSubmitted
-      ).length;
-      const record = extractionConsensus.find(
-        (consensus) =>
-          consensus.projectId === selectedProject.id &&
-          consensus.reportId === report.id &&
-          consensus.templateId === activeExtractionTemplate.id
-      );
-
-      return {
-        report,
-        submittedVotes,
-        record
-      };
-    });
-
-    const pendingConsensusCount = consensusQueue.filter(
-      (item) => item.submittedVotes >= requiredVotes && item.record?.status !== "finalized"
-    ).length;
-    const finalizedConsensusCount = consensusQueue.filter((item) => item.record?.status === "finalized").length;
-    const activeReportForConsensus = activeExtractionReport ?? projectExtractionReports[0];
-    const activeStudyForConsensus = activeReportForConsensus
-      ? projectScreeningStudies.find((study) => study.id === activeReportForConsensus.studyId)
-      : undefined;
-    const submittedResponsesForActiveReport = activeReportForConsensus
-      ? extractionResponses.filter(
-          (response) =>
-            response.projectId === selectedProject.id &&
-            response.reportId === activeReportForConsensus.id &&
-            response.templateId === activeExtractionTemplate.id &&
-            response.isSubmitted
-        )
-      : [];
-    const hasRequiredVotes = submittedResponsesForActiveReport.length >= requiredVotes;
-    const flaggedFieldIdSet = new Set(activeExtractionConsensus?.flaggedFieldIds ?? []);
-    const conflictedFields = activeExtractionTemplate.fields.filter((field) => flaggedFieldIdSet.has(field.id));
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand compactBand">
-          <div>
-            <p className="eyebrow">Consensus arbitration</p>
-            <h1>Conflict Flagging and Arbitration</h1>
-            <p className="subtle">Automated discrepancy detection, side-by-side review, and final consensus finalization.</p>
-          </div>
-          <div className="reportPicker">
-            <div>
-              <p className="eyebrow">Queue status</p>
-              <strong>{pendingConsensusCount} pending</strong>
-              <p className="subtle">{finalizedConsensusCount} finalized records</p>
-            </div>
-            <button className="ghostButton" type="button" onClick={() => setActiveView("extraction")}>
-              <ClipboardCheck size={16} />
-              Back To Extraction
-            </button>
-            <label className="fieldLabel" htmlFor="consensus-report-picker">
-              Study/report
-            </label>
-            <select
-              id="consensus-report-picker"
-              value={activeReportForConsensus?.id ?? ""}
-              onChange={(event) => setActiveExtractionReportId(event.target.value)}
-            >
-              {projectExtractionReports.map((report) => {
-                const item = consensusQueue.find((candidate) => candidate.report.id === report.id);
-                const statusLabel =
-                  item && item.submittedVotes >= requiredVotes
-                    ? item.record?.status === "finalized"
-                      ? "finalized"
-                      : "pending"
-                    : "collecting votes";
-                return (
-                  <option key={report.id} value={report.id}>
-                    {report.title} ({statusLabel})
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-        </section>
-
-        {consensusMessage ? (
-          <div className={consensusMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {consensusMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-            <span>{consensusMessage}</span>
-          </div>
-        ) : null}
-
-        {!hasRequiredVotes ? (
-          <section className="panel">
-            <SectionTitle icon={AlertTriangle} title="Waiting For Independent Extractions" action="Automated gate" />
-            <div className="validationItem blocked">
-              <AlertTriangle size={17} />
-              <span>
-                {`This report has ${submittedResponsesForActiveReport.length}/${requiredVotes} submitted extraction vote${requiredVotes === 1 ? "" : "s"}.`}
-              </span>
-            </div>
-          </section>
-        ) : (
-          <section className="panel">
-            <SectionTitle icon={GitMerge} title="Automated Conflict Flagging" action={`${activeExtractionTemplate.fields.length} fields compared`} />
-            <p className="subtle">
-              {activeStudyForConsensus
-                ? `${activeStudyForConsensus.title} · ${activeExtractionConsensus?.status === "finalized" ? "finalized" : "pending arbitration"}`
-                : "Select a report to review extraction discrepancies."}
-            </p>
-            <div className="tableWrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Field</th>
-                    {submittedResponsesForActiveReport.map((response) => (
-                      <th key={response.id}>{response.userName}</th>
-                    ))}
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeExtractionTemplate.fields.map((field) => {
-                    const isFlagged = flaggedFieldIdSet.has(field.id);
-                    return (
-                      <tr key={field.id}>
-                        <td>
-                          <strong>{field.title}</strong>
-                        </td>
-                        {submittedResponsesForActiveReport.map((response) => (
-                          <td key={`${field.id}:${response.id}`}>{formatExtractionResponseValue(response.values[field.id])}</td>
-                        ))}
-                        <td>{isFlagged ? "Conflict" : "Match"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {activeExtractionConsensus?.status === "finalized" ? (
-              <div className="validationItem ok">
-                <Check size={17} />
-                <span>
-                  Finalized by {activeExtractionConsensus.finalizedByUserName || "System"} at {formatAuditTime(activeExtractionConsensus.finalizedAt || activeExtractionConsensus.updatedAt)}.
-                </span>
-              </div>
-            ) : null}
-          </section>
-        )}
-
-        {hasRequiredVotes && activeExtractionConsensus ? (
-          <section className="panel">
-            <SectionTitle icon={ClipboardCheck} title="Arbitration And Finalization" action={`${conflictedFields.length} conflicts`} />
-            {conflictedFields.length === 0 ? (
-              <div className="validationItem ok">
-                <Check size={17} />
-                <span>No conflicting extraction fields detected. This consensus record can be exported as finalized.</span>
-              </div>
-            ) : (
-              <form className="extractionForm" onSubmit={finalizeExtractionConsensus}>
-                {conflictedFields.map((field) => {
-                  const value = consensusFormValues[field.id];
-                  return (
-                    <fieldset className="extractionField" key={field.id}>
-                      <legend>{field.title}</legend>
-                      {field.type === "multiline_text" ? (
-                        <textarea
-                          value={typeof value === "string" ? value : ""}
-                          onChange={(event) => updateConsensusValue(field.id, event.target.value)}
-                        />
-                      ) : null}
-                      {field.type === "single_choice" ? (
-                        <div className="choiceList">
-                          {field.options.map((option) => (
-                            <label key={option}>
-                              <input
-                                type="radio"
-                                name={`consensus-${field.id}`}
-                                checked={value === option}
-                                onChange={() => updateConsensusValue(field.id, option)}
-                              />
-                              <span>{option}</span>
-                            </label>
-                          ))}
-                        </div>
-                      ) : null}
-                      {field.type === "multiple_choice" ? (
-                        <div className="choiceList">
-                          {field.options.map((option) => {
-                            const checked = Array.isArray(value) && value.includes(option);
-                            return (
-                              <label key={option}>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(event) => toggleConsensusChoice(field.id, option, event.target.checked)}
-                                />
-                                <span>{option}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </fieldset>
-                  );
-                })}
-
-                <button className="primaryButton" type="submit" disabled={!canArbitrate}>
-                  <Check size={17} />
-                  Finalize Consensus
-                </button>
-              </form>
-            )}
-          </section>
-        ) : null}
-      </div>
+      <ConsensusSection
+        activeCounts={activeCounts}
+        selectedProject={selectedProject}
+        currentUser={currentUser}
+        consensusMessage={consensusMessage}
+        activeExtractionTemplate={activeExtractionTemplate}
+        projectExtractionReports={projectExtractionReports}
+        extractionResponses={extractionResponses}
+        extractionConsensus={extractionConsensus}
+        activeExtractionReport={activeExtractionReport}
+        projectScreeningStudies={projectScreeningStudies}
+        activeExtractionConsensus={activeExtractionConsensus}
+        setActiveView={setActiveView}
+        setActiveExtractionReportId={setActiveExtractionReportId}
+        formatExtractionResponseValue={formatExtractionResponseValue}
+        formatAuditTime={formatAuditTime}
+        finalizeExtractionConsensus={finalizeExtractionConsensus}
+        consensusFormValues={consensusFormValues}
+        updateConsensusValue={updateConsensusValue}
+        toggleConsensusChoice={toggleConsensusChoice}
+      />
     );
   }
 
@@ -4027,292 +3199,38 @@ export function PrismaReviewApp() {
   }
 
   function renderSettings() {
-    const projectMembers = selectedProject.memberIds
-      .map((memberId) => users.find((user) => user.id === memberId))
-      .filter((user): user is AppUser => Boolean(user));
-    const availableUsers = users.filter((user) => !selectedProject.memberIds.includes(user.id));
-    const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
-    const settingsMessageIsSuccess = projectSettingsMessage === "Project settings saved.";
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Project settings</p>
-            <h1>Review Controls</h1>
-            <p className="subtle">Authorization, blind-mode visibility, and transition policy are separate controls.</p>
-          </div>
-          <button className="primaryButton" type="submit" form="project-settings-form" title="Save settings" disabled={!canManageProject}>
-            <Check size={17} />
-            Save
-          </button>
-        </section>
-
-        <form className="projectForm" id="project-settings-form" onSubmit={updateProjectSettings}>
-          <section className="panel">
-            <SectionTitle icon={FileText} title="Review Details" action={canManageProject ? "Editable" : "Owner only"} />
-            <div className="formGrid">
-              <label>
-                <span>Review title</span>
-                <input
-                  value={projectSettingsForm.title}
-                  onChange={(event) => updateProjectSettingsForm("title", event.target.value)}
-                  disabled={!canManageProject}
-                />
-              </label>
-              <label>
-                <span>Organization</span>
-                <input
-                  value={projectSettingsForm.organization}
-                  onChange={(event) => updateProjectSettingsForm("organization", event.target.value)}
-                  disabled={!canManageProject}
-                />
-              </label>
-              <label>
-                <span>Protocol ID</span>
-                <input
-                  value={projectSettingsForm.protocolId}
-                  onChange={(event) => updateProjectSettingsForm("protocolId", event.target.value)}
-                  disabled={!canManageProject}
-                />
-              </label>
-              <label>
-                <span>Due date (dd-mm-yyyy)</span>
-                <input
-                  inputMode="numeric"
-                  pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}"
-                  value={projectSettingsForm.dueDate}
-                  onChange={(event) => updateProjectSettingsForm("dueDate", event.target.value)}
-                  disabled={!canManageProject}
-                />
-              </label>
-            </div>
-            <label className="wideField">
-              <span>Description</span>
-              <textarea
-                value={projectSettingsForm.description}
-                onChange={(event) => updateProjectSettingsForm("description", event.target.value)}
-                disabled={!canManageProject}
-              />
-            </label>
-            <label className="wideField">
-              <span>Search strategies backup</span>
-              <textarea
-                className="strategyTextarea"
-                value={projectSettingsForm.searchStrategies}
-                onChange={(event) => updateProjectSettingsForm("searchStrategies", event.target.value)}
-                disabled={!canManageProject}
-                placeholder={"Paste exact database searches, keywords, Boolean strings, dates, filters, and platform notes.\n\nExample:\nPubMed (2026-05-29)\n(\"underwater mapping\" OR sonar) AND (3D OR reconstruction)\nFilters: English; 2015-2026"}
-              />
-            </label>
-            {projectSettingsMessage ? (
-              <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-                {settingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-                <span>{projectSettingsMessage}</span>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="settingsGrid">
-            <div className="panel">
-              <SectionTitle icon={Lock} title="Blind Mode" action={projectSettingsForm.blindMode ? "Enabled" : "Disabled"} />
-              <label className="toggleRow">
-                <input
-                  type="checkbox"
-                  checked={projectSettingsForm.blindMode}
-                  onChange={(event) => updateProjectSettingsForm("blindMode", event.target.checked)}
-                  disabled={!canManageProject}
-                />
-                <span />
-                <strong>Reviewer endpoints hide other votes</strong>
-              </label>
-              <div className="stateRows">
-                <StatusRow label="Reviewer API" value="Own decision only" tone="secure" />
-                <StatusRow label="Admin API" value="Aggregate progress counts" tone="info" />
-                <StatusRow label="Adjudication API" value="Role-gated vote disclosure" tone="warning" />
-              </div>
-            </div>
-
-            <div className="panel">
-              <SectionTitle icon={Settings} title="State Machine" action="Project policy" />
-              <div className="formGrid compactFormGrid">
-                <label>
-                  <span>Title/abstract votes</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={projectSettingsForm.abstractRequiredVotes}
-                    onChange={(event) => updateProjectSettingsForm("abstractRequiredVotes", Number(event.target.value))}
-                    disabled={!canManageProject}
-                  />
-                </label>
-                <label>
-                  <span>Full-text votes</span>
-                  <input
-                    type="number"
-                    min={2}
-                    max={4}
-                    value={projectSettingsForm.fullTextRequiredVotes}
-                    onChange={(event) => updateProjectSettingsForm("fullTextRequiredVotes", Number(event.target.value))}
-                    disabled={!canManageProject}
-                  />
-                </label>
-                <label>
-                  <span>Extraction votes</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={projectSettingsForm.extractionRequiredVotes}
-                    onChange={(event) => updateProjectSettingsForm("extractionRequiredVotes", Number(event.target.value))}
-                    disabled={!canManageProject}
-                  />
-                </label>
-              </div>
-              <label className="fieldLabel" htmlFor="project-settings-maybe-policy">
-                Maybe policy
-              </label>
-              <select
-                id="project-settings-maybe-policy"
-                value={projectSettingsForm.maybePolicy}
-                onChange={(event) => updateProjectSettingsForm("maybePolicy", event.target.value as ProjectSettingsForm["maybePolicy"])}
-                disabled={!canManageProject}
-              >
-                <option value="advance_to_full_text">Advance to full text</option>
-                <option value="third_vote">Request third vote</option>
-                <option value="conflict">Treat as conflict</option>
-              </select>
-            </div>
-          </section>
-        </form>
-
-        <section className="settingsGrid">
-          <div className="panel">
-            <SectionTitle icon={Users} title="Project Team" action={`${projectMembers.length} members`} />
-            <div className="teamList">
-              {projectMembers.map((member) => (
-                <article className="teamMember" key={member.id}>
-                  <span className="avatar" style={{ background: member.avatarColor }}>
-                    {member.initials}
-                  </span>
-                  <div>
-                    <strong>{member.name}</strong>
-                    <span>{member.title} · {member.email}</span>
-                  </div>
-                  <Badge label={selectedProject.ownerIds.includes(member.id) ? "owner" : "reviewer"} tone={selectedProject.ownerIds.includes(member.id) ? "info" : "neutral"} />
-                  <div className="teamMemberActions">
-                    <button
-                      className="ghostButton"
-                      type="button"
-                      title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "At least one owner is required" : selectedProject.ownerIds.includes(member.id) ? "Change role to reviewer" : "Change role to owner"}
-                      disabled={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1}
-                      onClick={() => toggleProjectOwner(member.id)}
-                    >
-                      {selectedProject.ownerIds.includes(member.id) ? "Make reviewer" : "Make owner"}
-                    </button>
-                    <button
-                      className="ghostButton iconOnly"
-                      type="button"
-                      title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "Last owner cannot be removed" : "Remove member"}
-                      disabled={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1}
-                      onClick={() => removeUserFromProject(member.id)}
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className="panel">
-            <SectionTitle icon={UserRoundCheck} title="Add People" action="Existing or invite" />
-            <div className="addMemberBox">
-              <label>
-                <span>Existing user</span>
-                <select value={teamUserId} onChange={(event) => setTeamUserId(event.target.value)}>
-                  <option value="">Choose user</option>
-                  {availableUsers.map((user) => (
-                    <option value={user.id} key={user.id}>
-                      {user.name} · {user.email}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button className="primaryButton" type="button" disabled={!teamUserId} onClick={addExistingUserToProject}>
-                <Plus size={17} />
-                Add User
-              </button>
-            </div>
-
-            <form className="inviteForm" onSubmit={inviteUserToProject}>
-              <label>
-                <span>Invite name</span>
-                <input value={inviteForm.name} onChange={(event) => setInviteForm((previous) => ({ ...previous, name: event.target.value }))} />
-              </label>
-              <label>
-                <span>Invite email</span>
-                <input value={inviteForm.email} onChange={(event) => setInviteForm((previous) => ({ ...previous, email: event.target.value }))} />
-              </label>
-              <label>
-                <span>Role title</span>
-                <input value={inviteForm.title} onChange={(event) => setInviteForm((previous) => ({ ...previous, title: event.target.value }))} />
-              </label>
-              <button className="ghostButton" type="submit">
-                <UserRoundCheck size={17} />
-                Invite
-              </button>
-            </form>
-
-            {teamMessage ? (
-              <div className="validationItem ok">
-                <Check size={17} />
-                <span>{teamMessage}</span>
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={UserRoundCheck} title="Role Matrix" action={`${selectedProject.reviewers} active reviewers`} />
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Role</th>
-                  {hasProjectSeedData ? <th>Members</th> : null}
-                  <th>{hasProjectSeedData ? "Capabilities" : "User"}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hasProjectSeedData ? roleRows.map((row) => (
-                  <tr key={row.role}>
-                    <td>
-                      <strong>{row.role}</strong>
-                    </td>
-                    <td>{row.members}</td>
-                    <td>{row.capabilities}</td>
-                  </tr>
-                )) : selectedProject.memberIds.map((memberId) => {
-                  const member = users.find((user) => user.id === memberId);
-                  if (!member) {
-                    return null;
-                  }
-                  return (
-                    <tr key={member.id}>
-                      <td>
-                        <strong>{selectedProject.ownerIds.includes(member.id) ? "Owner" : "Reviewer"}</strong>
-                      </td>
-                      <td>{member.name} · {member.email}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+      <SettingsSection
+        selectedProject={selectedProject}
+        currentUser={currentUser}
+        users={users}
+        projectSettingsForm={projectSettingsForm}
+        projectSettingsMessage={projectSettingsMessage}
+        updateProjectSettings={updateProjectSettings}
+        onSettingsTitleChange={(value) => updateProjectSettingsForm("title", value)}
+        onSettingsOrganizationChange={(value) => updateProjectSettingsForm("organization", value)}
+        onSettingsProtocolIdChange={(value) => updateProjectSettingsForm("protocolId", value)}
+        onSettingsDueDateChange={(value) => updateProjectSettingsForm("dueDate", value)}
+        onSettingsDescriptionChange={(value) => updateProjectSettingsForm("description", value)}
+        onSettingsSearchStrategiesChange={(value) => updateProjectSettingsForm("searchStrategies", value)}
+        onSettingsBlindModeChange={(value) => updateProjectSettingsForm("blindMode", value)}
+        onSettingsAbstractVotesChange={(value) => updateProjectSettingsForm("abstractRequiredVotes", value)}
+        onSettingsFullTextVotesChange={(value) => updateProjectSettingsForm("fullTextRequiredVotes", value)}
+        onSettingsExtractionVotesChange={(value) => updateProjectSettingsForm("extractionRequiredVotes", value)}
+        onSettingsMaybePolicyChange={(value) => updateProjectSettingsForm("maybePolicy", value)}
+        teamUserId={teamUserId}
+        setTeamUserId={setTeamUserId}
+        addExistingUserToProject={addExistingUserToProject}
+        inviteForm={inviteForm}
+        onInviteNameChange={(value) => setInviteForm((previous) => ({ ...previous, name: value }))}
+        onInviteEmailChange={(value) => setInviteForm((previous) => ({ ...previous, email: value }))}
+        onInviteTitleChange={(value) => setInviteForm((previous) => ({ ...previous, title: value }))}
+        inviteUserToProject={inviteUserToProject}
+        teamMessage={teamMessage}
+        toggleProjectOwner={toggleProjectOwner}
+        removeUserFromProject={removeUserFromProject}
+        hasProjectSeedData={hasProjectSeedData}
+      />
     );
   }
 
@@ -4342,7 +3260,7 @@ export function PrismaReviewApp() {
                 <input
                   value={newProjectForm.title}
                   onChange={(event) => updateNewProjectForm("title", event.target.value)}
-                  placeholder="Digital therapeutics for heart failure"
+                  placeholder="Ultimate Question of Life, the Universe, and Everything"
                 />
               </label>
               <label>
@@ -4507,8 +3425,11 @@ export function PrismaReviewApp() {
           <div className="panel aboutPanel">
             <SectionTitle icon={Info} title="Purpose" action="Evidence workflow" />
             <p>
-              Prismatica is built as a transparent, auditable workspace for PRISMA-style review projects. It keeps project membership, imports, decisions, PDF metadata,
+              Prismatica is built as a transparent, auditable workspace for PRISMA-style (Preferred Reporting Items for Systematic reviews and Meta-Analyses) review projects. It keeps project membership, imports, decisions, PDF metadata,
               extraction templates, and audit events behind server APIs while preserving a reviewer-friendly interface for day-to-day screening work.
+            </p>
+            <p>
+              Full information about the PRISMA guidelines can be found at <a href="https://www.prisma-statement.org" target="_blank" rel="noreferrer">https://www.prisma-statement.org</a>.
             </p>
             <div className="aboutPurposeLogo" aria-hidden="true">
               <img src="/icon.svg" alt="Prismatica logo" />
@@ -4716,101 +3637,23 @@ export function PrismaReviewApp() {
 
   function renderProfile() {
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div className="profileHero">
-            <span className="avatar largeAvatar" style={{ background: currentUser.avatarColor }}>
-              {currentUser.initials}
-            </span>
-            <div>
-              <p className="eyebrow">Profile</p>
-              <h1>{currentUser.name}</h1>
-              <p className="subtle">
-                {currentUser.title} · {currentUser.email}
-              </p>
-            </div>
-          </div>
-          <button className="ghostButton" type="button" onClick={handleLogout}>
-            <LogOut size={17} />
-            Sign Out
-          </button>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={UserCircle} title="Account" action="Server session" />
-          <form className="accountForm" onSubmit={updateAccount}>
-            <label>
-              <span>Organization</span>
-              <input
-                value={accountForm.organization}
-                onChange={(event) => setAccountForm((previous) => ({ ...previous, organization: event.target.value }))}
-              />
-            </label>
-            <label>
-              <span>Role title</span>
-              <input
-                value={accountForm.title}
-                onChange={(event) => setAccountForm((previous) => ({ ...previous, title: event.target.value }))}
-              />
-            </label>
-            <label>
-              <span>Current password</span>
-              <input
-                type="password"
-                value={accountForm.currentPassword}
-                onChange={(event) => setAccountForm((previous) => ({ ...previous, currentPassword: event.target.value }))}
-              />
-            </label>
-            <label>
-              <span>New password</span>
-              <input
-                type="password"
-                value={accountForm.newPassword}
-                onChange={(event) => setAccountForm((previous) => ({ ...previous, newPassword: event.target.value }))}
-              />
-            </label>
-            <div className="profileRows">
-              <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
-            </div>
-            {accountMessage ? (
-              <div className={accountMessage === "Account updated." ? "validationItem ok" : "validationItem blocked"}>
-                {accountMessage === "Account updated." ? <Check size={17} /> : <AlertTriangle size={17} />}
-                <span>{accountMessage}</span>
-              </div>
-            ) : null}
-            <button className="primaryButton" type="submit">
-              <Check size={17} />
-              Save Account
-            </button>
-          </form>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={Settings} title="Profile Preferences" action="Interface" />
-          <form className="accountForm" onSubmit={updateAccount}>
-            <label>
-              <span>Website theme</span>
-              <select
-                value={accountForm.websiteTheme}
-                onChange={(event) =>
-                  setAccountForm((previous) => ({
-                    ...previous,
-                    websiteTheme: event.target.value as WebsiteTheme
-                  }))
-                }
-              >
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-                <option value="system">System</option>
-              </select>
-            </label>
-            <button className="primaryButton" type="submit">
-              <Check size={17} />
-              Save Preferences
-            </button>
-          </form>
-        </section>
-      </div>
+      <ProfileSection
+        currentUser={currentUser}
+        handleLogout={handleLogout}
+        updateAccount={updateAccount}
+        accountForm={accountForm}
+        onAccountOrganizationChange={(value) => setAccountForm((previous) => ({ ...previous, organization: value }))}
+        onAccountTitleChange={(value) => setAccountForm((previous) => ({ ...previous, title: value }))}
+        onAccountCurrentPasswordChange={(value) => setAccountForm((previous) => ({ ...previous, currentPassword: value }))}
+        onAccountNewPasswordChange={(value) => setAccountForm((previous) => ({ ...previous, newPassword: value }))}
+        onAccountThemeChange={(value) =>
+          setAccountForm((previous) => ({
+            ...previous,
+            websiteTheme: value
+          }))
+        }
+        accountMessage={accountMessage}
+      />
     );
   }
 
