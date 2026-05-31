@@ -166,6 +166,8 @@ export PRISMATICA_ADMIN_PASSWORD="replace-this-default-admin-password"
 export PRISMATICA_REGISTRATION_ENABLED="false"
 export PRISMATICA_CAPTCHA_SECRET="replace-with-a-long-random-string"
 export PRISMATICA_SECURE_COOKIES="true"
+export PRISMATICA_USERS_SYNC_POSTGRES="true"
+export PRISMATICA_STORAGE_MODE="postgres"
 ```
 
 ### Session Secret Management
@@ -193,6 +195,83 @@ Notes:
 - Use `PRISMATICA_SECURE_COOKIES=true` only when serving over HTTPS.
 - `PRISMATICA_REGISTRATION_ENABLED=false` disables public registration for new data files.
 - Uploaded PDFs are stored under a sibling `pdfs/` folder near `PRISMATICA_DATA_FILE`.
+
+### Users And Preferences: PostgreSQL Migration (Incremental)
+
+If you are rebuilding review data from scratch, you can migrate only accounts and auth preferences first.
+
+What this migrates:
+
+- `authSettings.registrationEnabled`
+- `users` (profile fields, password hash/salt, admin flag, theme)
+
+What this does not migrate:
+
+- projects, studies, reports, decisions, extraction, events, dedup candidates
+
+Run:
+
+```bash
+export DATABASE_URL="postgresql://user:password@127.0.0.1:5432/prismatica"
+export PRISMATICA_SOURCE_STATE_FILE="./data/prismatica-state.json" # optional
+npm run migrate:users:postgres
+```
+
+To keep PostgreSQL users/auth settings updated while the app still uses JSON for review workflows, enable runtime sync:
+
+```bash
+export PRISMATICA_USERS_SYNC_POSTGRES="true"
+```
+
+When enabled (and `DATABASE_URL` is set), these mutations sync to PostgreSQL automatically:
+
+- registration
+- profile updates (including password changes)
+- admin auth-settings updates
+- invited user creation
+- admin password reset
+- admin user deletion
+
+Note: when `PRISMATICA_STORAGE_MODE=postgres` is enabled, full review state is persisted in PostgreSQL relational tables; `PRISMATICA_USERS_SYNC_POSTGRES` is only needed for the legacy JSON-primary transition mode.
+
+Schema file:
+
+- `db/users_preferences.sql`
+
+### PostgreSQL As Primary Review State Store
+
+To make PostgreSQL the primary store for review workflow state (projects, studies, reports, decisions, extraction, events), set:
+
+```bash
+export PRISMATICA_STORAGE_MODE="postgres"
+export DATABASE_URL="postgresql://user:password@127.0.0.1:5432/prismatica"
+```
+
+Behavior:
+
+- Prismatica persists users, auth settings, projects, imports, studies, reports, decisions, extraction state, events, and dedup candidates in PostgreSQL relational tables.
+- If the relational tables are empty on first start, Prismatica can bootstrap from `PRISMATICA_DATA_FILE` (or default `./data/prismatica-state.json`) when available.
+- Legacy `app_state_store` is read only as a compatibility fallback during transition; new writes target relational tables.
+- After cutover, keep JSON only as backup/export fallback.
+
+### Optional: Migrate To Prisma ORM
+
+If desired, PostgreSQL access can later move from custom SQL/state-IO helpers to Prisma ORM.
+
+Possible benefits:
+
+- Typed schema and generated client
+- Migration history tracking
+- Easier per-entity evolution as the data model grows
+
+Suggested staged approach:
+
+1. Add Prisma schema and model `users`, `auth_settings`, then validate parity.
+2. Expand to review entities (`projects`, `studies`, `reports`, `decisions`, extraction tables).
+3. Replace `app_state_store` blob persistence with normalized Prisma-backed tables.
+4. Keep existing API contracts stable during the swap.
+
+This is optional and can be scheduled after the current PostgreSQL + MinIO stabilization.
 
 ## Network Access Patterns
 

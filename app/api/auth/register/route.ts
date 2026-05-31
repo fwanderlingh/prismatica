@@ -1,4 +1,5 @@
 import { setSessionCookie } from "@/lib/serverAuth";
+import { syncUserByIdToPostgres } from "@/lib/postgresUsersSync";
 import { jsonError, jsonOk, readJsonBody } from "@/lib/serverRoute";
 import { registerUser } from "@/lib/serverStore";
 
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
       captchaToken: String(body.captchaToken ?? ""),
       captchaAnswer: String(body.captchaAnswer ?? "")
     });
+    await syncUserByIdToPostgres(payload.currentUser.id);
     await setSessionCookie(payload.currentUser.id);
     return jsonOk(payload);
   } catch (error) {

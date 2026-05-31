@@ -11,7 +11,7 @@ export async function GET(request: Request, context: { params: Promise<{ project
     if (url.searchParams.get("pdf") !== "1") {
       throw new ApiError("Add ?pdf=1 to stream this report PDF.");
     }
-    const pdf = getReportPdfForUser(userId, projectId, reportId);
+    const pdf = await getReportPdfForUser(userId, projectId, reportId);
     return pdfFileResponse(pdf);
   } catch (error) {
     return jsonError(error);

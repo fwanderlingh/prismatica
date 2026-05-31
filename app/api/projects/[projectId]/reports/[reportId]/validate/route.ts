@@ -5,7 +5,7 @@ export async function POST(_request: Request, context: { params: Promise<{ proje
   try {
     const userId = await requireSessionUserId();
     const { projectId, reportId } = await context.params;
-    return jsonOk(validateReportPdfForUser(userId, projectId, reportId));
+    return jsonOk(await validateReportPdfForUser(userId, projectId, reportId));
   } catch (error) {
     return jsonError(error);
   }

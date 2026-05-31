@@ -1,7 +1,9 @@
 import crypto from "crypto";
+import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import type { AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
+import { createPdfStorageAdapter } from "./pdfStorage";
 import {
   type AppUser,
   type Decision,
@@ -124,6 +126,33 @@ function dataFilePath() {
   return path.join(process.cwd(), "data", "prismatica-state.json");
 }
 
+function usePostgresStateStore() {
+  return (process.env.PRISMATICA_STORAGE_MODE ?? "").toLowerCase() === "postgres";
+}
+
+function postgresStateIoScriptPath() {
+  return path.join(process.cwd(), "scripts", "postgres-state-io.mjs");
+}
+
+function runPostgresStateIo(action: "read" | "write", payload?: PersistedState) {
+  const output = execFileSync(process.execPath, [postgresStateIoScriptPath(), action], {
+    env: process.env,
+    input: action === "write" ? `${JSON.stringify(payload)}\n` : undefined,
+    encoding: "utf8",
+    maxBuffer: 20 * 1024 * 1024
+  });
+  return output.trim();
+}
+
+function readStateFromJsonFile(filePath: string): Partial<PersistedState> | null {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ filePath)) {
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ filePath, "utf8")) as Partial<PersistedState>;
+}
+
+const pdfStorage = createPdfStorageAdapter({ dataFilePath });
+
 function defaultAuthSettings(): AppAuthSettings {
   return {
     registrationEnabled: process.env.PRISMATICA_REGISTRATION_ENABLED?.toLowerCase() === "false" ? false : true
@@ -160,6 +189,21 @@ function createSeedState(): PersistedState {
 }
 
 function readState(): PersistedState {
+  if (usePostgresStateStore()) {
+    const serializedState = runPostgresStateIo("read");
+    if (!serializedState) {
+      const fallbackState = readStateFromJsonFile(dataFilePath());
+      const seededState = fallbackState ? normalizeState(fallbackState) : createSeedState();
+      writeState(seededState);
+      return seededState;
+    }
+
+    const parsed = JSON.parse(serializedState) as Partial<PersistedState>;
+    const normalized = normalizeState(parsed);
+    writeState(normalized);
+    return normalized;
+  }
+
   const filePath = dataFilePath();
   if (!fs.existsSync(/*turbopackIgnore: true*/ filePath)) {
     const seedState = createSeedState();
@@ -174,6 +218,11 @@ function readState(): PersistedState {
 }
 
 function writeState(state: PersistedState) {
+  if (usePostgresStateStore()) {
+    runPostgresStateIo("write", state);
+    return;
+  }
+
   const filePath = dataFilePath();
   fs.mkdirSync(/*turbopackIgnore: true*/ path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
@@ -1844,12 +1893,12 @@ export function updateReportForUser(
   return buildPayload(state, userId);
 }
 
-export function uploadReportPdfForUser(
+export async function uploadReportPdfForUser(
   userId: string,
   projectId: string,
   reportId: string,
   input: { fileName?: string; mimeType?: string; size?: number; contentBase64?: string }
-): AppMutationPayload {
+): Promise<AppMutationPayload> {
   const state = readState();
   const currentUser = getUser(state, userId);
   requireProjectMember(state, projectId, userId);
@@ -1871,9 +1920,8 @@ export function uploadReportPdfForUser(
   const buffer = Buffer.from(input.contentBase64 ?? "", "base64");
   validatePdfBuffer(buffer, input.size);
   const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
-  const storagePath = reportPdfStoragePath(projectId, reportId, checksum, fileName);
-  fs.mkdirSync(/*turbopackIgnore: true*/ path.dirname(storagePath), { recursive: true });
-  fs.writeFileSync(/*turbopackIgnore: true*/ storagePath, buffer);
+  const storagePath = pdfStorage.buildStoragePath({ projectId, reportId, checksum, fileName });
+  await pdfStorage.writePdf(storagePath, buffer);
 
   const duplicate = findDuplicateReportChecksum(state, projectId, reportId, checksum);
   state.reports = state.reports.map((candidate) =>
@@ -1903,18 +1951,19 @@ export function uploadReportPdfForUser(
   return buildPayload(state, userId);
 }
 
-export function getReportPdfForUser(userId: string, projectId: string, reportId: string) {
+export async function getReportPdfForUser(userId: string, projectId: string, reportId: string) {
   const state = readState();
   requireProjectMember(state, projectId, userId);
   const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
   if (!report) {
     throw new ApiError("Report not found.", 404);
   }
-  const storagePath = resolveReportPdfStoragePath(report, projectId, reportId);
-  if (!storagePath) {
+  const storedPdf = await pdfStorage.readPdf({ report, projectId, reportId });
+  if (!storedPdf) {
     throw new ApiError("PDF file is not available for this report.", 404);
   }
 
+  const storagePath = storedPdf.storagePath;
   if (storagePath !== report.storagePath) {
     state.reports = state.reports.map((candidate) =>
       candidate.id === reportId && candidate.projectId === projectId ? { ...candidate, storagePath } : candidate
@@ -1922,15 +1971,14 @@ export function getReportPdfForUser(userId: string, projectId: string, reportId:
     writeState(state);
   }
 
-  const buffer = fs.readFileSync(/*turbopackIgnore: true*/ storagePath);
   return {
-    buffer,
+    buffer: storedPdf.buffer,
     fileName: report.fileName || report.pdfName || "report.pdf",
     mimeType: report.mimeType || "application/pdf"
   };
 }
 
-export function validateReportPdfForUser(userId: string, projectId: string, reportId: string): AppMutationPayload {
+export async function validateReportPdfForUser(userId: string, projectId: string, reportId: string): Promise<AppMutationPayload> {
   const state = readState();
   const currentUser = getUser(state, userId);
   requireProjectMember(state, projectId, userId);
@@ -1944,11 +1992,11 @@ export function validateReportPdfForUser(userId: string, projectId: string, repo
   }
 
   const validationNotes: string[] = [];
-  const storagePath = resolveReportPdfStoragePath(report, projectId, reportId);
-  if (!storagePath) {
+  const storedPdf = await pdfStorage.readPdf({ report, projectId, reportId });
+  if (!storedPdf) {
     validationNotes.push("PDF file is missing from storage.");
   } else {
-    const buffer = fs.readFileSync(/*turbopackIgnore: true*/ storagePath);
+    const buffer = storedPdf.buffer;
     try {
       validatePdfBuffer(buffer, report.size);
     } catch (error) {
@@ -1971,7 +2019,7 @@ export function validateReportPdfForUser(userId: string, projectId: string, repo
     candidate.id === reportId && candidate.projectId === projectId
       ? {
           ...candidate,
-          storagePath: storagePath || candidate.storagePath,
+          storagePath: storedPdf?.storagePath || candidate.storagePath,
           isPdfValidated: validationNotes.length === 0,
           validationNotes: validationNotes.length > 0 ? validationNotes : ["PDF header, size, MIME type, and checksum validated."]
         }
@@ -2839,47 +2887,6 @@ function validateExtractionValues(template: ExtractionTemplate, inputValues: Rec
     values[field.id] = uniqueIds(choices);
   }
   return values;
-}
-
-function reportPdfStorageDirectory(projectId: string) {
-  const safeProjectId = slugify(projectId) || "project";
-  return path.join(path.dirname(dataFilePath()), "pdfs", safeProjectId);
-}
-
-function reportPdfStoragePath(projectId: string, reportId: string, checksum: string, fileName: string) {
-  const safeReportId = slugify(reportId) || "report";
-  const extension = path.extname(fileName).toLowerCase() || ".pdf";
-  return path.join(reportPdfStorageDirectory(projectId), `${safeReportId}-${checksum}${extension}`);
-}
-
-function resolveReportPdfStoragePath(report: Report, projectId: string, reportId: string) {
-  const candidates = [
-    report.storagePath,
-    report.checksum ? reportPdfStoragePath(projectId, reportId, report.checksum, report.fileName || report.pdfName || "report.pdf") : ""
-  ];
-  const seen = new Set<string>();
-  for (const candidate of candidates) {
-    if (candidate && !seen.has(candidate)) {
-      seen.add(candidate);
-      if (fs.existsSync(/*turbopackIgnore: true*/ candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  if (!report.checksum) {
-    return "";
-  }
-
-  const safeReportId = slugify(reportId) || "report";
-  const prefix = `${safeReportId}-${report.checksum}.`;
-  const directory = reportPdfStorageDirectory(projectId);
-  if (!fs.existsSync(/*turbopackIgnore: true*/ directory)) {
-    return "";
-  }
-
-  const matchedFile = fs.readdirSync(/*turbopackIgnore: true*/ directory).find((fileName) => fileName.startsWith(prefix));
-  return matchedFile ? path.join(directory, matchedFile) : "";
 }
 
 function findDuplicateReportChecksum(state: PersistedState, projectId: string, reportId: string, checksum: string) {

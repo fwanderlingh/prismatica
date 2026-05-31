@@ -1,4 +1,5 @@
 import { jsonError, jsonOk, requireSessionUserId } from "@/lib/serverRoute";
+import { deleteUserByIdFromPostgres } from "@/lib/postgresUsersSync";
 import { adminDeleteUserForUser } from "@/lib/serverStore";
 
 export async function DELETE(
@@ -8,7 +9,9 @@ export async function DELETE(
   try {
     const adminUserId = await requireSessionUserId();
     const { userId } = await context.params;
-    return jsonOk(adminDeleteUserForUser(adminUserId, userId));
+    const payload = adminDeleteUserForUser(adminUserId, userId);
+    await deleteUserByIdFromPostgres(userId);
+    return jsonOk(payload);
   } catch (error) {
     return jsonError(error);
   }
