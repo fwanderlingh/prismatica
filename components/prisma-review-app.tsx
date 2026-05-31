@@ -102,7 +102,7 @@ import { ExtractionSection } from "./review-sections/extraction-section";
 import { ConsensusSection } from "./review-sections/consensus-section";
 import { SettingsSection } from "./review-sections/settings-section";
 import { ProfileSection } from "./review-sections/profile-section";
-import { NewProjectSection } from "./review-sections/new-project-section";
+import { NewProjectSection, type NewProjectInviteDraft } from "./review-sections/new-project-section";
 import { useNewProjectState, type NewProjectForm } from "./use-new-project-state";
 import { useAuthState } from "./use-auth-state";
 
@@ -460,9 +460,20 @@ export function PrismaReviewApp() {
     title: "Reviewer"
   });
   const [teamMessage, setTeamMessage] = useState("");
+  const [teamRolePendingUserId, setTeamRolePendingUserId] = useState<string | null>(null);
+  const [teamRemovePendingUserId, setTeamRemovePendingUserId] = useState<string | null>(null);
   const [dashboardMessage, setDashboardMessage] = useState("");
+  const [newProjectTeamMessage, setNewProjectTeamMessage] = useState("");
+  const [newProjectMemberSearch, setNewProjectMemberSearch] = useState("");
+  const [newProjectInviteDraft, setNewProjectInviteDraft] = useState<NewProjectInviteDraft>({
+    name: "",
+    email: "",
+    title: "Reviewer"
+  });
+  const [queuedNewProjectInvites, setQueuedNewProjectInvites] = useState<NewProjectInviteDraft[]>([]);
   const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsForm>(emptyProjectSettingsForm);
   const [projectSettingsMessage, setProjectSettingsMessage] = useState("");
+  const [isSavingProjectSettings, setIsSavingProjectSettings] = useState(false);
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>(seedDedupCandidates);
@@ -527,7 +538,25 @@ export function PrismaReviewApp() {
   });
 
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
-  const { newProjectForm, canCreate, creationStatus, creationSummary, updateNewProjectForm, toggleProjectMember, syncNewProjectUserContext, resetNewProjectForm } = useNewProjectState(currentUser);
+  const { newProjectForm, canCreate, creationStatus, creationSummary, updateNewProjectForm, syncNewProjectUserContext, resetNewProjectForm } = useNewProjectState(currentUser);
+  const normalizedNewProjectMemberSearch = newProjectMemberSearch.trim().toLowerCase();
+  const newProjectMemberSearchResults = useMemo(
+    () => {
+      if (normalizedNewProjectMemberSearch.length < 2) {
+        return [];
+      }
+      return users
+        .filter(
+          (user) =>
+            user.id !== currentUser.id &&
+            !newProjectForm.memberIds.includes(user.id) &&
+            (user.name.toLowerCase().includes(normalizedNewProjectMemberSearch) || user.email.toLowerCase().includes(normalizedNewProjectMemberSearch))
+        )
+        .slice(0, 8);
+    },
+    [currentUser.id, newProjectForm.memberIds, normalizedNewProjectMemberSearch, users]
+  );
+  const canShowNewProjectInviteForm = Boolean(newProjectInviteDraft.email.trim()) && !users.some((user) => user.email.toLowerCase() === normalizeEmail(newProjectInviteDraft.email));
   const userProjects = useMemo(
     () => (currentUser.isAdmin ? projects : projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id)),
     [currentUser.id, currentUser.isAdmin, projects]
@@ -780,7 +809,7 @@ export function PrismaReviewApp() {
     setAuthSettings(payload.authSettings);
     setCaptchaChallenge(payload.captcha);
     if (!payload.authSettings.registrationEnabled) {
-      setAuthMode("signIn");
+      switchAuthMode("signIn");
     }
   }
 
@@ -1278,6 +1307,7 @@ export function PrismaReviewApp() {
     }
 
     try {
+      setTeamRemovePendingUserId(userId);
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/members/${userId}`, {
         method: "DELETE"
       });
@@ -1285,6 +1315,8 @@ export function PrismaReviewApp() {
       setTeamMessage(`${user.name} removed from ${selectedProject.title}.`);
     } catch (error) {
       setTeamMessage(getErrorMessage(error));
+    } finally {
+      setTeamRemovePendingUserId((previous) => (previous === userId ? null : previous));
     }
   }
 
@@ -1319,14 +1351,19 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const didUpdate = await updateProjectMembers(
-      selectedProject.id,
-      selectedProject.memberIds,
-      nextOwnerIds,
-      `${nextOwnerIds.includes(userId) ? "Promoted" : "Demoted"} ${user.name} ${nextOwnerIds.includes(userId) ? "to owner" : "to reviewer"}`
-    );
-    if (didUpdate) {
-      setTeamMessage(nextOwnerIds.includes(userId) ? `${user.name} is now an owner.` : `${user.name} is now a reviewer.`);
+    setTeamRolePendingUserId(userId);
+    try {
+      const didUpdate = await updateProjectMembers(
+        selectedProject.id,
+        selectedProject.memberIds,
+        nextOwnerIds,
+        `${nextOwnerIds.includes(userId) ? "Promoted" : "Demoted"} ${user.name} ${nextOwnerIds.includes(userId) ? "to owner" : "to reviewer"}`
+      );
+      if (didUpdate) {
+        setTeamMessage(nextOwnerIds.includes(userId) ? `${user.name} is now an owner.` : `${user.name} is now a reviewer.`);
+      }
+    } finally {
+      setTeamRolePendingUserId((previous) => (previous === userId ? null : previous));
     }
   }
 
@@ -1344,23 +1381,115 @@ export function PrismaReviewApp() {
         body: JSON.stringify(newProjectForm)
       });
       applyAppState(payload);
-      setSelectedProjectId(payload.selectedProjectId ?? selectedProjectId);
+      const createdProjectId = payload.selectedProjectId ?? selectedProjectId;
+      setSelectedProjectId(createdProjectId);
+
+      if (queuedNewProjectInvites.length > 0) {
+        let sentInvites = 0;
+        const failedInvites: string[] = [];
+        for (const invite of queuedNewProjectInvites) {
+          try {
+            const invitePayload = await apiRequest<AppMutationPayload>(`/api/projects/${createdProjectId}/invite`, {
+              method: "POST",
+              body: JSON.stringify(invite)
+            });
+            applyAppState(invitePayload);
+            sentInvites += 1;
+          } catch (error) {
+            failedInvites.push(`${invite.email}: ${getErrorMessage(error)}`);
+          }
+        }
+        if (sentInvites > 0 || failedInvites.length > 0) {
+          const summary = `Invitations queued: ${sentInvites} sent${failedInvites.length > 0 ? `, ${failedInvites.length} failed.` : "."}`;
+          setDashboardMessage(failedInvites.length > 0 ? `${summary} ${failedInvites.join(" ")}` : summary);
+        }
+      }
+
       resetNewProjectForm(currentUser);
+      setNewProjectMemberSearch("");
+      setNewProjectInviteDraft({ name: "", email: "", title: "Reviewer" });
+      setQueuedNewProjectInvites([]);
+      setNewProjectTeamMessage("");
       setActiveView("projectDashboard");
     } catch (error) {
-      setLoginError(getErrorMessage(error));
+      setNewProjectTeamMessage(getErrorMessage(error));
     }
+  }
+
+  function updateNewProjectMemberSearch(value: string) {
+    setNewProjectMemberSearch(value);
+    const maybeEmail = normalizeEmail(value);
+    if (maybeEmail.includes("@")) {
+      setNewProjectInviteDraft((previous) => ({ ...previous, email: maybeEmail }));
+    }
+  }
+
+  function addExistingMemberToNewProject(userId: string) {
+    const user = users.find((candidate) => candidate.id === userId);
+    if (!user) {
+      setNewProjectTeamMessage("That user was not found.");
+      return;
+    }
+    if (newProjectForm.memberIds.includes(user.id)) {
+      setNewProjectTeamMessage(`${user.name} is already in this review.`);
+      return;
+    }
+    updateNewProjectForm("memberIds", [...newProjectForm.memberIds, user.id]);
+    setQueuedNewProjectInvites((previous) => previous.filter((invite) => normalizeEmail(invite.email) !== normalizeEmail(user.email)));
+    setNewProjectTeamMessage("");
+  }
+
+  function removeMemberFromNewProject(userId: string) {
+    if (userId === currentUser.id) {
+      setNewProjectTeamMessage("Project creator remains on the review team.");
+      return;
+    }
+    const nextMembers = newProjectForm.memberIds.filter((memberId) => memberId !== userId);
+    updateNewProjectForm("memberIds", nextMembers.length > 0 ? nextMembers : [currentUser.id]);
+  }
+
+  function queueNewProjectInvite() {
+    const email = normalizeEmail(newProjectInviteDraft.email || newProjectMemberSearch);
+    const name = newProjectInviteDraft.name.trim();
+    const title = newProjectInviteDraft.title.trim() || "Reviewer";
+
+    if (!name || !email) {
+      setNewProjectTeamMessage("Enter reviewer name and email to queue an invitation.");
+      return;
+    }
+
+    const existingUser = users.find((candidate) => candidate.email.toLowerCase() === email);
+    if (existingUser) {
+      addExistingMemberToNewProject(existingUser.id);
+      return;
+    }
+
+    if (queuedNewProjectInvites.some((invite) => normalizeEmail(invite.email) === email)) {
+      setNewProjectTeamMessage("That invitation is already queued.");
+      return;
+    }
+
+    setQueuedNewProjectInvites((previous) => [...previous, { name, email, title }]);
+    setNewProjectInviteDraft({ name: "", email: "", title: "Reviewer" });
+    setNewProjectMemberSearch("");
+    setNewProjectTeamMessage(`${name} queued for invitation when the project is created.`);
+  }
+
+  function removeQueuedNewProjectInvite(email: string) {
+    setQueuedNewProjectInvites((previous) => previous.filter((invite) => normalizeEmail(invite.email) !== normalizeEmail(email)));
   }
 
   async function updateProjectSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = projectSettingsForm.title.trim();
-    if (!title || !isEuDate(projectSettingsForm.dueDate)) {
-      setProjectSettingsMessage("Enter a review title and a due date in dd-mm-yyyy format.");
+    const dueDate = projectSettingsForm.dueDate.trim();
+    if (!title || (dueDate.length > 0 && !isEuDate(dueDate))) {
+      setProjectSettingsMessage("Enter a review title. If due date is provided, use dd-mm-yyyy format.");
       return;
     }
 
     try {
+      setIsSavingProjectSettings(true);
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}`, {
         method: "PATCH",
         body: JSON.stringify(projectSettingsForm)
@@ -1369,6 +1498,8 @@ export function PrismaReviewApp() {
       setProjectSettingsMessage("Project settings saved.");
     } catch (error) {
       setProjectSettingsMessage(getErrorMessage(error));
+    } finally {
+      setIsSavingProjectSettings(false);
     }
   }
 
@@ -3160,6 +3291,9 @@ export function PrismaReviewApp() {
         teamMessage={teamMessage}
         toggleProjectOwner={toggleProjectOwner}
         removeUserFromProject={removeUserFromProject}
+        teamRolePendingUserId={teamRolePendingUserId}
+        teamRemovePendingUserId={teamRemovePendingUserId}
+        isSavingProjectSettings={isSavingProjectSettings}
         hasProjectSeedData={hasProjectSeedData}
       />
     );
@@ -3187,7 +3321,20 @@ export function PrismaReviewApp() {
         onFullTextVotesChange={(value) => updateNewProjectForm("fullTextRequiredVotes", value)}
         onExtractionVotesChange={(value) => updateNewProjectForm("extractionRequiredVotes", value)}
         onMaybePolicyChange={(value) => updateNewProjectForm("maybePolicy", value)}
-        toggleProjectMember={toggleProjectMember}
+        teamMessage={newProjectTeamMessage}
+        memberSearch={newProjectMemberSearch}
+        onMemberSearchChange={updateNewProjectMemberSearch}
+        memberSearchResults={newProjectMemberSearchResults}
+        onAddMember={addExistingMemberToNewProject}
+        onRemoveMember={removeMemberFromNewProject}
+        inviteDraft={newProjectInviteDraft}
+        onInviteNameChange={(value) => setNewProjectInviteDraft((previous) => ({ ...previous, name: value }))}
+        onInviteEmailChange={(value) => setNewProjectInviteDraft((previous) => ({ ...previous, email: value }))}
+        onInviteTitleChange={(value) => setNewProjectInviteDraft((previous) => ({ ...previous, title: value }))}
+        onQueueInvite={queueNewProjectInvite}
+        canShowInviteForm={canShowNewProjectInviteForm}
+        queuedInvites={queuedNewProjectInvites}
+        onRemoveQueuedInvite={removeQueuedNewProjectInvite}
       />
     );
   }
@@ -3884,6 +4031,10 @@ function formatNumber(value: number) {
 
 function isEuDate(value: string) {
   return /^\d{2}-\d{2}-\d{4}$/.test(value);
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function formatEuDate(value: string) {

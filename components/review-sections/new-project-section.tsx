@@ -1,8 +1,14 @@
 import type { FormEvent } from "react";
-import { ArrowLeft, FileText, Lock, Plus, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, FileText, Lock, Mail, Plus, UserPlus, Users, X } from "lucide-react";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle } from "@/components/prisma-review-ui";
 import type { NewProjectForm } from "@/components/use-new-project-state";
+
+export type NewProjectInviteDraft = {
+  name: string;
+  email: string;
+  title: string;
+};
 
 type NewProjectSectionProps = {
   currentUser: AppUser;
@@ -24,7 +30,20 @@ type NewProjectSectionProps = {
   onFullTextVotesChange: (value: number) => void;
   onExtractionVotesChange: (value: number) => void;
   onMaybePolicyChange: (value: NewProjectForm["maybePolicy"]) => void;
-  toggleProjectMember: (userId: string) => void;
+  teamMessage: string;
+  memberSearch: string;
+  onMemberSearchChange: (value: string) => void;
+  memberSearchResults: AppUser[];
+  onAddMember: (userId: string) => void;
+  onRemoveMember: (userId: string) => void;
+  inviteDraft: NewProjectInviteDraft;
+  onInviteNameChange: (value: string) => void;
+  onInviteEmailChange: (value: string) => void;
+  onInviteTitleChange: (value: string) => void;
+  onQueueInvite: () => void;
+  canShowInviteForm: boolean;
+  queuedInvites: NewProjectInviteDraft[];
+  onRemoveQueuedInvite: (email: string) => void;
 };
 
 export function NewProjectSection({
@@ -47,8 +66,25 @@ export function NewProjectSection({
   onFullTextVotesChange,
   onExtractionVotesChange,
   onMaybePolicyChange,
-  toggleProjectMember
+  teamMessage,
+  memberSearch,
+  onMemberSearchChange,
+  memberSearchResults,
+  onAddMember,
+  onRemoveMember,
+  inviteDraft,
+  onInviteNameChange,
+  onInviteEmailChange,
+  onInviteTitleChange,
+  onQueueInvite,
+  canShowInviteForm,
+  queuedInvites,
+  onRemoveQueuedInvite
 }: NewProjectSectionProps) {
+  const selectedMembers = newProjectForm.memberIds
+    .map((memberId) => users.find((user) => user.id === memberId))
+    .filter((user): user is AppUser => Boolean(user));
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -144,20 +180,114 @@ export function NewProjectSection({
 
           <div className="panel">
             <SectionTitle icon={Users} title="Team" action={`${newProjectForm.memberIds.length} selected`} />
-            <div className="memberPicker">
-              {users.map((user) => (
-                <label className="memberOption" key={user.id}>
-                  <input type="checkbox" checked={newProjectForm.memberIds.includes(user.id)} onChange={() => toggleProjectMember(user.id)} disabled={user.id === currentUser.id} />
+            <div className="addMemberBox">
+              <label>
+                <span>Search Reviewers</span>
+                <input
+                  value={memberSearch}
+                  onChange={(event) => onMemberSearchChange(event.target.value)}
+                  placeholder="Name or email"
+                />
+              </label>
+            </div>
+
+            {memberSearchResults.length > 0 ? (
+              <div className="teamList">
+                {memberSearchResults.map((user) => (
+                  <div className="teamMember" key={user.id}>
+                    <span className="avatar" style={{ background: user.avatarColor }}>
+                      {user.initials}
+                    </span>
+                    <div>
+                      <strong>{user.name}</strong>
+                      <span>{user.email}</span>
+                    </div>
+                    <span>{user.title}</span>
+                    <button className="ghostButton" type="button" onClick={() => onAddMember(user.id)} disabled={user.id === currentUser.id}>
+                      <UserPlus size={16} />
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {canShowInviteForm ? (
+              <form
+                className="inviteForm"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onQueueInvite();
+                }}
+              >
+                <label>
+                  <span>Name</span>
+                  <input value={inviteDraft.name} onChange={(event) => onInviteNameChange(event.target.value)} placeholder="Reviewer name" />
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input value={inviteDraft.email} onChange={(event) => onInviteEmailChange(event.target.value)} placeholder="reviewer@organization.org" />
+                </label>
+                <label>
+                  <span>Role Title</span>
+                  <input value={inviteDraft.title} onChange={(event) => onInviteTitleChange(event.target.value)} placeholder="Reviewer" />
+                </label>
+                <button className="ghostButton" type="submit">
+                  <Mail size={16} />
+                  Queue Invitation
+                </button>
+              </form>
+            ) : null}
+
+            <div className="teamList">
+              {selectedMembers.map((user) => (
+                <div className="teamMember" key={user.id}>
                   <span className="avatar" style={{ background: user.avatarColor }}>
                     {user.initials}
                   </span>
                   <div>
                     <strong>{user.name}</strong>
-                    <small>{user.title}</small>
+                    <span>{user.email}</span>
                   </div>
-                </label>
+                  <span>{user.id === currentUser.id ? "Project owner" : user.title}</span>
+                  <button className="ghostButton" type="button" onClick={() => onRemoveMember(user.id)} disabled={user.id === currentUser.id}>
+                    <X size={16} />
+                    Remove
+                  </button>
+                </div>
               ))}
             </div>
+
+            {queuedInvites.length > 0 ? (
+              <div className="inviteForm">
+                <label className="fieldLabel">Pending invitations</label>
+                <div className="teamList">
+                  {queuedInvites.map((invite) => (
+                    <div className="teamMember" key={invite.email}>
+                      <span className="avatar" aria-hidden="true">
+                        <Mail size={16} />
+                      </span>
+                      <div>
+                        <strong>{invite.name}</strong>
+                        <span>{invite.email}</span>
+                      </div>
+                      <span>{invite.title}</span>
+                      <button className="ghostButton" type="button" onClick={() => onRemoveQueuedInvite(invite.email)}>
+                        <X size={16} />
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {teamMessage ? (
+              <div className="validationItem warning">
+                <AlertTriangle size={17} />
+                <span>{teamMessage}</span>
+              </div>
+            ) : null}
           </div>
         </section>
 

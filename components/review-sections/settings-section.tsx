@@ -52,6 +52,9 @@ type SettingsSectionProps = {
   teamMessage: string;
   toggleProjectOwner: (userId: string) => void;
   removeUserFromProject: (userId: string) => void;
+  teamRolePendingUserId: string | null;
+  teamRemovePendingUserId: string | null;
+  isSavingProjectSettings: boolean;
   hasProjectSeedData: boolean;
 };
 
@@ -84,6 +87,9 @@ export function SettingsSection({
   teamMessage,
   toggleProjectOwner,
   removeUserFromProject,
+  teamRolePendingUserId,
+  teamRemovePendingUserId,
+  isSavingProjectSettings,
   hasProjectSeedData
 }: SettingsSectionProps) {
   const projectMembers = selectedProject.memberIds
@@ -101,9 +107,18 @@ export function SettingsSection({
           <h1>Review Controls</h1>
           <p className="subtle">Authorization, blind-mode visibility, and transition policy are separate controls.</p>
         </div>
-        <button className="primaryButton" type="submit" form="project-settings-form" title="Save settings" disabled={!canManageProject}>
-          <Check size={17} />
-          Save
+        <button className="primaryButton" type="submit" form="project-settings-form" title="Save settings" disabled={!canManageProject || isSavingProjectSettings}>
+          {isSavingProjectSettings ? (
+            <>
+              <span className="inlineSpinner" aria-hidden="true" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Check size={17} />
+              Save
+            </>
+          )}
         </button>
       </section>
 
@@ -250,8 +265,13 @@ export function SettingsSection({
         <div className="panel">
           <SectionTitle icon={Users} title="Project Team" action={`${projectMembers.length} members`} />
           <div className="teamList">
-            {projectMembers.map((member) => (
-              <article className="teamMember" key={member.id}>
+            {projectMembers.map((member) => {
+              const isRoleActionPending = teamRolePendingUserId === member.id;
+              const isRemoveActionPending = teamRemovePendingUserId === member.id;
+              const isAnyActionPending = isRoleActionPending || isRemoveActionPending;
+
+              return (
+                <article className="teamMember" key={member.id}>
                 <span className="avatar" style={{ background: member.avatarColor }}>
                   {member.initials}
                 </span>
@@ -265,23 +285,39 @@ export function SettingsSection({
                     className="ghostButton"
                     type="button"
                     title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "At least one owner is required" : selectedProject.ownerIds.includes(member.id) ? "Change role to reviewer" : "Change role to owner"}
-                    disabled={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1}
+                    disabled={(selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1) || isAnyActionPending}
                     onClick={() => toggleProjectOwner(member.id)}
                   >
-                    {selectedProject.ownerIds.includes(member.id) ? "Make reviewer" : "Make owner"}
+                    {isRoleActionPending ? (
+                      <>
+                        <span className="inlineSpinner" aria-hidden="true" />
+                        Saving...
+                      </>
+                    ) : selectedProject.ownerIds.includes(member.id) ? "Make reviewer" : "Make owner"}
                   </button>
                   <button
-                    className="ghostButton iconOnly"
+                    className="dangerButton"
                     type="button"
                     title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "Last owner cannot be removed" : "Remove member"}
-                    disabled={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1}
+                    disabled={(selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1) || isAnyActionPending}
                     onClick={() => removeUserFromProject(member.id)}
                   >
-                    <X size={16} />
+                    {isRemoveActionPending ? (
+                      <>
+                        <span className="inlineSpinner" aria-hidden="true" />
+                        Removing...
+                      </>
+                    ) : (
+                      <>
+                        <X size={16} />
+                        Remove
+                      </>
+                    )}
                   </button>
                 </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         </div>
 

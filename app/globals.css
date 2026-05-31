@@ -655,6 +655,15 @@ h3 {
   animation: authSpin 0.9s linear infinite;
 }
 
+.inlineSpinner {
+  width: calc(14px * var(--ui-scale));
+  height: calc(14px * var(--ui-scale));
+  border: calc(2px * var(--ui-scale)) solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  border-radius: calc(999px * var(--ui-scale));
+  animation: authSpin 0.9s linear infinite;
+}
+
 @keyframes authSpin {
   to {
     transform: rotate(360deg);
@@ -2744,6 +2753,10 @@ button:disabled {
   align-items: end;
 }
 
+.addMemberBox + .teamList {
+  margin-top: calc(10px * var(--ui-scale));
+}
+
 .addMemberBox label,
 .inviteForm label {
   display: grid;
@@ -3037,6 +3050,10 @@ button:disabled {
     padding: calc(14px * var(--ui-scale));
   }
 
+  .formActionsProminent {
+    top: calc(88px * var(--ui-scale));
+  }
+
   .exportLayout > .panel {
     order: -1;
   }
@@ -3144,6 +3161,17 @@ button:disabled {
   .ghostButton,
   .primaryButton,
   .dangerButton {
+    width: 100%;
+  }
+
+  .teamMemberActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .teamMemberActions .ghostButton,
+  .teamMemberActions .dangerButton {
     width: 100%;
   }
 
