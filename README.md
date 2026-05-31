@@ -143,6 +143,13 @@ For non-local environments, set `PRISMATICA_ADMIN_PASSWORD` explicitly.
 
 For production, set a stable session secret and move data outside the repo:
 
+Default behavior when `PRISMATICA_DATA_FILE` is not set:
+
+- State file: `./data/prismatica-state.json` (relative to the project root)
+- PDF folder: `./data/pdfs/`
+
+Production example:
+
 ```bash
 export PRISMATICA_SESSION_SECRET="replace-with-a-long-random-string"
 export PRISMATICA_DATA_FILE="/var/lib/prismatica/prismatica-state.json"
@@ -159,6 +166,26 @@ export PRISMATICA_ADMIN_PASSWORD="replace-this-default-admin-password"
 export PRISMATICA_REGISTRATION_ENABLED="false"
 export PRISMATICA_CAPTCHA_SECRET="replace-with-a-long-random-string"
 export PRISMATICA_SECURE_COOKIES="true"
+```
+
+### Session Secret Management
+
+- `PRISMATICA_SESSION_SECRET` signs session cookies; keep it private and high-entropy.
+- Use a long random value (at least 32 bytes of entropy).
+- Store it in environment variables or a secrets manager, not in git.
+- Use a different secret per environment (development, staging, production).
+- Rotating the secret invalidates all active sessions and requires users to sign in again.
+
+Generate a strong secret:
+
+```bash
+openssl rand -base64 48
+```
+
+or
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
 Notes:

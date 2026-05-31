@@ -4,6 +4,6 @@ PRISMATICA
 ## To DO:
 
 
-1. Finalize the Extraction with a completed state and a report with downloadable answers in a worksheet.
+1. Add a flow diagram generator: https://github.com/prisma-flowdiagram/PRISMA2020ok
 
 
