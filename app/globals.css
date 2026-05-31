@@ -239,6 +239,10 @@ h3 {
   display: none;
 }
 
+.ghostButton.desktopNavToggle {
+  display: inline-flex;
+}
+
 .brandBlock {
   display: flex;
   align-items: center;
@@ -378,10 +382,26 @@ h3 {
   border-radius: calc(999px * var(--ui-scale));
 }
 
-.navItem span {
+.navItem .navLabel {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.navWarnBadge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: calc(20px * var(--ui-scale));
+  height: calc(20px * var(--ui-scale));
+  padding: 0 calc(6px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid #f0d8a5;
+  border-radius: calc(999px * var(--ui-scale));
+  background: var(--amber-soft);
+  color: #7b4b05;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: calc(18px * var(--ui-scale));
+  text-align: center;
 }
 
 .navAvatar {
@@ -457,6 +477,82 @@ h3 {
 .mainArea {
   min-width: 0;
   padding: calc(18px * var(--ui-scale)) calc(22px * var(--ui-scale)) calc(34px * var(--ui-scale));
+}
+
+.appFrame.sidebar-collapsed {
+  grid-template-columns: calc(84px * var(--ui-scale)) minmax(0, 1fr);
+}
+
+.appFrame.sidebar-collapsed .sidebar {
+  gap: calc(14px * var(--ui-scale));
+  padding: calc(18px * var(--ui-scale)) calc(10px * var(--ui-scale));
+}
+
+.appFrame.sidebar-collapsed .sidebarHeader {
+  flex-direction: column;
+  align-items: center;
+  gap: calc(10px * var(--ui-scale));
+}
+
+.appFrame.sidebar-collapsed .brandButton {
+  width: auto;
+}
+
+.appFrame.sidebar-collapsed .brandButton > div:last-child,
+.appFrame.sidebar-collapsed .projectContext,
+.appFrame.sidebar-collapsed .navSectionTitle,
+.appFrame.sidebar-collapsed .navLabel,
+.appFrame.sidebar-collapsed .navWarnBadge,
+.appFrame.sidebar-collapsed .navPhaseMarker {
+  display: none;
+}
+
+.appFrame.sidebar-collapsed .brandMarkImage {
+  padding-left: 0;
+}
+
+.appFrame.sidebar-collapsed .navSection {
+  justify-items: center;
+}
+
+.appFrame.sidebar-collapsed .navItem {
+  position: relative;
+  justify-content: center;
+  width: calc(48px * var(--ui-scale));
+  min-height: calc(42px * var(--ui-scale));
+  padding: 0;
+}
+
+.appFrame.sidebar-collapsed .navItem[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px * var(--ui-scale));
+  top: 50%;
+  z-index: 30;
+  transform: translateY(-50%);
+  padding: calc(6px * var(--ui-scale)) calc(9px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(8px * var(--ui-scale));
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.appFrame.sidebar-collapsed .navItem[data-tooltip]:hover::after,
+.appFrame.sidebar-collapsed .navItem[data-tooltip]:focus-visible::after {
+  opacity: 1;
+}
+
+.appFrame.sidebar-collapsed .navItemPhase {
+  margin-left: 0;
+  border-left: 0;
+  background: transparent;
 }
 
 .overviewBand,
@@ -1152,6 +1248,11 @@ a.primaryButton[target="_blank"]:focus-visible {
   background: var(--surface-muted);
 }
 
+.workflowNode.warning {
+  background: var(--amber-soft);
+  border-color: #f0d8a5;
+}
+
 .stateRows,
 .settingList {
   display: grid;
@@ -1342,19 +1443,92 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .prismaFlow {
   display: grid;
-  grid-template-columns: repeat(4, minmax(calc(190px * var(--ui-scale)), 1fr));
+  grid-template-columns: 1fr;
   gap: calc(14px * var(--ui-scale));
-  overflow-x: auto;
 }
 
-.flowColumn {
+.flowLane {
+  border: calc(1px * var(--ui-scale)) dashed var(--border);
+  border-radius: var(--radius);
+  padding: calc(10px * var(--ui-scale));
+  background: var(--surface-soft);
+}
+
+.flowLane h4 {
+  margin: 0 0 calc(8px * var(--ui-scale));
+  font-size: 0.82rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.flowMainList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  align-content: start;
   gap: calc(10px * var(--ui-scale));
 }
 
-.mainFlow {
-  padding-top: calc(18px * var(--ui-scale));
+.flowMainStep {
+  position: relative;
+}
+
+.flowMainStep:not(:last-child) {
+  padding-bottom: calc(14px * var(--ui-scale));
+}
+
+.flowMainStep:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(3px * var(--ui-scale));
+  width: calc(1px * var(--ui-scale));
+  height: calc(11px * var(--ui-scale));
+  background: var(--border);
+  transform: translateX(-50%);
+}
+
+.flowMainStep:not(:last-child)::after {
+  content: "\2193";
+  position: absolute;
+  left: 50%;
+  bottom: calc(-1px * var(--ui-scale));
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  transform: translateX(-50%);
+}
+
+.flowBranches {
+  display: grid;
+  gap: calc(12px * var(--ui-scale));
+}
+
+.flowBranch {
+  border: calc(1px * var(--ui-scale)) dashed var(--border);
+  border-radius: var(--radius);
+  padding: calc(10px * var(--ui-scale));
+  background: var(--surface-soft);
+}
+
+.flowBranch h4 {
+  margin: 0 0 calc(8px * var(--ui-scale));
+  font-size: 0.82rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.flowBranchGrid {
+  display: grid;
+  gap: calc(10px * var(--ui-scale));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel > .subtle + .prismaFlow,
+.panel > .subtle + .validationList {
+  margin-top: calc(12px * var(--ui-scale));
 }
 
 .flowBox {
@@ -2647,6 +2821,14 @@ button:disabled {
   line-height: 1.35;
 }
 
+.validationItem small {
+  display: block;
+  margin-top: calc(4px * var(--ui-scale));
+  font-size: 0.76rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
 .validationItem.ok {
   color: var(--toast-success-text);
   border-color: var(--toast-success-border);
@@ -2657,6 +2839,12 @@ button:disabled {
   color: var(--toast-error-text);
   border-color: var(--toast-error-border);
   background: var(--toast-error-bg);
+}
+
+.validationItem.warning {
+  color: #7b4b05;
+  border-color: #f0d8a5;
+  background: var(--amber-soft);
 }
 
 .exportHistory {
@@ -2788,6 +2976,10 @@ button:disabled {
     display: inline-flex;
   }
 
+  .ghostButton.desktopNavToggle {
+    display: none;
+  }
+
   .sidebar:not(.open) .projectContext,
   .sidebar:not(.open) .navList,
   .sidebar:not(.open) .sidebarFooter {
@@ -2804,6 +2996,10 @@ button:disabled {
 
   .mainArea {
     padding: calc(14px * var(--ui-scale));
+  }
+
+  .exportLayout > .panel {
+    order: -1;
   }
 
   .overviewBand,
@@ -2884,6 +3080,10 @@ button:disabled {
 
   .prismaFlow {
     grid-template-columns: minmax(calc(230px * var(--ui-scale)), 1fr);
+  }
+
+  .flowBranchGrid {
+    grid-template-columns: 1fr;
   }
 
   .reportFileCard {

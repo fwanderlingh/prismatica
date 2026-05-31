@@ -458,6 +458,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const skipUrlSyncRef = useRef(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
@@ -747,6 +748,44 @@ export function PrismaReviewApp() {
   const reportsExcludedTotal = sumObject(activeCounts.reportsExcludedWithReasons);
   const recordsIdentified =
     activeCounts.recordsIdentifiedDatabase + activeCounts.recordsIdentifiedRegisters + activeCounts.recordsIdentifiedOther;
+  const exportConsistency = useMemo(() => {
+    const preScreenRemovalTotal = activeCounts.duplicateRecordsRemoved + activeCounts.automationRemoved + activeCounts.removedOtherReasons;
+    const screenedAndPreScreenRemovedTotal = activeCounts.recordsScreened + preScreenRemovalTotal;
+    const screenBalanceTotal = activeCounts.recordsExcluded + activeCounts.reportsSought;
+    const retrievalBalanceTotal = activeCounts.reportsAssessed + activeCounts.reportsNotRetrieved;
+    const assessedBalanceTotal = reportsExcludedTotal + activeCounts.studiesIncluded;
+    const excludedFullTextDecisions = decisions.filter(
+      (decision) =>
+        decision.projectId === selectedProject.id &&
+        decision.stage === "full_text" &&
+        decision.isCurrent &&
+        decision.decisionValue === "exclude"
+    );
+    const excludedWithoutReasonCount = excludedFullTextDecisions.filter((decision) => !decision.exclusionReasonId).length;
+
+    const identifiedCheckOk = recordsIdentified >= screenedAndPreScreenRemovedTotal;
+    const screenedCheckOk = activeCounts.recordsScreened === screenBalanceTotal;
+    const retrievalCheckOk = activeCounts.reportsSought === retrievalBalanceTotal;
+    const assessedCheckOk = activeCounts.reportsAssessed === assessedBalanceTotal;
+    const exclusionReasonCheckOk = excludedWithoutReasonCount === 0;
+    const passedCount = [identifiedCheckOk, screenedCheckOk, retrievalCheckOk, assessedCheckOk, exclusionReasonCheckOk].filter(Boolean).length;
+
+    return {
+      screenedAndPreScreenRemovedTotal,
+      screenBalanceTotal,
+      retrievalBalanceTotal,
+      assessedBalanceTotal,
+      excludedWithoutReasonCount,
+      identifiedCheckOk,
+      screenedCheckOk,
+      retrievalCheckOk,
+      assessedCheckOk,
+      exclusionReasonCheckOk,
+      passedCount,
+      totalCount: 5,
+      failedCount: 5 - passedCount
+    };
+  }, [activeCounts, decisions, recordsIdentified, reportsExcludedTotal, selectedProject.id]);
   const screeningProgress =
     projectScreeningStudies.length > 0 ? Math.round((screenedByMe / projectScreeningStudies.length) * 100) : 0;
 
@@ -2116,7 +2155,15 @@ export function PrismaReviewApp() {
                   `${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`,
                   getWorkflowStepState("extraction", selectedProject.stage)
                 ],
-                ["Export", "PRISMA 2020", activeCounts.studiesIncluded > 0 ? "ready" : "pending"]
+                [
+                  "Export",
+                  exportConsistency.failedCount > 0 ? `${exportConsistency.failedCount} checks need review` : "PRISMA 2020 ready",
+                  activeCounts.studiesIncluded === 0
+                    ? "pending"
+                    : exportConsistency.failedCount > 0
+                      ? "warning"
+                      : "complete"
+                ]
               ].map(([label, value, status]) => (
                 <div className={`workflowNode ${status}`} key={label}>
                   <span>{label}</span>
@@ -3794,24 +3841,39 @@ export function PrismaReviewApp() {
     const canExportExtractionCsv = Boolean(activeExtractionTemplate) && activeCounts.studiesIncluded > 0;
     const validations = [
       {
-        label: "Records identified reconcile with removals and screened records",
-        ok: recordsIdentified >= activeCounts.duplicateRecordsRemoved + activeCounts.recordsScreened
+        label: exportConsistency.identifiedCheckOk
+          ? "Identified records cover screening and pre-screen removals"
+          : "Identified records do not cover screening and pre-screen removals",
+        ok: exportConsistency.identifiedCheckOk,
+        detail: `Identified: ${formatNumber(recordsIdentified)}. Screened + pre-screen removals: ${formatNumber(exportConsistency.screenedAndPreScreenRemovedTotal)}.`
       },
       {
-        label: "Records screened equals excluded records plus reports sought",
-        ok: activeCounts.recordsScreened === activeCounts.recordsExcluded + activeCounts.reportsSought
+        label: exportConsistency.screenedCheckOk
+          ? "Screening decisions are fully balanced"
+          : "Screening decisions are not fully balanced",
+        ok: exportConsistency.screenedCheckOk,
+        detail: `Screened: ${formatNumber(activeCounts.recordsScreened)}. Excluded + moved to full text: ${formatNumber(exportConsistency.screenBalanceTotal)}.`
       },
       {
-        label: "Reports sought equals retrieved plus not retrieved",
-        ok: activeCounts.reportsSought === activeCounts.reportsAssessed + activeCounts.reportsNotRetrieved
+        label: exportConsistency.retrievalCheckOk
+          ? "Retrieval outcomes are fully balanced"
+          : "Retrieval outcomes are not fully balanced",
+        ok: exportConsistency.retrievalCheckOk,
+        detail: `Reports sought: ${formatNumber(activeCounts.reportsSought)}. Assessed + not retrieved: ${formatNumber(exportConsistency.retrievalBalanceTotal)}.`
       },
       {
-        label: "Reports assessed equals excluded reports plus included studies",
-        ok: activeCounts.reportsAssessed === reportsExcludedTotal + activeCounts.studiesIncluded
+        label: exportConsistency.assessedCheckOk
+          ? "Eligibility decisions are fully balanced"
+          : "Eligibility decisions are not fully balanced",
+        ok: exportConsistency.assessedCheckOk,
+        detail: `Assessed reports: ${formatNumber(activeCounts.reportsAssessed)}. Exclusions with reasons + included studies: ${formatNumber(exportConsistency.assessedBalanceTotal)}.`
       },
       {
-        label: "Full-text exclusions have structured reasons",
-        ok: reportsExcludedTotal > 0
+        label: exportConsistency.exclusionReasonCheckOk
+          ? "Every current full-text exclusion has a reason"
+          : "Some current full-text exclusions are missing a reason",
+        ok: exportConsistency.exclusionReasonCheckOk,
+        detail: `Current full-text exclusions missing reason: ${formatNumber(exportConsistency.excludedWithoutReasonCount)}.`
       }
     ];
 
@@ -3819,11 +3881,20 @@ export function PrismaReviewApp() {
       <div className="viewStack">
         <section className="overviewBand">
           <div>
-            <p className="eyebrow">PRISMA export</p>
-            <h1>Flow Diagram and Audit Package</h1>
-            <p className="subtle">Counts are generated from workflow events, current decisions, and report retrieval status.</p>
+            <p className="eyebrow">Exports</p>
+            <h1>PRISMA Output Review</h1>
+            <p className="subtle">Review flow totals and consistency checks before sharing project outputs.</p>
           </div>
         </section>
+
+        {exportConsistency.failedCount > 0 ? (
+          <div className="validationItem warning">
+            <AlertTriangle size={17} />
+            <span>
+              {exportConsistency.failedCount} consistency check{exportConsistency.failedCount === 1 ? "" : "s"} need review. Export is allowed, but verify these issues before final reporting.
+            </span>
+          </div>
+        ) : null}
 
         {exportMessage ? (
           <div className={exportMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
@@ -3854,18 +3925,23 @@ export function PrismaReviewApp() {
             </div>
 
             <div className="panel">
-              <SectionTitle icon={BarChart3} title="Flow Preview" action="PRISMA 2020" />
+              <SectionTitle icon={BarChart3} title="PRISMA Flow Diagram Preview" action="Auto-calculated" />
+              <p className="subtle">This diagram is generated from the current project state and cannot be edited here.</p>
               <PrismaFlow counts={activeCounts} reportsExcludedTotal={reportsExcludedTotal} />
             </div>
           </div>
 
           <div className="panel">
-            <SectionTitle icon={CheckCircle2} title="Validation" action="Export gate" />
+            <SectionTitle icon={CheckCircle2} title="Consistency Checks" action={`${exportConsistency.passedCount}/${exportConsistency.totalCount} passed`} />
+            <p className="subtle">These are live integrity checks from current project data, not demo placeholders.</p>
             <div className="validationList">
               {validations.map((validation) => (
-                <div className={validation.ok ? "validationItem ok" : "validationItem blocked"} key={validation.label}>
+                <div className={validation.ok ? "validationItem ok" : "validationItem warning"} key={validation.label}>
                   {validation.ok ? <Check size={17} /> : <X size={17} />}
-                  <span>{validation.label}</span>
+                  <div>
+                    <span>{validation.label}</span>
+                    <small>{validation.detail}</small>
+                  </div>
                 </div>
               ))}
             </div>
@@ -4876,8 +4952,8 @@ export function PrismaReviewApp() {
   }
 
   return (
-    <div className="appFrame">
-      <aside className={isMobileNavOpen ? "sidebar open" : "sidebar"} aria-label="Project navigation">
+    <div className={isSidebarCollapsed ? "appFrame sidebar-collapsed" : "appFrame"}>
+      <aside className={["sidebar", isMobileNavOpen ? "open" : "", isSidebarCollapsed ? "collapsed" : ""].filter(Boolean).join(" ")} aria-label="Project navigation">
         <div className="sidebarHeader">
           <button
             className="brandBlock brandButton"
@@ -4895,6 +4971,16 @@ export function PrismaReviewApp() {
               <strong>{BRAND_NAME}</strong>
               <span>{BRAND_TAGLINE}</span>
             </div>
+          </button>
+          <button
+            className="ghostButton iconOnly desktopNavToggle"
+            type="button"
+            title={isSidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-label={isSidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-expanded={!isSidebarCollapsed}
+            onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+          >
+            <PanelRight size={18} />
           </button>
           <button
             className="ghostButton iconOnly mobileNavToggle"
@@ -4948,6 +5034,7 @@ export function PrismaReviewApp() {
                         className={navClassName}
                         type="button"
                         key={key}
+                        data-tooltip={label}
                         aria-current={activeView === key ? "page" : undefined}
                         onClick={() => {
                           setActiveView(key);
@@ -4956,7 +5043,7 @@ export function PrismaReviewApp() {
                         title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
                       >
                         {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                        <span>{label}</span>
+                        <span className="navLabel">{label}</span>
                         {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
                       </button>
                     );
@@ -4977,6 +5064,7 @@ export function PrismaReviewApp() {
                         className={navClassName}
                         type="button"
                         key={key}
+                        data-tooltip={label}
                         aria-current={activeView === key ? "page" : undefined}
                         onClick={() => {
                           setActiveView(key);
@@ -4985,11 +5073,26 @@ export function PrismaReviewApp() {
                         title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
                       >
                         {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                        <span>{label}</span>
+                        <span className="navLabel">{label}</span>
+                        {key === "exports" && exportConsistency.failedCount > 0 ? <span className="navWarnBadge">{exportConsistency.failedCount}</span> : null}
                         {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
                       </button>
                     );
                   })}
+                <button
+                  className={["navItem", "navItemUtility", activeView === "profile" ? "active" : ""].filter(Boolean).join(" ")}
+                  type="button"
+                  data-tooltip="Profile"
+                  aria-current={activeView === "profile" ? "page" : undefined}
+                  onClick={() => {
+                    setActiveView("profile");
+                    setIsMobileNavOpen(false);
+                  }}
+                  title="/profile"
+                >
+                  <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>
+                  <span className="navLabel">Profile</span>
+                </button>
               </div>
             </>
           ) : (
@@ -5005,6 +5108,7 @@ export function PrismaReviewApp() {
                     className={navClassName}
                     type="button"
                     key={key}
+                    data-tooltip={label}
                     aria-current={activeView === key ? "page" : undefined}
                     onClick={() => {
                       setActiveView(key);
@@ -5013,7 +5117,7 @@ export function PrismaReviewApp() {
                     title={path}
                   >
                     {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                    <span>{label}</span>
+                    <span className="navLabel">{label}</span>
                   </button>
                 );
               })

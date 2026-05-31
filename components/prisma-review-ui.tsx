@@ -138,28 +138,49 @@ export function renderDoiLink(value: string, label?: string) {
 }
 
 export function PrismaFlow({ counts, reportsExcludedTotal }: { counts: PrismaCounts; reportsExcludedTotal: number }) {
+  const recordsIdentifiedTotal = counts.recordsIdentifiedDatabase + counts.recordsIdentifiedRegisters + counts.recordsIdentifiedOther;
+
   return (
     <div className="prismaFlow">
-      <div className="flowColumn">
-        <FlowBox label="Records identified from databases" value={counts.recordsIdentifiedDatabase} icon={Database} />
-        <FlowBox label="Records identified from registers" value={counts.recordsIdentifiedRegisters} icon={Archive} />
-        <FlowBox label="Records identified from other sources" value={counts.recordsIdentifiedOther} icon={FileText} />
+      <div className="flowLane" aria-label="PRISMA main flow">
+        <h4>Main review path</h4>
+        <ol className="flowMainList">
+          <li className="flowMainStep">
+            <FlowBox label="Records identified (all sources)" value={recordsIdentifiedTotal} icon={Database} tone="blue" />
+          </li>
+          <li className="flowMainStep">
+            <FlowBox label="Records screened" value={counts.recordsScreened} icon={Eye} tone="blue" />
+          </li>
+          <li className="flowMainStep">
+            <FlowBox label="Reports sought for retrieval" value={counts.reportsSought} icon={BookOpen} tone="blue" />
+          </li>
+          <li className="flowMainStep">
+            <FlowBox label="Reports assessed for eligibility" value={counts.reportsAssessed} icon={FileSearch} tone="blue" />
+          </li>
+          <li className="flowMainStep">
+            <FlowBox label="Studies included in review" value={counts.studiesIncluded} icon={CheckCircle2} tone="green" />
+          </li>
+        </ol>
       </div>
-      <div className="flowColumn">
-        <FlowBox label="Duplicate records removed" value={counts.duplicateRecordsRemoved} icon={GitMerge} tone="teal" />
-        <FlowBox label="Removed by automation or other reasons" value={counts.automationRemoved + counts.removedOtherReasons} icon={AlertTriangle} tone="amber" />
-      </div>
-      <div className="flowColumn mainFlow">
-        <FlowBox label="Records screened" value={counts.recordsScreened} icon={Eye} tone="blue" />
-        <FlowBox label="Reports sought for retrieval" value={counts.reportsSought} icon={BookOpen} tone="blue" />
-        <FlowBox label="Reports assessed for eligibility" value={counts.reportsAssessed} icon={FileSearch} tone="blue" />
-        <FlowBox label="Studies included in review" value={counts.studiesIncluded} icon={CheckCircle2} tone="green" />
-      </div>
-      <div className="flowColumn">
-        <FlowBox label="Records excluded" value={counts.recordsExcluded} icon={XCircle} tone="coral" />
-        <FlowBox label="Reports not retrieved" value={counts.reportsNotRetrieved} icon={AlertTriangle} tone="amber" />
-        <FlowBox label="Reports excluded with reasons" value={reportsExcludedTotal} icon={ListChecks} tone="coral" />
-        <FlowBox label="Included for extraction" value={counts.studiesIncluded} icon={BarChart3} tone="green" />
+
+      <div className="flowBranches" aria-label="PRISMA branch outcomes">
+        <div className="flowBranch">
+          <h4>Pre-screen removals</h4>
+          <div className="flowBranchGrid">
+            <FlowBox label="Duplicate records removed" value={counts.duplicateRecordsRemoved} icon={GitMerge} tone="teal" />
+            <FlowBox label="Removed by automation or other reasons" value={counts.automationRemoved + counts.removedOtherReasons} icon={AlertTriangle} tone="amber" />
+          </div>
+        </div>
+
+        <div className="flowBranch">
+          <h4>Downstream outcomes</h4>
+          <div className="flowBranchGrid">
+            <FlowBox label="Records excluded" value={counts.recordsExcluded} icon={XCircle} tone="coral" />
+            <FlowBox label="Reports not retrieved" value={counts.reportsNotRetrieved} icon={AlertTriangle} tone="amber" />
+            <FlowBox label="Reports excluded with reasons" value={reportsExcludedTotal} icon={ListChecks} tone="coral" />
+            <FlowBox label="Included for extraction" value={counts.studiesIncluded} icon={BarChart3} tone="green" />
+          </div>
+        </div>
       </div>
     </div>
   );
