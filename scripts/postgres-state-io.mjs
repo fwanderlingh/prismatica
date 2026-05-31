@@ -4,32 +4,11 @@ const stateVersion = 1;
 
 const tableConfigs = [
   {
-    tableName: "review_projects",
-    arrayKey: "projects",
-    idColumn: "id",
-    extraColumns: ["project_id", "position"],
-    valuesForItem: (item, index) => [item.id, item.id, index, JSON.stringify(item)]
-  },
-  {
     tableName: "import_batches",
     arrayKey: "imports",
     idColumn: "id",
     extraColumns: ["project_id", "position"],
     valuesForItem: (item, index) => [item.id, item.projectId ?? null, index, JSON.stringify(item)]
-  },
-  {
-    tableName: "review_studies",
-    arrayKey: "studies",
-    idColumn: "id",
-    extraColumns: ["project_id", "import_batch_id", "position"],
-    valuesForItem: (item, index) => [item.id, item.projectId ?? null, item.importBatchId ?? null, index, JSON.stringify(item)]
-  },
-  {
-    tableName: "review_reports",
-    arrayKey: "reports",
-    idColumn: "id",
-    extraColumns: ["project_id", "study_id", "position"],
-    valuesForItem: (item, index) => [item.id, item.projectId ?? null, item.studyId ?? null, index, JSON.stringify(item)]
   },
   {
     tableName: "review_extraction_templates",
@@ -135,9 +114,32 @@ async function ensureSchema(client) {
 
     CREATE TABLE IF NOT EXISTS review_projects (
       id TEXT PRIMARY KEY,
-      project_id TEXT,
       position INTEGER NOT NULL,
-      payload JSONB NOT NULL
+      title TEXT NOT NULL,
+      organization TEXT NOT NULL,
+      protocol_id TEXT NOT NULL,
+      blind_mode BOOLEAN NOT NULL,
+      abstract_required_votes INTEGER NOT NULL,
+      full_text_required_votes INTEGER NOT NULL,
+      extraction_required_votes INTEGER NOT NULL,
+      maybe_policy TEXT NOT NULL,
+      reviewers INTEGER NOT NULL,
+      last_event TEXT NOT NULL,
+      description TEXT NOT NULL,
+      search_strategies TEXT NOT NULL,
+      status TEXT NOT NULL,
+      stage TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      owner_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      member_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at_text TEXT NOT NULL,
+      updated_at_text TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      records_total INTEGER NOT NULL,
+      records_screened INTEGER NOT NULL,
+      conflicts INTEGER NOT NULL,
+      studies_included INTEGER NOT NULL,
+      payload JSONB
     );
 
     CREATE TABLE IF NOT EXISTS import_batches (
@@ -152,15 +154,45 @@ async function ensureSchema(client) {
       project_id TEXT,
       import_batch_id TEXT,
       position INTEGER NOT NULL,
-      payload JSONB NOT NULL
+      import_item_id INTEGER,
+      title TEXT NOT NULL,
+      abstract TEXT NOT NULL,
+      authors JSONB NOT NULL DEFAULT '[]'::jsonb,
+      journal TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      doi TEXT NOT NULL,
+      source TEXT NOT NULL,
+      stage TEXT NOT NULL,
+      keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+      raw_citation TEXT,
+      parser_warnings JSONB,
+      payload JSONB
     );
 
     CREATE TABLE IF NOT EXISTS review_reports (
       id TEXT PRIMARY KEY,
-      project_id TEXT,
-      study_id TEXT,
+      project_id TEXT NOT NULL,
+      study_id TEXT NOT NULL,
       position INTEGER NOT NULL,
-      payload JSONB NOT NULL
+      title TEXT NOT NULL,
+      citation TEXT NOT NULL,
+      retrieval_status TEXT NOT NULL,
+      pdf_name TEXT,
+      file_name TEXT,
+      mime_type TEXT,
+      size INTEGER,
+      checksum TEXT,
+      storage_path TEXT,
+      uploaded_by_user_id TEXT,
+      uploaded_by_user_name TEXT,
+      full_text_status TEXT,
+      full_text_status_label TEXT,
+      full_text_vote_count INTEGER,
+      full_text_required_votes INTEGER,
+      is_pdf_validated BOOLEAN NOT NULL,
+      validation_notes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      notes INTEGER NOT NULL,
+      payload JSONB
     );
 
     CREATE TABLE IF NOT EXISTS review_extraction_templates (
@@ -221,6 +253,66 @@ async function ensureSchema(client) {
       state_json JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS organization TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS protocol_id TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS blind_mode BOOLEAN;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS abstract_required_votes INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS full_text_required_votes INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS extraction_required_votes INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS maybe_policy TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS reviewers INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS last_event TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS description TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS search_strategies TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS status TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS stage TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS owner_id TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS owner_ids JSONB;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS member_ids JSONB;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS created_at_text TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS updated_at_text TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS due_date TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS records_total INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS records_screened INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS conflicts INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS studies_included INTEGER;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS payload JSONB;
+
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS import_item_id INTEGER;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS abstract TEXT;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS authors JSONB;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS journal TEXT;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS year INTEGER;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS doi TEXT;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS source TEXT;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS stage TEXT;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS keywords JSONB;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS raw_citation TEXT;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS parser_warnings JSONB;
+    ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS payload JSONB;
+
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS citation TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS retrieval_status TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS pdf_name TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS file_name TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS mime_type TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS size INTEGER;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS checksum TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS storage_path TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS uploaded_by_user_id TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS uploaded_by_user_name TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS full_text_status TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS full_text_status_label TEXT;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS full_text_vote_count INTEGER;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS full_text_required_votes INTEGER;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS is_pdf_validated BOOLEAN;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS validation_notes JSONB;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS notes INTEGER;
+    ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS payload JSONB;
   `);
 }
 
@@ -258,6 +350,147 @@ async function readRows(client, tableName) {
   return result.rows.map((row) => JSON.parse(row.payload));
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function readJsonObject(value) {
+  if (value && typeof value === "object") {
+    return value;
+  }
+  return null;
+}
+
+async function readProjects(client) {
+  const result = await client.query(
+    `
+      SELECT
+        id, title, organization, protocol_id, blind_mode,
+        abstract_required_votes, full_text_required_votes, extraction_required_votes,
+        maybe_policy, reviewers, last_event, description, search_strategies,
+        status, stage, owner_id, owner_ids, member_ids,
+        created_at_text, updated_at_text, due_date,
+        records_total, records_screened, conflicts, studies_included,
+        payload
+      FROM review_projects
+      ORDER BY position ASC
+    `
+  );
+
+  return result.rows.map((row) => {
+    const payload = readJsonObject(row.payload);
+    return {
+      id: row.id,
+      title: row.title ?? payload?.title ?? "",
+      organization: row.organization ?? payload?.organization ?? "",
+      protocolId: row.protocol_id ?? payload?.protocolId ?? "",
+      blindMode: row.blind_mode ?? payload?.blindMode ?? false,
+      abstractRequiredVotes: row.abstract_required_votes ?? payload?.abstractRequiredVotes ?? 2,
+      fullTextRequiredVotes: row.full_text_required_votes ?? payload?.fullTextRequiredVotes ?? 2,
+      extractionRequiredVotes: row.extraction_required_votes ?? payload?.extractionRequiredVotes ?? 2,
+      maybePolicy: row.maybe_policy ?? payload?.maybePolicy ?? "advance_to_full_text",
+      reviewers: row.reviewers ?? payload?.reviewers ?? 0,
+      lastEvent: row.last_event ?? payload?.lastEvent ?? "",
+      description: row.description ?? payload?.description ?? "",
+      searchStrategies: row.search_strategies ?? payload?.searchStrategies ?? "",
+      status: row.status ?? payload?.status ?? "draft",
+      stage: row.stage ?? payload?.stage ?? "setup",
+      ownerId: row.owner_id ?? payload?.ownerId ?? "",
+      ownerIds: asArray(row.owner_ids ?? payload?.ownerIds),
+      memberIds: asArray(row.member_ids ?? payload?.memberIds),
+      createdAt: row.created_at_text ?? payload?.createdAt ?? "",
+      updatedAt: row.updated_at_text ?? payload?.updatedAt ?? "",
+      dueDate: row.due_date ?? payload?.dueDate ?? "",
+      recordsTotal: row.records_total ?? payload?.recordsTotal ?? 0,
+      recordsScreened: row.records_screened ?? payload?.recordsScreened ?? 0,
+      conflicts: row.conflicts ?? payload?.conflicts ?? 0,
+      studiesIncluded: row.studies_included ?? payload?.studiesIncluded ?? 0
+    };
+  });
+}
+
+async function readStudies(client) {
+  const result = await client.query(
+    `
+      SELECT
+        id, import_item_id, project_id, import_batch_id,
+        title, abstract, authors, journal, year, doi, source, stage,
+        keywords, raw_citation, parser_warnings, payload
+      FROM review_studies
+      ORDER BY position ASC
+    `
+  );
+
+  return result.rows.map((row) => {
+    const payload = readJsonObject(row.payload);
+    const study = {
+      id: row.id,
+      projectId: row.project_id ?? payload?.projectId,
+      importBatchId: row.import_batch_id ?? payload?.importBatchId,
+      title: row.title ?? payload?.title ?? "",
+      abstract: row.abstract ?? payload?.abstract ?? "",
+      authors: asArray(row.authors ?? payload?.authors),
+      journal: row.journal ?? payload?.journal ?? "",
+      year: row.year ?? payload?.year ?? 0,
+      doi: row.doi ?? payload?.doi ?? "",
+      source: row.source ?? payload?.source ?? "",
+      stage: row.stage ?? payload?.stage ?? "title_abstract",
+      keywords: asArray(row.keywords ?? payload?.keywords),
+      rawCitation: row.raw_citation ?? payload?.rawCitation,
+      parserWarnings: asArray(row.parser_warnings ?? payload?.parserWarnings)
+    };
+
+    const importItemId = row.import_item_id ?? payload?.importItemId;
+    if (typeof importItemId === "number") {
+      study.importItemId = importItemId;
+    }
+
+    return study;
+  });
+}
+
+async function readReports(client) {
+  const result = await client.query(
+    `
+      SELECT
+        id, project_id, study_id, title, citation, retrieval_status,
+        pdf_name, file_name, mime_type, size, checksum, storage_path,
+        uploaded_by_user_id, uploaded_by_user_name,
+        full_text_status, full_text_status_label, full_text_vote_count, full_text_required_votes,
+        is_pdf_validated, validation_notes, notes, payload
+      FROM review_reports
+      ORDER BY position ASC
+    `
+  );
+
+  return result.rows.map((row) => {
+    const payload = readJsonObject(row.payload);
+    return {
+      id: row.id,
+      projectId: row.project_id ?? payload?.projectId ?? "",
+      studyId: row.study_id ?? payload?.studyId ?? "",
+      title: row.title ?? payload?.title ?? "",
+      citation: row.citation ?? payload?.citation ?? "",
+      retrievalStatus: row.retrieval_status ?? payload?.retrievalStatus ?? "not_sought",
+      pdfName: row.pdf_name ?? payload?.pdfName,
+      fileName: row.file_name ?? payload?.fileName,
+      mimeType: row.mime_type ?? payload?.mimeType,
+      size: row.size ?? payload?.size,
+      checksum: row.checksum ?? payload?.checksum,
+      storagePath: row.storage_path ?? payload?.storagePath,
+      uploadedByUserId: row.uploaded_by_user_id ?? payload?.uploadedByUserId,
+      uploadedByUserName: row.uploaded_by_user_name ?? payload?.uploadedByUserName,
+      fullTextStatus: row.full_text_status ?? payload?.fullTextStatus,
+      fullTextStatusLabel: row.full_text_status_label ?? payload?.fullTextStatusLabel,
+      fullTextVoteCount: row.full_text_vote_count ?? payload?.fullTextVoteCount,
+      fullTextRequiredVotes: row.full_text_required_votes ?? payload?.fullTextRequiredVotes,
+      isPdfValidated: row.is_pdf_validated ?? payload?.isPdfValidated ?? false,
+      validationNotes: asArray(row.validation_notes ?? payload?.validationNotes),
+      notes: row.notes ?? payload?.notes ?? 0
+    };
+  });
+}
+
 async function readRelationalState(client) {
   const usersResult = await client.query(
     `
@@ -269,10 +502,10 @@ async function readRelationalState(client) {
   );
   const authSettingsResult = await client.query(`SELECT registration_enabled FROM auth_settings WHERE id = 1`);
 
-  const projects = await readRows(client, "review_projects");
+  const projects = await readProjects(client);
   const imports = await readRows(client, "import_batches");
-  const studies = await readRows(client, "review_studies");
-  const reports = await readRows(client, "review_reports");
+  const studies = await readStudies(client);
+  const reports = await readReports(client);
   const extractionTemplates = await readRows(client, "review_extraction_templates");
   const extractionResponses = await readRows(client, "review_extraction_responses");
   const extractionConsensus = await readRows(client, "review_extraction_consensus");
@@ -398,6 +631,153 @@ async function writeAuthSettings(client, state) {
   );
 }
 
+async function writeProjects(client, state) {
+  const projects = Array.isArray(state.projects) ? state.projects : [];
+  for (let index = 0; index < projects.length; index += 1) {
+    const project = projects[index];
+    await client.query(
+      `
+        INSERT INTO review_projects (
+          id, position, title, organization, protocol_id, blind_mode,
+          abstract_required_votes, full_text_required_votes, extraction_required_votes,
+          maybe_policy, reviewers, last_event, description, search_strategies,
+          status, stage, owner_id, owner_ids, member_ids,
+          created_at_text, updated_at_text, due_date,
+          records_total, records_screened, conflicts, studies_included,
+          payload
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6,
+          $7, $8, $9,
+          $10, $11, $12, $13, $14,
+          $15, $16, $17, $18::jsonb, $19::jsonb,
+          $20, $21, $22,
+          $23, $24, $25, $26,
+          $27::jsonb
+        )
+      `,
+      [
+        project.id,
+        index,
+        project.title,
+        project.organization,
+        project.protocolId,
+        Boolean(project.blindMode),
+        Number(project.abstractRequiredVotes ?? 2),
+        Number(project.fullTextRequiredVotes ?? 2),
+        Number(project.extractionRequiredVotes ?? 2),
+        project.maybePolicy,
+        Number(project.reviewers ?? 0),
+        project.lastEvent,
+        project.description,
+        project.searchStrategies ?? "",
+        project.status,
+        project.stage,
+        project.ownerId,
+        JSON.stringify(asArray(project.ownerIds)),
+        JSON.stringify(asArray(project.memberIds)),
+        project.createdAt,
+        project.updatedAt,
+        project.dueDate,
+        Number(project.recordsTotal ?? 0),
+        Number(project.recordsScreened ?? 0),
+        Number(project.conflicts ?? 0),
+        Number(project.studiesIncluded ?? 0),
+        JSON.stringify(project)
+      ]
+    );
+  }
+}
+
+async function writeStudies(client, state) {
+  const studies = Array.isArray(state.studies) ? state.studies : [];
+  for (let index = 0; index < studies.length; index += 1) {
+    const study = studies[index];
+    await client.query(
+      `
+        INSERT INTO review_studies (
+          id, project_id, import_batch_id, position, import_item_id,
+          title, abstract, authors, journal, year, doi, source, stage,
+          keywords, raw_citation, parser_warnings, payload
+        ) VALUES (
+          $1, $2, $3, $4, $5,
+          $6, $7, $8::jsonb, $9, $10, $11, $12, $13,
+          $14::jsonb, $15, $16::jsonb, $17::jsonb
+        )
+      `,
+      [
+        study.id,
+        study.projectId ?? null,
+        study.importBatchId ?? null,
+        index,
+        typeof study.importItemId === "number" ? study.importItemId : null,
+        study.title,
+        study.abstract,
+        JSON.stringify(asArray(study.authors)),
+        study.journal,
+        Number(study.year ?? 0),
+        study.doi,
+        study.source,
+        study.stage,
+        JSON.stringify(asArray(study.keywords)),
+        study.rawCitation ?? null,
+        study.parserWarnings ? JSON.stringify(asArray(study.parserWarnings)) : null,
+        JSON.stringify(study)
+      ]
+    );
+  }
+}
+
+async function writeReports(client, state) {
+  const reports = Array.isArray(state.reports) ? state.reports : [];
+  for (let index = 0; index < reports.length; index += 1) {
+    const report = reports[index];
+    await client.query(
+      `
+        INSERT INTO review_reports (
+          id, project_id, study_id, position,
+          title, citation, retrieval_status,
+          pdf_name, file_name, mime_type, size, checksum, storage_path,
+          uploaded_by_user_id, uploaded_by_user_name,
+          full_text_status, full_text_status_label, full_text_vote_count, full_text_required_votes,
+          is_pdf_validated, validation_notes, notes, payload
+        ) VALUES (
+          $1, $2, $3, $4,
+          $5, $6, $7,
+          $8, $9, $10, $11, $12, $13,
+          $14, $15,
+          $16, $17, $18, $19,
+          $20, $21::jsonb, $22, $23::jsonb
+        )
+      `,
+      [
+        report.id,
+        report.projectId,
+        report.studyId,
+        index,
+        report.title,
+        report.citation,
+        report.retrievalStatus,
+        report.pdfName ?? null,
+        report.fileName ?? null,
+        report.mimeType ?? null,
+        typeof report.size === "number" ? report.size : null,
+        report.checksum ?? null,
+        report.storagePath ?? null,
+        report.uploadedByUserId ?? null,
+        report.uploadedByUserName ?? null,
+        report.fullTextStatus ?? null,
+        report.fullTextStatusLabel ?? null,
+        typeof report.fullTextVoteCount === "number" ? report.fullTextVoteCount : null,
+        typeof report.fullTextRequiredVotes === "number" ? report.fullTextRequiredVotes : null,
+        Boolean(report.isPdfValidated),
+        JSON.stringify(asArray(report.validationNotes)),
+        Number(report.notes ?? 0),
+        JSON.stringify(report)
+      ]
+    );
+  }
+}
+
 async function writeReviewTables(client, state) {
   for (const config of tableConfigs) {
     const items = Array.isArray(state[config.arrayKey]) ? state[config.arrayKey] : [];
@@ -458,6 +838,9 @@ async function run() {
     await writeAuthSettings(client, nextState);
     await writeUsers(client, nextState);
     await truncateReviewStateTables(client);
+    await writeProjects(client, nextState);
+    await writeStudies(client, nextState);
+    await writeReports(client, nextState);
     await writeReviewTables(client, nextState);
     await client.query("COMMIT");
   } finally {

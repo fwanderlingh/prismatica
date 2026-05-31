@@ -960,8 +960,8 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
 
   const title = input.title?.trim() ?? "";
   const dueDate = input.dueDate?.trim() ?? "";
-  if (!title || !isEuDate(dueDate)) {
-    throw new ApiError("A project title and dd-mm-yyyy due date are required.");
+  if (!title || (dueDate.length > 0 && !isEuDate(dueDate))) {
+    throw new ApiError("A project title is required. Due dates must use dd-mm-yyyy when provided.");
   }
 
   const knownUserIds = new Set(state.users.map((user) => user.id));

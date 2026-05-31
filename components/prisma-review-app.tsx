@@ -356,7 +356,7 @@ const emptyProjectForm: NewProjectForm = {
   protocolId: "",
   description: "",
   searchStrategies: "",
-  dueDate: "30-09-2026",
+  dueDate: "",
   blindMode: true,
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
@@ -1401,7 +1401,8 @@ export function PrismaReviewApp() {
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = newProjectForm.title.trim();
-    if (!title || !isEuDate(newProjectForm.dueDate)) {
+    const dueDate = newProjectForm.dueDate.trim();
+    if (!title || (dueDate.length > 0 && !isEuDate(dueDate))) {
       return;
     }
 
@@ -2038,10 +2039,12 @@ export function PrismaReviewApp() {
                     <User size={15} />
                     {ownerNames.length > 0 ? ownerNames.join(", ") : "Unassigned owner"}
                   </span>
-                  <span>
-                    <CalendarClock size={15} />
-                    Due {formatEuDate(project.dueDate)}
-                  </span>
+                  {project.dueDate ? (
+                    <span>
+                      <CalendarClock size={15} />
+                      Due {formatEuDate(project.dueDate)}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="progressBlock">
                   <span>{progress}% screened · {formatNumber(project.recordsScreened)} of {formatNumber(project.recordsTotal)} records</span>
@@ -3235,7 +3238,12 @@ export function PrismaReviewApp() {
   }
 
   function renderNewProject() {
-    const canCreate = newProjectForm.title.trim().length > 0 && isEuDate(newProjectForm.dueDate);
+    const dueDate = newProjectForm.dueDate.trim();
+    const hasTitle = newProjectForm.title.trim().length > 0;
+    const hasValidDueDate = dueDate.length === 0 || isEuDate(dueDate);
+    const canCreate = hasTitle && hasValidDueDate;
+    const creationStatus = canCreate ? "Ready to create" : hasTitle ? "Use dd-mm-yyyy if you add a due date" : "Review title required";
+    const creationSummary = "New reviews start as drafts with zero imports, open settings, and the selected users as members.";
 
     return (
       <div className="viewStack">
@@ -3252,6 +3260,17 @@ export function PrismaReviewApp() {
         </section>
 
         <form className="projectForm" onSubmit={createProject}>
+          <section className="panel formActions formActionsProminent">
+            <div>
+              <strong>{creationStatus}</strong>
+              <span>{creationSummary}</span>
+            </div>
+            <button className="primaryButton" type="submit" disabled={!canCreate}>
+              <Plus size={17} />
+              Create Review
+            </button>
+          </section>
+
           <section className="panel">
             <SectionTitle icon={FileText} title="Review Details" action="Required setup" />
             <div className="formGrid">
@@ -3393,8 +3412,8 @@ export function PrismaReviewApp() {
 
           <section className="panel formActions">
             <div>
-              <strong>{canCreate ? "Ready to create" : "Title and dd-mm-yyyy due date required"}</strong>
-              <span>New reviews start as drafts with zero imports, open settings, and the selected users as members.</span>
+              <strong>{creationStatus}</strong>
+              <span>{creationSummary}</span>
             </div>
             <button className="primaryButton" type="submit" disabled={!canCreate}>
               <Plus size={17} />

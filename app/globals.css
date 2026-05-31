@@ -2626,6 +2626,21 @@ select:disabled {
   align-items: center;
 }
 
+.formActionsProminent {
+  position: sticky;
+  top: calc(16px * var(--ui-scale));
+  z-index: 3;
+  border-color: color-mix(in srgb, var(--teal) 24%, var(--border));
+  background-color: var(--surface);
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--teal-soft) 78%, var(--surface) 22%), var(--surface));
+  background-clip: padding-box;
+  box-shadow: 0 calc(12px * var(--ui-scale)) calc(28px * var(--ui-scale)) rgba(15, 23, 42, 0.08);
+}
+
+.formActionsProminent .primaryButton {
+  min-width: calc(190px * var(--ui-scale));
+}
+
 .formActions strong,
 .formActions span {
   display: block;
