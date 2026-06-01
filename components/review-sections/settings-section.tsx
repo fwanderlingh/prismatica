@@ -122,6 +122,15 @@ export function SettingsSection({
         </button>
       </section>
 
+      {projectSettingsMessage ? (
+        <section className="panel">
+          <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+            {settingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{projectSettingsMessage}</span>
+          </div>
+        </section>
+      ) : null}
+
       <form className="projectForm" id="project-settings-form" onSubmit={updateProjectSettings}>
         <section className="panel">
           <SectionTitle icon={FileText} title="Review Details" action={canManageProject ? "Editable" : "Owner only"} />
@@ -179,12 +188,6 @@ export function SettingsSection({
               placeholder={"Paste exact database searches, keywords, Boolean strings, dates, filters, and platform notes.\n\nExample:\nPubMed (2026-05-29)\n(\"underwater mapping\" OR sonar) AND (3D OR reconstruction)\nFilters: English; 2015-2026"}
             />
           </label>
-          {projectSettingsMessage ? (
-            <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-              {settingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{projectSettingsMessage}</span>
-            </div>
-          ) : null}
         </section>
 
         <section className="settingsGrid">
