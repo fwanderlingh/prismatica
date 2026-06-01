@@ -100,6 +100,21 @@ import {
 import { FullTextSection } from "./review-sections/full-text-section";
 import { ExtractionSection } from "./review-sections/extraction-section";
 import { ConsensusSection } from "./review-sections/consensus-section";
+import { DashboardSection } from "./review-sections/dashboard-section";
+import { ProjectDashboardSection } from "./review-sections/project-dashboard-section";
+import { ExportsSection } from "./review-sections/exports-section";
+import { AuditTrailSection } from "./review-sections/audit-trail-section";
+import { AboutSection } from "./review-sections/about-section";
+import { AdminReviewsSection } from "./review-sections/admin-reviews-section";
+import { RegisteredUsersSection } from "./review-sections/registered-users-section";
+import { ImportEditorSection } from "./review-sections/import-editor-section";
+import { ImportsSection } from "./review-sections/imports-section";
+import { DedupSection } from "./review-sections/dedup-section";
+import { ScreeningSection } from "./review-sections/screening-section";
+import { RiskSection } from "./review-sections/risk-section";
+import { LoginShell } from "./review-sections/login-shell";
+import { AppSidebar } from "./review-sections/app-sidebar";
+import { AppShell } from "./review-sections/app-shell";
 import { SettingsSection } from "./review-sections/settings-section";
 import { ProfileSection } from "./review-sections/profile-section";
 import { NewProjectSection, type NewProjectInviteDraft } from "./review-sections/new-project-section";
@@ -453,7 +468,7 @@ export function PrismaReviewApp() {
   const [extractionConsensus, setExtractionConsensus] = useState<ExtractionConsensus[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
-  const [teamUserId, setTeamUserId] = useState("");
+  const [teamUserSearch, setTeamUserSearch] = useState("");
   const [inviteForm, setInviteForm] = useState({
     name: "",
     email: "",
@@ -539,6 +554,7 @@ export function PrismaReviewApp() {
 
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
   const { newProjectForm, canCreate, creationStatus, creationSummary, updateNewProjectForm, syncNewProjectUserContext, resetNewProjectForm } = useNewProjectState(currentUser);
+  const normalizedTeamUserSearch = teamUserSearch.trim().toLowerCase();
   const normalizedNewProjectMemberSearch = newProjectMemberSearch.trim().toLowerCase();
   const newProjectMemberSearchResults = useMemo(
     () => {
@@ -562,6 +578,21 @@ export function PrismaReviewApp() {
     [currentUser.id, currentUser.isAdmin, projects]
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
+  const teamUserSearchResults = useMemo(
+    () => {
+      if (normalizedTeamUserSearch.length < 2) {
+        return [];
+      }
+      return users
+        .filter(
+          (user) =>
+            !selectedProject.memberIds.includes(user.id) &&
+            (user.name.toLowerCase().includes(normalizedTeamUserSearch) || user.email.toLowerCase().includes(normalizedTeamUserSearch))
+        )
+        .slice(0, 8);
+    },
+    [normalizedTeamUserSearch, selectedProject.memberIds, users]
+  );
   const isProjectView = isProjectScopedView(activeView);
   const hasProjectSeedData = selectedProject.id === "demo-review";
   const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
@@ -1229,13 +1260,8 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function addExistingUserToProject() {
-    if (!teamUserId) {
-      setTeamMessage("Choose a user to add.");
-      return;
-    }
-
-    const user = users.find((candidate) => candidate.id === teamUserId);
+  async function addExistingUserToProject(userId: string) {
+    const user = users.find((candidate) => candidate.id === userId);
     if (!user) {
       setTeamMessage("That user was not found.");
       return;
@@ -1253,7 +1279,7 @@ export function PrismaReviewApp() {
       `Added ${user.name} to project team`
     );
     if (didUpdate) {
-      setTeamUserId("");
+      setTeamUserSearch("");
       setTeamMessage(`${user.name} added to ${selectedProject.title}.`);
     }
   }
@@ -2050,495 +2076,77 @@ export function PrismaReviewApp() {
 
   function renderPortfolioDashboard() {
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Review dashboard</p>
-            <h1>Review Projects</h1>
-            <p className="subtle">
-              {currentUser.name} · {currentUser.organization} · {userProjects.length} accessible reviews{currentUser.isAdmin ? " · admin view" : ""}
-            </p>
-          </div>
-        </section>
-
-        {dashboardMessage ? (
-          <section className="panel">
-            <div className={dashboardMessage.startsWith("Deleted review") ? "validationItem ok" : "validationItem blocked"}>
-              {dashboardMessage.startsWith("Deleted review") ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{dashboardMessage}</span>
-            </div>
-          </section>
-        ) : null}
-
-        {userProjects.length > 0 ? (
-        <section className="reviewGrid">
-          {userProjects.map((project) => {
-            const ownerNames = project.ownerIds
-              .map((ownerId) => users.find((user) => user.id === ownerId)?.name)
-              .filter((name): name is string => Boolean(name));
-            const progress = project.recordsTotal > 0 ? Math.round((project.recordsScreened / project.recordsTotal) * 100) : 0;
-            return (
-              <article className="panel projectCard" key={project.id}>
-                <div className="projectCardHeader">
-                  <div>
-                    <Badge label={formatProjectPhase(project.stage)} tone={projectPhaseBadgeTone(project.stage)} />
-                    <h2>{project.title}</h2>
-                    <p>{project.description}</p>
-                  </div>
-                  <button className="ghostButton iconOnly" type="button" title="Open review project" onClick={() => openProject(project.id)}>
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-                <div className="projectMeta">
-                  <span>
-                    <Building2 size={15} />
-                    {project.organization}
-                  </span>
-                  <span>
-                    <User size={15} />
-                    {ownerNames.length > 0 ? ownerNames.join(", ") : "Unassigned owner"}
-                  </span>
-                  {project.dueDate ? (
-                    <span>
-                      <CalendarClock size={15} />
-                      Due {formatEuDate(project.dueDate)}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="progressBlock">
-                  <span>{progress}% screened · {formatNumber(project.recordsScreened)} of {formatNumber(project.recordsTotal)} records</span>
-                  <div className="progressTrack">
-                    <i style={{ width: `${progress}%` }} />
-                  </div>
-                </div>
-                <div className="buttonRow">
-                  <button className="primaryButton" type="button" onClick={() => openProject(project.id, "projectDashboard")}>
-                    <LayoutDashboard size={17} />
-                    Open
-                  </button>
-                  <button className="ghostButton" type="button" onClick={() => openProject(project.id, "screening")}>
-                    <FileSearch size={17} />
-                    Screen
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </section>
-        ) : (
-        <section className="panel">
-          <EmptyState
-            icon={FolderPlus}
-            title="No review projects yet"
-            description="Create your first review project to start importing citations and assigning reviewers."
-          />
-        </section>
-        )}
-      </div>
+      <DashboardSection
+        currentUser={currentUser}
+        userProjects={userProjects}
+        users={users}
+        dashboardMessage={dashboardMessage}
+        formatProjectPhase={formatProjectPhase}
+        projectPhaseBadgeTone={projectPhaseBadgeTone}
+        openProject={openProject}
+        formatEuDate={formatEuDate}
+        formatNumber={formatNumber}
+      />
     );
   }
 
   function renderProjectDashboard() {
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Project dashboard</p>
-            <h1>{selectedProject.title}</h1>
-            <p className="subtle">
-              {selectedProject.protocolId} · {selectedProject.organization} · {formatProjectPhase(selectedProject.stage)}
-            </p>
-          </div>
-          <div className="toolbarCluster">
-            <button
-              className="ghostButton"
-              type="button"
-              title={workflowConflicts.length > 0 ? "Open the first unresolved conflict" : "No open conflicts"}
-              onClick={() => {
-                if (workflowConflicts.length > 0) {
-                  openConflict(workflowConflicts[0]);
-                }
-              }}
-            >
-              <Bell size={17} />
-              Alerts ({workflowConflicts.length})
-            </button>
-            <button className="primaryButton" type="button" title="Open export preview" onClick={() => setActiveView("exports")}>
-              <Download size={17} />
-              Export
-            </button>
-          </div>
-        </section>
-
-        <section className="metricGrid" aria-label="Project metrics">
-          <Metric label="Records identified" value={formatNumber(recordsIdentified)} tone="blue" detail="Database, register, and manual sources" />
-          <Metric label="Duplicates removed" value={activeCounts.duplicateRecordsRemoved.toString()} tone="teal" detail="Preserved for PRISMA provenance" />
-          <Metric label="Records screened" value={activeCounts.recordsScreened.toString()} tone="amber" detail={`${activeCounts.recordsExcluded} excluded at title/abstract`} />
-          <Metric label="Studies included" value={activeCounts.studiesIncluded.toString()} tone="green" detail={`${activeCounts.studiesExtracted} extracted`} />
-        </section>
-
-        {workflowConflicts.length > 0 ? (
-          <section className="panel">
-            <SectionTitle icon={AlertTriangle} title="Conflict Resolution" action={`${workflowConflicts.length} open`} />
-            <div className="conflictList">
-              {workflowConflicts.map((conflict) => (
-                <article className="conflictItem" key={conflict.id}>
-                  <div className="conflictMain">
-                    <div>
-                      <Badge label={formatConflictStage(conflict.stage)} tone={conflict.stage === "full_text" ? "info" : "warning"} />
-                      <h3>{conflict.title}</h3>
-                      <p>{conflict.subtitle}</p>
-                    </div>
-                    <div className="voteStrip" aria-label={`${conflict.title} votes`}>
-                      {conflict.decisions.map((decision) => (
-                        <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
-                          <strong>{decision.userName}</strong>
-                          {formatDecision(decision.decisionValue)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <button className="ghostButton" type="button" onClick={() => openConflict(conflict)}>
-                    <ChevronRight size={17} />
-                    Resolve
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <section className="dashboardGrid">
-          <div className="panel largePanel">
-            <SectionTitle icon={Activity} title="Review Workflow" action="Live state machine" />
-            <div className="workflowMap" aria-label="Review workflow">
-              {[
-                ["Import", `${formatNumber(recordsIdentified)} records`, getWorkflowStepState("imports", selectedProject.stage)],
-                ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
-                ["Screen", `${activeCounts.recordsScreened} records`, getWorkflowStepState("screening", selectedProject.stage)],
-                ["Inclusion", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
-                [
-                  "Extract",
-                  `${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`,
-                  getWorkflowStepState("extraction", selectedProject.stage)
-                ],
-                [
-                  "Export",
-                  exportConsistency.failedCount > 0 ? `${exportConsistency.failedCount} checks need review` : "PRISMA 2020 ready",
-                  activeCounts.studiesIncluded === 0
-                    ? "pending"
-                    : exportConsistency.failedCount > 0
-                      ? "warning"
-                      : "complete"
-                ]
-              ].map(([label, value, status]) => (
-                <div className={`workflowNode ${status}`} key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
-            </div>
-            <div className="stateRows">
-              <StatusRow label="Review phase" value={formatProjectPhase(selectedProject.stage)} tone={projectPhaseStatusTone(selectedProject.stage)} />
-              <StatusRow
-                label="Extraction progress"
-                value={`${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`}
-                tone={
-                  activeCounts.studiesIncluded === 0
-                    ? "info"
-                    : activeCounts.studiesExtracted >= activeCounts.studiesIncluded
-                      ? "secure"
-                      : "warning"
-                }
-              />
-              <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Server-enforced visibility model" : "Disabled"} tone="secure" />
-              <StatusRow label="Maybe policy" value={formatMaybePolicy(selectedProject.maybePolicy)} tone="info" />
-              <StatusRow label="Unresolved conflicts" value={`${selectedProject.conflicts} open conflicts`} tone="warning" />
-            </div>
-          </div>
-
-          <div className="panel">
-            <SectionTitle icon={History} title="Audit Trail" action={projectEvents.length > 5 ? `Latest 5 of ${projectEvents.length}` : "Append-only"} />
-            {projectEvents.length > 0 ? (
-              <>
-                <div className="eventList">
-                  {latestProjectEvents.map((event) => (
-                    <article className="eventItem" key={event.id}>
-                      <div>
-                        <strong>{event.action}</strong>
-                        <span>
-                          {event.actor} · {formatAuditEntityLabel(event, selectedProject, projectScreeningStudies, projectReportQueue)}
-                        </span>
-                      </div>
-                      <time>{formatAuditTime(event.time)}</time>
-                    </article>
-                  ))}
-                </div>
-                <div className="auditTrailActions">
-                  <button className="ghostButton" type="button" onClick={() => setActiveView("audit")}>
-                    <History size={17} />
-                    Full Audit
-                  </button>
-                </div>
-              </>
-            ) : (
-              <EmptyState
-                icon={History}
-                title="No project events yet"
-                description="Imports, decisions, adjudications, and exports will create append-only audit events for this review."
-              />
-            )}
-          </div>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={Users} title="Reviewer Activity" action="Per-user project stats" />
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Reviewer</th>
-                  <th>Screened</th>
-                  <th>Uploaded PDF</th>
-                  <th>Full Text Reviews</th>
-                  <th>Extractions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {projectUserStats.map((row) => (
-                  <tr key={row.user.id}>
-                    <td>
-                      <strong>{row.user.name}</strong>
-                      <span>{row.user.title}</span>
-                    </td>
-                    <td>{row.screened}</td>
-                    <td>{row.uploadedPdf}</td>
-                    <td>{row.fullTextReviews}</td>
-                    <td>{row.extractions}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={BarChart3} title="PRISMA Count Preview" action="Validated counts" />
-          <PrismaFlow counts={activeCounts} reportsExcludedTotal={reportsExcludedTotal} />
-        </section>
-      </div>
+      <ProjectDashboardSection
+        selectedProject={selectedProject}
+        recordsIdentified={recordsIdentified}
+        activeCounts={activeCounts}
+        reportsExcludedTotal={reportsExcludedTotal}
+        workflowConflicts={workflowConflicts}
+        exportFailedCount={exportConsistency.failedCount}
+        projectEvents={projectEvents}
+        latestProjectEvents={latestProjectEvents}
+        projectScreeningStudies={projectScreeningStudies}
+        projectReportQueue={projectReportQueue}
+        projectUserStats={projectUserStats}
+        formatNumber={formatNumber}
+        formatProjectPhase={formatProjectPhase}
+        projectPhaseStatusTone={projectPhaseStatusTone}
+        formatMaybePolicy={formatMaybePolicy}
+        getWorkflowStepState={getWorkflowStepState}
+        formatConflictStage={formatConflictStage}
+        decisionTone={decisionTone}
+        formatDecision={formatDecision}
+        formatAuditTime={formatAuditTime}
+        formatAuditEntityLabel={formatAuditEntityLabel}
+        openConflict={openConflict}
+        onOpenExport={() => setActiveView("exports")}
+        onOpenAudit={() => setActiveView("audit")}
+      />
     );
   }
 
   function renderImportEditor(batch: ImportBatch, batchStudies: Study[], warningMessages: string[]) {
-    const messageIsSuccess = /imported|updated|deleted|reviewed/i.test(importDetailMessage);
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand compactBand">
-          <div>
-            <p className="eyebrow">Import review</p>
-            <h1>{batch.filename}</h1>
-            <p className="subtle">
-              {batch.format.toUpperCase()} · {batch.records} records · uploaded by {batch.uploadedBy} on {batch.uploadedAt}
-            </p>
-          </div>
-          <div className="toolbarCluster">
-            <button className="ghostButton" type="button" onClick={closeImportEditor}>
-              <ArrowLeft size={17} />
-              Imports
-            </button>
-            <button className="dangerButton" type="button" onClick={() => deleteImportBatch(batch.id)}>
-              <Trash2 size={17} />
-              Delete Batch
-            </button>
-            <button className="primaryButton" type="button" disabled={batchStudies.length === 0} onClick={() => setActiveView("screening")}>
-              <FileSearch size={17} />
-              Open Screening
-            </button>
-          </div>
-        </section>
-
-        {importDetailMessage ? (
-          <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-            <span>{importDetailMessage}</span>
-          </div>
-        ) : null}
-
-        <section className="importEditorLayout">
-          <div className="panel">
-            <SectionTitle
-              icon={Database}
-              title="Batch Details"
-              action={batch.parserWarnings > 0 ? `${batch.parserWarnings} warnings` : "Ready"}
-            />
-            <form className="importDetailForm" onSubmit={updateImportDetails}>
-              <label>
-                <span>Source</span>
-                <input
-                  value={importDetailForm.sourceName}
-                  onChange={(event) => setImportDetailForm((previous) => ({ ...previous, sourceName: event.target.value }))}
-                />
-              </label>
-              <label>
-                <span>Filename</span>
-                <input
-                  value={importDetailForm.filename}
-                  onChange={(event) => setImportDetailForm((previous) => ({ ...previous, filename: event.target.value }))}
-                />
-              </label>
-              <div className="buttonRow">
-                <button className="primaryButton" type="submit">
-                  <Check size={17} />
-                  Save Details
-                </button>
-                {batch.parserWarnings > 0 ? (
-                  <button className="ghostButton" type="button" onClick={() => reviewImportWarnings(batch.id)}>
-                    <CheckCircle2 size={17} />
-                    Mark Reviewed
-                  </button>
-                ) : null}
-              </div>
-            </form>
-
-            <div className={batch.parserWarnings > 0 ? "warningBox importReviewBox" : "secureBox importReviewBox"}>
-              {batch.parserWarnings > 0 ? <AlertTriangle size={18} /> : <Check size={17} />}
-              <div>
-                <strong>{batch.status.replace("_", " ")}</strong>
-                {warningMessages.length > 0 ? (
-                  <ul className="plainList compactList">
-                    {warningMessages.slice(0, 10).map((warning) => (
-                      <li key={warning}>{warning}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span>No parser warnings are open for this batch.</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="panel">
-            <SectionTitle icon={FileText} title="Citation Entries" action={`${batchStudies.length} records`} />
-            {batchStudies.length > 0 ? (
-              <div className="importEntryList">
-                {batchStudies.map((study, index) => (
-                  <article className={studyEditId === study.id ? "importEntryCard editing" : "importEntryCard"} key={study.id}>
-                    {studyEditId === study.id ? (
-                      <form className="studyEditForm" onSubmit={updateImportStudy}>
-                        <span className="entryReference">Record {index + 1}</span>
-                        <label className="wideField">
-                          <span>Title</span>
-                          <input
-                            value={studyEditForm.title}
-                            onChange={(event) => setStudyEditForm((previous) => ({ ...previous, title: event.target.value }))}
-                          />
-                        </label>
-                        <div className="formGrid">
-                          <label>
-                            <span>Authors</span>
-                            <input
-                              value={studyEditForm.authors}
-                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, authors: event.target.value }))}
-                            />
-                          </label>
-                          <label>
-                            <span>Journal</span>
-                            <input
-                              value={studyEditForm.journal}
-                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, journal: event.target.value }))}
-                            />
-                          </label>
-                          <label>
-                            <span>Year</span>
-                            <input
-                              inputMode="numeric"
-                              value={studyEditForm.year}
-                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, year: event.target.value }))}
-                            />
-                          </label>
-                          <label>
-                            <span>DOI</span>
-                            <input
-                              value={studyEditForm.doi}
-                              onChange={(event) => setStudyEditForm((previous) => ({ ...previous, doi: event.target.value }))}
-                            />
-                          </label>
-                        </div>
-                        <label className="wideField">
-                          <span>Keywords</span>
-                          <input
-                            value={studyEditForm.keywords}
-                            onChange={(event) => setStudyEditForm((previous) => ({ ...previous, keywords: event.target.value }))}
-                          />
-                        </label>
-                        <label className="wideField">
-                          <span>Abstract</span>
-                          <textarea
-                            value={studyEditForm.abstract}
-                            onChange={(event) => setStudyEditForm((previous) => ({ ...previous, abstract: event.target.value }))}
-                          />
-                        </label>
-                        <div className="buttonRow">
-                          <button className="primaryButton" type="submit">
-                            <Check size={17} />
-                            Save Entry
-                          </button>
-                          <button
-                            className="ghostButton"
-                            type="button"
-                            onClick={() => {
-                              setStudyEditId("");
-                              setStudyEditForm(emptyStudyEditForm);
-                            }}
-                          >
-                            <X size={17} />
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <>
-                        <div className="importEntryHeader">
-                          <div>
-                            <span className="entryReference">Record {study.importItemId ?? index + 1}</span>
-                            <strong>{study.title}</strong>
-                            <span>
-                              {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} ·{" "}
-                              {study.year > 0 ? study.year : "Year needs review"}
-                            </span>
-                          </div>
-                          <div className="buttonRow">
-                            <button className="ghostButton" type="button" onClick={() => editImportStudy(study)}>
-                              <PenLine size={17} />
-                              Edit
-                            </button>
-                            <button className="dangerButton" type="button" onClick={() => deleteImportStudy(study)}>
-                              <Trash2 size={17} />
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                        <p className="importAbstract">{study.abstract}</p>
-                        {study.parserWarnings && study.parserWarnings.length > 0 ? (
-                          <ul className="plainList compactList">
-                            {study.parserWarnings.map((warning) => (
-                              <li key={warning}>{warning}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </>
-                    )}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon={FileText} title="No citation entries" description="This import batch does not contain screening records." />
-            )}
-          </div>
-        </section>
-      </div>
+      <ImportEditorSection
+        batch={batch}
+        batchStudies={batchStudies}
+        warningMessages={warningMessages}
+        importDetailMessage={importDetailMessage}
+        importDetailForm={importDetailForm}
+        studyEditId={studyEditId}
+        studyEditForm={studyEditForm}
+        closeImportEditor={closeImportEditor}
+        deleteImportBatch={deleteImportBatch}
+        openScreening={() => setActiveView("screening")}
+        updateImportDetails={updateImportDetails}
+        onImportSourceNameChange={(value) => setImportDetailForm((previous) => ({ ...previous, sourceName: value }))}
+        onImportFilenameChange={(value) => setImportDetailForm((previous) => ({ ...previous, filename: value }))}
+        reviewImportWarnings={reviewImportWarnings}
+        updateImportStudy={updateImportStudy}
+        onStudyEditFormChange={(updates) => setStudyEditForm((previous) => ({ ...previous, ...updates }))}
+        cancelStudyEdit={() => {
+          setStudyEditId("");
+          setStudyEditForm(emptyStudyEditForm);
+        }}
+        editImportStudy={editImportStudy}
+        deleteImportStudy={deleteImportStudy}
+      />
     );
   }
 
@@ -2557,369 +2165,57 @@ export function PrismaReviewApp() {
     }
 
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Import and provenance</p>
-            <h1>Record Intake</h1>
-            <p className="subtle">RIS and BibTeX batches remain traceable to the original payload.</p>
-          </div>
-          <div className="toolbarCluster">
-            <input
-              className="hiddenFileInput"
-              ref={bibtexInputRef}
-              type="file"
-              accept=".bib,.bibtex,text/x-bibtex,text/plain"
-              onChange={(event) => importCitationFile("bib", event)}
-            />
-            <input
-              className="hiddenFileInput"
-              ref={risInputRef}
-              type="file"
-              accept=".ris,application/x-research-info-systems,text/plain"
-              onChange={(event) => importCitationFile("ris", event)}
-            />
-            <button className="ghostButton" type="button" title="Upload an RIS file" onClick={() => risInputRef.current?.click()}>
-              <Upload size={17} />
-              RIS
-            </button>
-            <button className="ghostButton" type="button" title="Upload a BibTeX file" onClick={() => bibtexInputRef.current?.click()}>
-              <FileArchive size={17} />
-              BibTeX
-            </button>
-          </div>
-        </section>
-        {importMessage ? (
-          <div className={importMessage.startsWith("Importing") || importMessage.includes("imported") ? "validationItem ok" : "validationItem blocked"}>
-            {importMessage.startsWith("Importing") || importMessage.includes("imported") ? <Check size={17} /> : <AlertTriangle size={17} />}
-            <span>{importMessage}</span>
-          </div>
-        ) : null}
-
-        <section className="importGrid">
-          <div className="panel">
-            <SectionTitle icon={Database} title="Import Batches" action="Parser status" />
-            {projectImportBatches.length > 0 ? (
-              <div className="tableWrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Source</th>
-                      <th>Format</th>
-                      <th>Records</th>
-                      <th>Warnings</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projectImportBatches.map((batch) => (
-                      <tr className={batch.id === selectedReviewBatch?.id ? "activeImportRow" : undefined} key={batch.id}>
-                        <td>
-                          <strong>{batch.sourceName}</strong>
-                          <span>{batch.filename}</span>
-                        </td>
-                        <td>{batch.format.toUpperCase()}</td>
-                        <td>{batch.records}</td>
-                        <td>{batch.parserWarnings}</td>
-                        <td>
-                          <Badge label={batch.status.replace("_", " ")} tone={batch.status === "needs_review" ? "warning" : "success"} />
-                        </td>
-                        <td>
-                          <button className="ghostButton" type="button" onClick={() => openImportEditor(batch.id)}>
-                            <FileSearch size={17} />
-                            Review Import
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <EmptyState
-                icon={Upload}
-                title="No imports yet"
-                description="Upload RIS and BibTeX files to populate records for this review."
-              />
-            )}
-          </div>
-
-          <div className="panel">
-            <SectionTitle icon={FileText} title="Provenance Model" action="Record -> Report -> Study" />
-            <div className="provenanceStack">
-              <div>
-                <Database size={22} />
-                <strong>Imported record</strong>
-                <span>One citation from Scopus, IEEE, PubMed, etc.</span>
-              </div>
-              <ChevronDown size={18} />
-              <div>
-                <GitMerge size={22} />
-                <strong>Study candidate</strong>
-                <span>Canonical review unit created after deduplication.</span>
-              </div>
-              <ChevronDown size={18} />
-              <div>
-                <BookOpen size={22} />
-                <strong>Report</strong>
-                <span>Full-text article or PDF associated with the study.</span>
-              </div>
-            </div>
-            <div className="secureBox">
-              <Lock size={17} />
-              <span>
-                {projectImportBatches.length > 0
-                  ? "Parser warnings and parsed screening records are tracked per import batch."
-                  : "Record provenance will appear here after the first committed import batch."}
-              </span>
-            </div>
-          </div>
-        </section>
-
-      </div>
+      <ImportsSection
+        projectImportBatches={projectImportBatches}
+        selectedReviewBatch={selectedReviewBatch}
+        importMessage={importMessage}
+        bibtexInputRef={bibtexInputRef}
+        risInputRef={risInputRef}
+        onImportCitationFile={importCitationFile}
+        onOpenImportEditor={openImportEditor}
+      />
     );
   }
 
   function renderDedup() {
-    if (!latestPendingDedup) {
-      const hasImportedRecords = projectImportBatches.some((batch) => batch.records > 0) || projectScreeningStudies.length > 0 || recordsIdentified > 0;
-      const hasResolvedDedupCandidates = projectDedupCandidates.length > 0;
-      return (
-        <div className="viewStack">
-          <section className="overviewBand">
-            <div>
-              <p className="eyebrow">Deduplication</p>
-              <h1>Candidate Review</h1>
-              <p className="subtle">Duplicate candidates will appear after records are imported and candidate generation runs.</p>
-            </div>
-          </section>
-          <section className="panel">
-            <EmptyState
-              icon={GitMerge}
-              title={hasResolvedDedupCandidates ? "Duplicate review complete" : "No duplicate candidates"}
-              description={
-                hasImportedRecords
-                  ? hasResolvedDedupCandidates
-                    ? "All generated duplicate candidates have been resolved."
-                    : "No duplicate candidates were generated for the imported records. Screening can continue with the current citations."
-                  : "This review is waiting for imported records before deduplication can generate candidate pairs."
-              }
-            />
-          </section>
-        </div>
-      );
-    }
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Deduplication</p>
-            <h1>Candidate Review</h1>
-            <p className="subtle">Duplicate records are attached to canonical studies, never deleted.</p>
-          </div>
-          <div className="segmented">
-            <button className="active" type="button">
-              Pending {projectDedupCandidates.filter((candidate) => candidate.status === "pending").length}
-            </button>
-            <button type="button">Confirmed {projectDedupCandidates.filter((candidate) => candidate.status === "confirmed").length}</button>
-            <button type="button">Rejected {projectDedupCandidates.filter((candidate) => candidate.status === "rejected").length}</button>
-          </div>
-        </section>
-
-        <section className="dedupGrid">
-          <div className="panel">
-            <SectionTitle icon={GitMerge} title="Match Explanation" action={`${Math.round(latestPendingDedup.score * 100)} percent score`} />
-            <div className="scoreRing" aria-label="Duplicate score">
-              <strong>{latestPendingDedup.score.toFixed(3)}</strong>
-              <span>{latestPendingDedup.method}</span>
-            </div>
-            <div className="scoreBars">
-              <ScoreBar label="Title" value={latestPendingDedup.explanation.title} />
-              <ScoreBar label="First author" value={latestPendingDedup.explanation.author} />
-              <ScoreBar label="Year" value={latestPendingDedup.explanation.year} />
-            </div>
-            <p className="doiNote">{renderDoiLink(latestPendingDedup.explanation.doi, latestPendingDedup.explanation.doi)}</p>
-            <ul className="plainList">
-              {latestPendingDedup.explanation.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-            <div className="buttonRow">
-              <button className="primaryButton" type="button" onClick={() => updateDedupCandidate(latestPendingDedup.id, "confirmed")}>
-                <Check size={17} />
-                Confirm
-              </button>
-              <button className="dangerButton" type="button" onClick={() => updateDedupCandidate(latestPendingDedup.id, "rejected")}>
-                <X size={17} />
-                Reject
-              </button>
-            </div>
-          </div>
-
-          <div className="comparisonGrid">
-            <RecordComparison title="Record A" source={latestPendingDedup.recordA.source} study={latestPendingDedup.recordA} />
-            <RecordComparison title="Record B" source={latestPendingDedup.recordB.source} study={latestPendingDedup.recordB} />
-          </div>
-        </section>
-      </div>
+      <DedupSection
+        latestPendingDedup={latestPendingDedup}
+        projectImportBatches={projectImportBatches}
+        projectScreeningStudies={projectScreeningStudies}
+        recordsIdentified={recordsIdentified}
+        projectDedupCandidates={projectDedupCandidates}
+        updateDedupCandidate={updateDedupCandidate}
+      />
     );
   }
 
   function renderScreening() {
-    if (projectScreeningStudies.length === 0) {
-      return (
-        <div className="viewStack">
-          <section className="overviewBand compactBand">
-            <div>
-              <p className="eyebrow">Title and abstract screening</p>
-              <h1>Reviewer Queue</h1>
-              <p className="subtle">Screening starts after imports are committed and canonical studies are created.</p>
-            </div>
-          </section>
-          <section className="panel">
-            <EmptyState
-              icon={FileSearch}
-              title="No citations ready for screening"
-              description="Import RIS or BibTeX records to populate the title and abstract screening queue."
-            />
-          </section>
-        </div>
-      );
-    }
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand compactBand">
-          <div>
-            <p className="eyebrow">Title and abstract screening</p>
-            <h1>Reviewer Queue</h1>
-            <p className="subtle">Blind mode returns only your decision and aggregate state.</p>
-          </div>
-          <div className="progressBlock">
-            <span>{screeningProgress}% of project queue</span>
-            <div className="progressTrack">
-              <i style={{ width: `${screeningProgress}%` }} />
-            </div>
-          </div>
-        </section>
-
-        <section className="screeningLayout">
-          <aside className="panel queuePanel">
-            <SectionTitle icon={ListChecks} title="Queue" action={`${screenedByMe}/${projectScreeningStudies.length}`} />
-            <div className="queueList">
-              {projectScreeningStudies.map((study, index) => {
-                const decision = decisions.find(
-                  (candidate) =>
-                    candidate.projectId === selectedProject.id &&
-                    candidate.studyId === study.id &&
-                    candidate.userId === currentUser.id &&
-                    candidate.stage === "title_abstract" &&
-                    candidate.isCurrent
-                );
-                const queueEvaluation = titleAbstractEvaluations.get(study.id);
-                const hasQueueConflict = queueEvaluation?.state === "conflict" || queueEvaluation?.state === "needs_third_vote";
-                return (
-                  <button
-                    className={index === studyIndex ? "queueItem active" : "queueItem"}
-                    type="button"
-                    key={study.id}
-                    onClick={() => setStudyIndex(index)}
-                  >
-                    <span>{study.title}</span>
-                    <span className="queueBadges">
-                      {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
-                      {decision ? <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} /> : <Badge label="open" tone="neutral" />}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-
-          <article className="panel citationPanel">
-            <div className="citationHeader">
-              <div>
-                <p className="eyebrow">{currentStudy.source}</p>
-                <h2>{currentStudy.title}</h2>
-                <p className="subtle">
-                  {currentStudy.authors.length > 0 ? currentStudy.authors.join(", ") : "No authors parsed"} · {currentStudy.journal} ·{" "}
-                  {currentStudy.year > 0 ? currentStudy.year : "Year needs review"}
-                </p>
-              </div>
-              <Badge label={stageEvaluation.label} tone={stageEvaluation.state === "conflict" ? "danger" : "info"} />
-            </div>
-            <div className="metaStrip">
-              <span>
-                DOI {renderDoiLink(currentStudy.doi, currentStudy.doi || "Missing")}
-              </span>
-              <span className={currentStudy.keywords.length > 0 ? undefined : "emptyMetaValue"}>
-                {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
-              </span>
-            </div>
-            <p className="abstractText">{highlightText(currentStudy.abstract)}</p>
-            <textarea
-              value={screeningNote}
-              onChange={(event) => setScreeningNote(event.target.value)}
-              placeholder="My note"
-              aria-label="Screening note"
-            />
-          </article>
-
-          <aside className="panel actionPanel">
-            <SectionTitle icon={PanelRight} title="Decision" action="Current reviewer" />
-            <div className="decisionState">
-              <span>My current vote</span>
-              <strong>{currentUserDecision ? formatDecision(currentUserDecision.decisionValue) : "No vote"}</strong>
-            </div>
-            {stageEvaluation.state === "conflict" || stageEvaluation.state === "needs_third_vote" ? (
-              <div className="conflictVotesBox">
-                <strong>{stageEvaluation.label}</strong>
-                <p>{formatConflictResolutionHint(selectedProject.abstractRequiredVotes)}</p>
-                <div className="voteStrip">
-                  {currentStageDecisions.map((decision) => (
-                    <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
-                      <strong>{decision.userName}</strong>
-                      {formatDecision(decision.decisionValue)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            <div className="decisionButtons">
-              <button className="includeButton" type="button" onClick={() => addScreeningDecision("include")}>
-                <CheckCircle2 size={18} />
-                Include
-              </button>
-              <button className="maybeButton" type="button" onClick={() => addScreeningDecision("maybe")}>
-                <Minus size={18} />
-                Maybe
-              </button>
-              <button className="excludeButton" type="button" onClick={() => addScreeningDecision("exclude")}>
-                <XCircle size={18} />
-                Exclude
-              </button>
-            </div>
-            <div className="buttonRow">
-              <button className="ghostButton iconOnly" type="button" onClick={() => setStudyIndex((index) => Math.max(index - 1, 0))} title="Previous citation">
-                <ArrowLeft size={17} />
-              </button>
-              <button className="ghostButton" type="button" onClick={undoLastDecision} title="Undo latest decision">
-                <History size={17} />
-                Undo
-              </button>
-              <button className="ghostButton iconOnly" type="button" onClick={() => setStudyIndex((index) => Math.min(index + 1, projectScreeningStudies.length - 1))} title="Next citation">
-                <ArrowRight size={17} />
-              </button>
-            </div>
-            <div className="secureBox">
-              <Lock size={17} />
-              <span>Other reviewer votes are hidden while blind mode is enabled.</span>
-            </div>
-          </aside>
-        </section>
-      </div>
+      <ScreeningSection
+        projectScreeningStudies={projectScreeningStudies}
+        screeningProgress={screeningProgress}
+        screenedByMe={screenedByMe}
+        decisions={decisions}
+        selectedProjectId={selectedProject.id}
+        currentUserId={currentUser.id}
+        studyIndex={studyIndex}
+        setStudyIndex={setStudyIndex}
+        titleAbstractEvaluations={titleAbstractEvaluations}
+        currentStudy={currentStudy}
+        stageEvaluation={stageEvaluation}
+        screeningNote={screeningNote}
+        setScreeningNote={setScreeningNote}
+        currentUserDecision={currentUserDecision}
+        currentStageDecisions={currentStageDecisions}
+        formatDecision={formatDecision}
+        decisionTone={decisionTone}
+        highlightText={highlightText}
+        formatConflictResolutionHint={formatConflictResolutionHint}
+        selectedProjectAbstractRequiredVotes={selectedProject.abstractRequiredVotes}
+        addScreeningDecision={addScreeningDecision}
+        undoLastDecision={undoLastDecision}
+      />
     );
   }
 
@@ -3011,252 +2307,42 @@ export function PrismaReviewApp() {
   }
 
   function renderRisk() {
-    if (activeCounts.studiesIncluded === 0) {
-      return (
-        <div className="viewStack">
-          <section className="overviewBand">
-            <div>
-              <p className="eyebrow">Risk of bias</p>
-              <h1>Quality Assessment</h1>
-              <p className="subtle">Quality templates can be configured now; assessments start once studies are included.</p>
-            </div>
-          </section>
-          <section className="panel">
-            <EmptyState
-              icon={ShieldCheck}
-              title="No assessments assigned"
-              description="Included studies will appear here for RoB 2, ROBINS-I, or custom quality assessment."
-            />
-          </section>
-        </div>
-      );
-    }
-
-    return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Risk of bias</p>
-            <h1>Quality Assessment</h1>
-            <p className="subtle">Templates are project-owned and can model RoB 2, ROBINS-I, or custom tools.</p>
-          </div>
-          <div className="segmented">
-            <button className="active" type="button">RoB 2 Style</button>
-            <button type="button">ROBINS-I</button>
-            <button type="button">Custom</button>
-          </div>
-        </section>
-
-        <section className="qualityGrid">
-          {qualityDomains.map((domain) => (
-            <article className="panel qualityPanel" key={domain.domain}>
-              <div className="qualityHeader">
-                <FlaskConical size={20} />
-                <div>
-                  <h2>{domain.domain}</h2>
-                  <Badge label={domain.judgement} tone={domain.judgement === "High risk" ? "danger" : domain.judgement === "Some concerns" ? "warning" : "success"} />
-                </div>
-              </div>
-              <p>{domain.support}</p>
-              <div className="judgementRail">
-                <span className={domain.judgement === "Low risk" ? "active low" : "low"}>Low</span>
-                <span className={domain.judgement === "Some concerns" ? "active some" : "some"}>Some</span>
-                <span className={domain.judgement === "High risk" ? "active high" : "high"}>High</span>
-              </div>
-            </article>
-          ))}
-        </section>
-      </div>
-    );
+    return <RiskSection studiesIncluded={activeCounts.studiesIncluded} />;
   }
 
   function renderExports() {
-    const exportMessageIsSuccess = /downloaded|generated|exported/i.test(exportMessage);
     const canExportExtractionCsv = Boolean(activeExtractionTemplate) && activeCounts.studiesIncluded > 0;
-    const validations = [
-      {
-        label: exportConsistency.identifiedCheckOk
-          ? "Identified records cover screening and pre-screen removals"
-          : "Identified records do not cover screening and pre-screen removals",
-        ok: exportConsistency.identifiedCheckOk,
-        detail: `Identified: ${formatNumber(recordsIdentified)}. Screened + pre-screen removals: ${formatNumber(exportConsistency.screenedAndPreScreenRemovedTotal)}.`
-      },
-      {
-        label: exportConsistency.screenedCheckOk
-          ? "Screening decisions are fully balanced"
-          : "Screening decisions are not fully balanced",
-        ok: exportConsistency.screenedCheckOk,
-        detail: `Screened: ${formatNumber(activeCounts.recordsScreened)}. Excluded + moved to full text: ${formatNumber(exportConsistency.screenBalanceTotal)}.`
-      },
-      {
-        label: exportConsistency.retrievalCheckOk
-          ? "Retrieval outcomes are fully balanced"
-          : "Retrieval outcomes are not fully balanced",
-        ok: exportConsistency.retrievalCheckOk,
-        detail: `Reports sought: ${formatNumber(activeCounts.reportsSought)}. Assessed + not retrieved: ${formatNumber(exportConsistency.retrievalBalanceTotal)}.`
-      },
-      {
-        label: exportConsistency.assessedCheckOk
-          ? "Eligibility decisions are fully balanced"
-          : "Eligibility decisions are not fully balanced",
-        ok: exportConsistency.assessedCheckOk,
-        detail: `Assessed reports: ${formatNumber(activeCounts.reportsAssessed)}. Exclusions with reasons + included studies: ${formatNumber(exportConsistency.assessedBalanceTotal)}.`
-      },
-      {
-        label: exportConsistency.exclusionReasonCheckOk
-          ? "Every current full-text exclusion has a reason"
-          : "Some current full-text exclusions are missing a reason",
-        ok: exportConsistency.exclusionReasonCheckOk,
-        detail: `Current full-text exclusions missing reason: ${formatNumber(exportConsistency.excludedWithoutReasonCount)}.`
-      }
-    ];
 
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Exports</p>
-            <h1>PRISMA Output Review</h1>
-            <p className="subtle">Review flow totals and consistency checks before sharing project outputs.</p>
-          </div>
-        </section>
-
-        {exportConsistency.failedCount > 0 ? (
-          <div className="validationItem warning">
-            <AlertTriangle size={17} />
-            <span>
-              {exportConsistency.failedCount} consistency check{exportConsistency.failedCount === 1 ? "" : "s"} need review. Export is allowed, but verify these issues before final reporting.
-            </span>
-          </div>
-        ) : null}
-
-        {exportMessage ? (
-          <div className={exportMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {exportMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-            <span>{exportMessage}</span>
-          </div>
-        ) : null}
-
-        <section className="exportLayout">
-          <div className="viewStack">
-            <div className="panel">
-              <SectionTitle icon={FileText} title="Consensus Dataset Export" action={canExportExtractionCsv ? "Ready" : "Blocked"} />
-              <p className="subtle">
-                Export the finalized consensus dataset used for downstream analysis. The CSV includes one row per included study with consensus-approved fields only.
-              </p>
-              <div className="buttonRow exportPrimaryAction">
-                <button
-                  className="primaryButton"
-                  type="button"
-                  title="Download consensus extraction CSV"
-                  onClick={downloadConsensusExtractionCsv}
-                  disabled={!canExportExtractionCsv}
-                >
-                  <FileText size={17} />
-                  Export Extraction CSV
-                </button>
-              </div>
-            </div>
-
-            <div className="panel">
-              <SectionTitle icon={BarChart3} title="PRISMA Flow Diagram Preview" action="Auto-calculated" />
-              <p className="subtle">This diagram is generated from the current project state and cannot be edited here.</p>
-              <PrismaFlow counts={activeCounts} reportsExcludedTotal={reportsExcludedTotal} />
-            </div>
-          </div>
-
-          <div className="panel">
-            <SectionTitle icon={CheckCircle2} title="Consistency Checks" action={`${exportConsistency.passedCount}/${exportConsistency.totalCount} passed`} />
-            <p className="subtle">These are live integrity checks from current project data, not demo placeholders.</p>
-            <div className="validationList">
-              {validations.map((validation) => (
-                <div className={validation.ok ? "validationItem ok" : "validationItem warning"} key={validation.label}>
-                  {validation.ok ? <Check size={17} /> : <X size={17} />}
-                  <div>
-                    <span>{validation.label}</span>
-                    <small>{validation.detail}</small>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
+      <ExportsSection
+        recordsIdentified={recordsIdentified}
+        activeCounts={activeCounts}
+        reportsExcludedTotal={reportsExcludedTotal}
+        exportConsistency={exportConsistency}
+        exportMessage={exportMessage}
+        canExportExtractionCsv={canExportExtractionCsv}
+        downloadConsensusExtractionCsv={downloadConsensusExtractionCsv}
+        formatNumber={formatNumber}
+      />
     );
   }
 
   function renderAuditTrail() {
-    const firstEventIndex = projectEvents.length === 0 ? 0 : (currentAuditPage - 1) * AUDIT_PAGE_SIZE + 1;
-    const lastEventIndex = Math.min(currentAuditPage * AUDIT_PAGE_SIZE, projectEvents.length);
-
     return (
-      <div className="viewStack">
-        <section className="overviewBand compactBand">
-          <div>
-            <p className="eyebrow">Project audit</p>
-            <h1>Full Audit Trail</h1>
-            <p className="subtle">
-              {selectedProject.title} · {projectEvents.length} append-only action{projectEvents.length === 1 ? "" : "s"}
-            </p>
-          </div>
-          <div className="toolbarCluster">
-            <button className="ghostButton" type="button" onClick={() => setActiveView("projectDashboard")}>
-              <ArrowLeft size={17} />
-              Overview
-            </button>
-          </div>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={History} title="Audit Events" action={projectEvents.length > 0 ? `${firstEventIndex}-${lastEventIndex} of ${projectEvents.length}` : "No events"} />
-          {projectEvents.length > 0 ? (
-            <>
-              <div className="eventList fullAuditList">
-                {pagedProjectEvents.map((event) => (
-                  <article className="eventItem" key={event.id}>
-                    <div>
-                      <strong>{event.action}</strong>
-                      <span>
-                        {event.actor} · {formatAuditEntityLabel(event, selectedProject, projectScreeningStudies, projectReportQueue)}
-                      </span>
-                    </div>
-                    <time>{formatAuditTime(event.time)}</time>
-                  </article>
-                ))}
-              </div>
-              <div className="paginationBar" aria-label="Audit pagination">
-                <button
-                  className="ghostButton"
-                  type="button"
-                  disabled={currentAuditPage === 1}
-                  onClick={() => setAuditPage((page) => Math.max(page - 1, 1))}
-                >
-                  <ArrowLeft size={17} />
-                  Previous
-                </button>
-                <span>
-                  Page {currentAuditPage} of {auditPageCount}
-                </span>
-                <button
-                  className="ghostButton"
-                  type="button"
-                  disabled={currentAuditPage === auditPageCount}
-                  onClick={() => setAuditPage((page) => Math.min(page + 1, auditPageCount))}
-                >
-                  Next
-                  <ArrowRight size={17} />
-                </button>
-              </div>
-            </>
-          ) : (
-            <EmptyState
-              icon={History}
-              title="No audit events yet"
-              description="Imports, decisions, adjudications, and exports will appear here as append-only project history."
-            />
-          )}
-        </section>
-      </div>
+      <AuditTrailSection
+        selectedProject={selectedProject}
+        projectEvents={projectEvents}
+        pagedProjectEvents={pagedProjectEvents}
+        currentAuditPage={currentAuditPage}
+        auditPageCount={auditPageCount}
+        projectScreeningStudies={projectScreeningStudies}
+        projectReportQueue={projectReportQueue}
+        formatAuditTime={formatAuditTime}
+        formatAuditEntityLabel={formatAuditEntityLabel}
+        onOpenOverview={() => setActiveView("projectDashboard")}
+        onPreviousPage={() => setAuditPage((page) => Math.max(page - 1, 1))}
+        onNextPage={() => setAuditPage((page) => Math.min(page + 1, auditPageCount))}
+      />
     );
   }
 
@@ -3280,8 +2366,9 @@ export function PrismaReviewApp() {
         onSettingsFullTextVotesChange={(value) => updateProjectSettingsForm("fullTextRequiredVotes", value)}
         onSettingsExtractionVotesChange={(value) => updateProjectSettingsForm("extractionRequiredVotes", value)}
         onSettingsMaybePolicyChange={(value) => updateProjectSettingsForm("maybePolicy", value)}
-        teamUserId={teamUserId}
-        setTeamUserId={setTeamUserId}
+        teamUserSearch={teamUserSearch}
+        setTeamUserSearch={setTeamUserSearch}
+        teamUserSearchResults={teamUserSearchResults}
         addExistingUserToProject={addExistingUserToProject}
         inviteForm={inviteForm}
         onInviteNameChange={(value) => setInviteForm((previous) => ({ ...previous, name: value }))}
@@ -3340,231 +2427,36 @@ export function PrismaReviewApp() {
   }
 
   function renderAbout() {
-    return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">About Prismatica</p>
-            <h1>Open Source PRISMA Review Platform</h1>
-            <p className="subtle">Prismatica supports systematic-review teams from citation intake through screening, full-text review, extraction, audit, and PRISMA-oriented export checks.</p>
-          </div>
-          <a className="primaryButton" href="https://github.com/fwanderlingh/prismatica" target="_blank" rel="noreferrer">
-            <GitMerge size={17} />
-            GitHub
-          </a>
-        </section>
-
-        <section className="aboutGrid">
-          <div className="panel aboutPanel">
-            <SectionTitle icon={Info} title="Purpose" action="Evidence workflow" />
-            <p>
-              Prismatica is built as a transparent, auditable workspace for PRISMA-style (Preferred Reporting Items for Systematic reviews and Meta-Analyses) review projects. It keeps project membership, imports, decisions, PDF metadata,
-              extraction templates, and audit events behind server APIs while preserving a reviewer-friendly interface for day-to-day screening work.
-            </p>
-            <p>
-              Full information about the PRISMA guidelines can be found at <a href="https://www.prisma-statement.org" target="_blank" rel="noreferrer">https://www.prisma-statement.org</a>.
-            </p>
-            <div className="aboutPurposeLogo" aria-hidden="true">
-              <img src="/icon.svg" alt="Prismatica logo" />
-            </div>
-          </div>
-
-          <div className="panel aboutPanel">
-            <SectionTitle icon={GitMerge} title="Source Code" action="Public repository" />
-            <p>The website source is available in the public GitHub repository.</p>
-            <a className="repoLink" href="https://github.com/fwanderlingh/prismatica" target="_blank" rel="noreferrer">
-              github.com/fwanderlingh/prismatica
-            </a>
-          </div>
-        </section>
-
-        <section className="panel">
-          <SectionTitle icon={ListChecks} title="What It Covers" action="Current app surface" />
-          <div className="aboutFeatureGrid">
-            {[
-              ["Project governance", "Review setup, membership, owner controls, blind mode, vote thresholds, and registration security."],
-              ["Citation workflow", "RIS/BibTeX import, parser warning review, deduplication workspace, and title/abstract screening."],
-              ["Full-text review", "Report queues, PDF upload and validation, DOI links, retrieval status, exclusion reasons, and conflict handling."],
-              ["Audit and export", "Append-only workflow events, paged audit history, PRISMA count preview, and export validation checks."]
-            ].map(([title, description]) => (
-              <article className="aboutFeature" key={title}>
-                <strong>{title}</strong>
-                <p>{description}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
-    );
+    return <AboutSection />;
   }
 
   function renderAdminReviews() {
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Administration</p>
-            <h1>Review Admin</h1>
-            <p className="subtle">Inspect every review workspace, open settings, and remove obsolete or spam projects.</p>
-          </div>
-        </section>
-
-        {dashboardMessage ? (
-          <section className="panel">
-            <div className={dashboardMessage.startsWith("Deleted review") ? "validationItem ok" : "validationItem blocked"}>
-              {dashboardMessage.startsWith("Deleted review") ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{dashboardMessage}</span>
-            </div>
-          </section>
-        ) : null}
-
-        <section className="panel">
-          <SectionTitle icon={LayoutDashboard} title="Registered Reviews" action={`${projects.length} total`} />
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Review</th>
-                  <th>Owners</th>
-                  <th>Status</th>
-                  <th>Records</th>
-                  <th>Updated</th>
-                  <th>Open</th>
-                  <th>Settings</th>
-                  <th>Delete</th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((project) => {
-                  const ownerNames = project.ownerIds
-                    .map((ownerId) => users.find((user) => user.id === ownerId)?.name)
-                    .filter(Boolean)
-                    .join(", ");
-
-                  return (
-                    <tr key={project.id}>
-                      <td>
-                        <strong>{project.title}</strong>
-                        <span>{project.organization}</span>
-                      </td>
-                      <td>{ownerNames || "Unassigned"}</td>
-                      <td>
-                        <Badge label={formatProjectPhase(project.stage)} tone={projectPhaseBadgeTone(project.stage)} />
-                      </td>
-                      <td>{numberFormatter.format(project.recordsTotal)}</td>
-                      <td>{formatEuDate(project.updatedAt)}</td>
-                      <td>
-                        <button className="ghostButton" type="button" onClick={() => openProject(project.id)}>
-                          <ChevronRight size={17} />
-                          Open
-                        </button>
-                      </td>
-                      <td>
-                        <button className="ghostButton" type="button" onClick={() => openProject(project.id, "settings")}>
-                          <Settings size={17} />
-                          Edit
-                        </button>
-                      </td>
-                      <td>
-                        <button className="dangerButton" type="button" onClick={() => adminDeleteProject(project)}>
-                          <Trash2 size={17} />
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+      <AdminReviewsSection
+        dashboardMessage={dashboardMessage}
+        projects={projects}
+        users={users}
+        formatProjectPhase={formatProjectPhase}
+        projectPhaseBadgeTone={projectPhaseBadgeTone}
+        formatEuDate={formatEuDate}
+        openProject={openProject}
+        adminDeleteProject={adminDeleteProject}
+      />
     );
   }
 
   function renderRegisteredUsers() {
     return (
-      <div className="viewStack">
-        <section className="overviewBand">
-          <div>
-            <p className="eyebrow">Administration</p>
-            <h1>Registered Users</h1>
-            <p className="subtle">Review server accounts, reset access for non-admin users, delete spam accounts, and control public registration.</p>
-          </div>
-        </section>
-
-        <section className="settingsGrid">
-          <div className="panel">
-            <SectionTitle icon={Users} title="User Accounts" action={`${users.length} registered`} />
-            <div className="memberPicker">
-              {users.map((user) => (
-                <div
-                  className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"} adminManagedUserSwitch`}
-                  key={user.id}
-                >
-                  <span className="avatar" style={{ background: user.avatarColor }}>
-                    {user.initials}
-                  </span>
-                  <div>
-                    <strong>{user.name}</strong>
-                    <small>
-                      {user.email} · {user.title}
-                      {user.isAdmin ? " · administrator" : ""}
-                    </small>
-                  </div>
-                  <div className="userSwitchActions">
-                    <button
-                      className="ghostButton"
-                      type="button"
-                      disabled={user.id === currentUser.id || user.isAdmin}
-                      onClick={() => adminResetUserPassword(user)}
-                    >
-                      Reset password
-                    </button>
-                    <button
-                      className="dangerButton"
-                      type="button"
-                      disabled={user.id === currentUser.id || user.isAdmin}
-                      onClick={() => adminDeleteUser(user)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {adminDirectoryMessage ? (
-              <div className={adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? "validationItem ok" : "validationItem blocked"}>
-                {adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? <Check size={17} /> : <AlertTriangle size={17} />}
-                <span>{adminDirectoryMessage}</span>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="panel">
-            <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
-            <label className="toggleRow">
-              <input
-                type="checkbox"
-                checked={authSettings.registrationEnabled}
-                onChange={(event) => updateRegistrationSetting(event.target.checked)}
-              />
-              <span />
-              <strong>Allow public registration</strong>
-            </label>
-            <div className="stateRows">
-              <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
-              <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
-            </div>
-            {authSettingsMessage ? (
-              <div className={authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? "validationItem ok" : "validationItem blocked"}>
-                {authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? <Check size={17} /> : <AlertTriangle size={17} />}
-                <span>{authSettingsMessage}</span>
-              </div>
-            ) : null}
-          </div>
-        </section>
-      </div>
+      <RegisteredUsersSection
+        users={users}
+        currentUser={currentUser}
+        adminDirectoryMessage={adminDirectoryMessage}
+        authSettings={authSettings}
+        authSettingsMessage={authSettingsMessage}
+        adminResetUserPassword={adminResetUserPassword}
+        adminDeleteUser={adminDeleteUser}
+        updateRegistrationSetting={updateRegistrationSetting}
+      />
     );
   }
 
@@ -3592,334 +2484,68 @@ export function PrismaReviewApp() {
 
   if (!isAuthenticated) {
     return (
-      <main className="loginShell">
-        {!authSettings.registrationEnabled ? (
-          <div className="loginNotice" role="status" aria-live="polite">
-            <Info size={17} />
-            <span>
-              The website is currently invitation only. To request an invitation, write to{" "}
-              <a href="mailto:francesco.wanderlingh@unige.it">francesco.wanderlingh@unige.it</a>.
-            </span>
-          </div>
-        ) : null}
-
-        <section className="loginPanel">
-          <div className="brandBlock loginBrand">
-            <div className="brandMark brandMarkImage">
-              <img src="/icon.svg" alt={BRAND_LOGO_ALT} width={30} height={30} />
-            </div>
-            <div>
-              <strong>{BRAND_NAME}</strong>
-              <span>{BRAND_TAGLINE}</span>
-            </div>
-          </div>
-
-          <div className={authSettings.registrationEnabled ? "segmented authTabs" : "segmented authTabs singleAuthTab"}>
-            <button className={authMode === "signIn" ? "active" : ""} type="button" onClick={() => switchAuthMode("signIn")}>
-              Sign In
-            </button>
-            {authSettings.registrationEnabled ? (
-              <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => switchAuthMode("register")}>
-                Register
-              </button>
-            ) : null}
-          </div>
-
-          {authMode === "signIn" ? (
-          <form className="loginForm" onSubmit={handleLogin}>
-            <div>
-              <p className="eyebrow">Sign in</p>
-              <h1>Continue to your review dashboard</h1>
-              <p className="subtle">Use an existing account to see review memberships, profiles, and project access.</p>
-            </div>
-            <label>
-              <span>Email</span>
-              <input value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} />
-            </label>
-            <label>
-              <span>Password</span>
-              <div className="passwordField">
-                <input
-                  type={showLoginPassword ? "text" : "password"}
-                  value={loginPassword}
-                  onChange={(event) => setLoginPassword(event.target.value)}
-                />
-                <button
-                  type="button"
-                  title={showLoginPassword ? "Hide password" : "Show password"}
-                  aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                  onClick={toggleLoginPasswordVisibility}
-                >
-                  {showLoginPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-                </button>
-              </div>
-            </label>
-            {loginError ? (
-              <div className="validationItem blocked">
-                <AlertTriangle size={17} />
-                <span>{loginError}</span>
-              </div>
-            ) : null}
-            <button className="primaryButton" type="submit">
-              <LogIn size={17} />
-              Sign In
-            </button>
-          </form>
-          ) : (
-          <form className="loginForm" onSubmit={handleRegistration}>
-            <div>
-              <p className="eyebrow">Register</p>
-              <h1>Create a reviewer account</h1>
-              <p className="subtle">Registration creates a server account. You can create a review immediately after signing up.</p>
-            </div>
-            <label>
-              <span>Name</span>
-              <input value={registerForm.name} onChange={(event) => updateRegisterForm("name", event.target.value)} />
-            </label>
-            <label>
-              <span>Email</span>
-              <input value={registerForm.email} onChange={(event) => updateRegisterForm("email", event.target.value)} />
-            </label>
-            <label>
-              <span>Organization</span>
-              <input value={registerForm.organization} onChange={(event) => updateRegisterForm("organization", event.target.value)} />
-            </label>
-            <label>
-              <span>Role title</span>
-              <input value={registerForm.title} onChange={(event) => updateRegisterForm("title", event.target.value)} />
-            </label>
-            <label>
-              <span>Password</span>
-              <div className="passwordField">
-                <input
-                  type={showRegisterPassword ? "text" : "password"}
-                  value={registerForm.password}
-                  onChange={(event) => updateRegisterForm("password", event.target.value)}
-                />
-                <button
-                  type="button"
-                  title={showRegisterPassword ? "Hide password" : "Show password"}
-                  aria-label={showRegisterPassword ? "Hide password" : "Show password"}
-                  onClick={toggleRegisterPasswordVisibility}
-                >
-                  {showRegisterPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-                </button>
-              </div>
-            </label>
-            <label>
-              <span>Captcha</span>
-              <div className="captchaField">
-                <strong>{captchaChallenge?.question ?? "Loading..."}</strong>
-                <input
-                  inputMode="numeric"
-                  value={registerForm.captchaAnswer}
-                  onChange={(event) => updateRegisterForm("captchaAnswer", event.target.value)}
-                />
-                <button type="button" onClick={() => loadAuthConfig().catch(() => undefined)}>
-                  Refresh
-                </button>
-              </div>
-            </label>
-            {loginError ? (
-              <div className="validationItem blocked">
-                <AlertTriangle size={17} />
-                <span>{loginError}</span>
-              </div>
-            ) : null}
-            <button className="primaryButton" type="submit">
-              <PenLine size={17} />
-              Register
-            </button>
-          </form>
-          )}
-        </section>
-      </main>
+      <LoginShell
+        registrationEnabled={authSettings.registrationEnabled}
+        authMode={authMode}
+        loginEmail={loginEmail}
+        loginPassword={loginPassword}
+        showLoginPassword={showLoginPassword}
+        showRegisterPassword={showRegisterPassword}
+        loginError={loginError}
+        registerForm={registerForm}
+        captchaQuestion={captchaChallenge?.question}
+        brandName={BRAND_NAME}
+        brandTagline={BRAND_TAGLINE}
+        brandLogoAlt={BRAND_LOGO_ALT}
+        onSwitchAuthMode={switchAuthMode}
+        onLoginSubmit={handleLogin}
+        onRegisterSubmit={handleRegistration}
+        onLoginEmailChange={setLoginEmail}
+        onLoginPasswordChange={setLoginPassword}
+        onToggleLoginPassword={toggleLoginPasswordVisibility}
+        onToggleRegisterPassword={toggleRegisterPasswordVisibility}
+        onRegisterFormChange={updateRegisterForm}
+        onRefreshCaptcha={() => loadAuthConfig().catch(() => undefined)}
+      />
     );
   }
 
   return (
-    <div className={isSidebarCollapsed ? "appFrame sidebar-collapsed" : "appFrame"}>
-      <aside className={["sidebar", isMobileNavOpen ? "open" : "", isSidebarCollapsed ? "collapsed" : ""].filter(Boolean).join(" ")} aria-label="Project navigation">
-        <div className="sidebarHeader">
-          <button
-            className="brandBlock brandButton"
-            type="button"
-            title="Go to homepage"
-            onClick={() => {
-              setActiveView("dashboard");
-              setIsMobileNavOpen(false);
-            }}
-          >
-            <div className="brandMark brandMarkImage">
-              <img src="/icon.svg" alt={BRAND_LOGO_ALT} width={30} height={30} />
-            </div>
-            <div>
-              <strong>{BRAND_NAME}</strong>
-              <span>{BRAND_TAGLINE}</span>
-            </div>
-          </button>
-          <button
-            className="ghostButton iconOnly desktopNavToggle"
-            type="button"
-            title={isSidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
-            aria-label={isSidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
-            aria-expanded={!isSidebarCollapsed}
-            onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
-          >
-            <PanelRight size={18} />
-          </button>
-          <button
-            className="ghostButton iconOnly mobileNavToggle"
-            type="button"
-            title={isMobileNavOpen ? "Close navigation" : "Open navigation"}
-            aria-expanded={isMobileNavOpen}
-            onClick={() => setIsMobileNavOpen((open) => !open)}
-          >
-            <PanelRight size={18} />
-          </button>
-        </div>
-
-        {isProjectView ? (
-          <div className="projectContext">
-            <button
-              className="ghostButton"
-              type="button"
-              onClick={() => {
-                setActiveView("dashboard");
-                setIsMobileNavOpen(false);
-              }}
-            >
-              <ArrowLeft size={16} />
-              All Reviews
-            </button>
-            <div>
-              <Badge label={formatProjectPhase(selectedProject.stage)} tone={projectPhaseBadgeTone(selectedProject.stage)} />
-              <strong>{selectedProject.title}</strong>
-              { /* <span>{selectedProject.protocolId}</span> */ }
-            </div>
-            { /* <div className="progressTrack">
-              <i style={{ width: `${selectedProject.recordsTotal > 0 ? Math.round((selectedProject.recordsScreened / selectedProject.recordsTotal) * 100) : 0}%` }} />
-            </div> */ }
-          </div>
-        ) : null}
-
-        <nav className="navList">
-          {isProjectView ? (
-            <>
-              <div className="navSection">
-                <span className="navSectionTitle">Review Phases</span>
-                {projectNavItems
-                  .filter((item) => reviewPhaseNavKeys.has(item.key))
-                  .map(({ key, label, path, Icon }) => {
-                    const phaseState = getPhaseNavState(key, selectedProject.stage);
-                    const navClassName = ["navItem", "navItemPhase", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
-                      .filter(Boolean)
-                      .join(" ");
-                    return (
-                      <button
-                        className={navClassName}
-                        type="button"
-                        key={key}
-                        data-tooltip={label}
-                        aria-current={activeView === key ? "page" : undefined}
-                        onClick={() => {
-                          setActiveView(key);
-                          setIsMobileNavOpen(false);
-                        }}
-                        title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
-                      >
-                        {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                        <span className="navLabel">{label}</span>
-                        {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
-                      </button>
-                    );
-                  })}
-              </div>
-
-              <div className="navSection">
-                <span className="navSectionTitle">Utilities</span>
-                {projectNavItems
-                  .filter((item) => !reviewPhaseNavKeys.has(item.key))
-                  .map(({ key, label, path, Icon }) => {
-                    const phaseState = getPhaseNavState(key, selectedProject.stage);
-                    const navClassName = ["navItem", "navItemUtility", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
-                      .filter(Boolean)
-                      .join(" ");
-                    return (
-                      <button
-                        className={navClassName}
-                        type="button"
-                        key={key}
-                        data-tooltip={label}
-                        aria-current={activeView === key ? "page" : undefined}
-                        onClick={() => {
-                          setActiveView(key);
-                          setIsMobileNavOpen(false);
-                        }}
-                        title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
-                      >
-                        {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                        <span className="navLabel">{label}</span>
-                        {key === "exports" && exportConsistency.failedCount > 0 ? <span className="navWarnBadge">{exportConsistency.failedCount}</span> : null}
-                        {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
-                      </button>
-                    );
-                  })}
-                <button
-                  className={["navItem", "navItemUtility", activeView === "profile" ? "active" : ""].filter(Boolean).join(" ")}
-                  type="button"
-                  data-tooltip="Profile"
-                  aria-current={activeView === "profile" ? "page" : undefined}
-                  onClick={() => {
-                    setActiveView("profile");
-                    setIsMobileNavOpen(false);
-                  }}
-                  title="/profile"
-                >
-                  <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>
-                  <span className="navLabel">Profile</span>
-                </button>
-              </div>
-            </>
-          ) : (
-            globalNavItems
-              .filter((item) => !["adminReviews", "registeredUsers"].includes(item.key) || currentUser.isAdmin)
-              .map(({ key, label, path, Icon }) => {
-                const phaseState = null;
-                const navClassName = ["navItem", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
-                  .filter(Boolean)
-                  .join(" ");
-                return (
-                  <button
-                    className={navClassName}
-                    type="button"
-                    key={key}
-                    data-tooltip={label}
-                    aria-current={activeView === key ? "page" : undefined}
-                    onClick={() => {
-                      setActiveView(key);
-                      setIsMobileNavOpen(false);
-                    }}
-                    title={path}
-                  >
-                    {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                    <span className="navLabel">{label}</span>
-                  </button>
-                );
-              })
-          )}
-        </nav>
-
-        {/* <div className="sidebarFooter">
-          <Lock size={16} />
-          <span>{isProjectView ? "Blind mode is enforced for reviewer views." : "Project access follows membership."}</span>
-        </div> */}
-      </aside>
-
-      <main className="mainArea">
-        {renderActiveView()}
-      </main>
-    </div>
+    <AppShell
+      isSidebarCollapsed={isSidebarCollapsed}
+      sidebar={
+        <AppSidebar
+          brandName={BRAND_NAME}
+          brandTagline={BRAND_TAGLINE}
+          brandLogoAlt={BRAND_LOGO_ALT}
+          isSidebarCollapsed={isSidebarCollapsed}
+          isMobileNavOpen={isMobileNavOpen}
+          isProjectView={isProjectView}
+          activeView={activeView}
+          currentUser={currentUser}
+          selectedProject={selectedProject}
+          globalNavItems={globalNavItems}
+          projectNavItems={projectNavItems}
+          reviewPhaseNavKeys={reviewPhaseNavKeys}
+          exportFailedCount={exportConsistency.failedCount}
+          getPhaseNavState={getPhaseNavState}
+          formatProjectPhase={formatProjectPhase}
+          projectPhaseBadgeTone={projectPhaseBadgeTone}
+          onGoDashboard={() => {
+            setActiveView("dashboard");
+            setIsMobileNavOpen(false);
+          }}
+          onNavigate={(view) => {
+            setActiveView(view);
+            setIsMobileNavOpen(false);
+          }}
+          onToggleSidebar={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+          onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
+        />
+      }
+    >
+      {renderActiveView()}
+    </AppShell>
   );
 }
 

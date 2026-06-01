@@ -2753,6 +2753,35 @@ button:disabled {
   align-items: end;
 }
 
+.addMemberSearch {
+  position: relative;
+  z-index: 2;
+  margin-bottom: 10px;
+}
+
+.addMemberBox.addMemberBoxSearch {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.teamSearchResultsOverlay {
+  position: absolute;
+  top: calc(100% + (6px * var(--ui-scale)));
+  right: 0;
+  left: 0;
+  max-height: calc(280px * var(--ui-scale));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(8px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 calc(14px * var(--ui-scale)) calc(34px * var(--ui-scale)) rgba(30, 45, 55, 0.18);
+}
+
+.teamSearchResultsList {
+  gap: calc(8px * var(--ui-scale));
+}
+
 .addMemberBox + .teamList {
   margin-top: calc(10px * var(--ui-scale));
 }

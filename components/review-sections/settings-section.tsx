@@ -41,9 +41,10 @@ type SettingsSectionProps = {
   onSettingsFullTextVotesChange: (value: number) => void;
   onSettingsExtractionVotesChange: (value: number) => void;
   onSettingsMaybePolicyChange: (value: ProjectSettingsFormShape["maybePolicy"]) => void;
-  teamUserId: string;
-  setTeamUserId: (value: string) => void;
-  addExistingUserToProject: () => void;
+  teamUserSearch: string;
+  setTeamUserSearch: (value: string) => void;
+  teamUserSearchResults: AppUser[];
+  addExistingUserToProject: (userId: string) => void;
   inviteForm: InviteFormShape;
   onInviteNameChange: (value: string) => void;
   onInviteEmailChange: (value: string) => void;
@@ -76,8 +77,9 @@ export function SettingsSection({
   onSettingsFullTextVotesChange,
   onSettingsExtractionVotesChange,
   onSettingsMaybePolicyChange,
-  teamUserId,
-  setTeamUserId,
+  teamUserSearch,
+  setTeamUserSearch,
+  teamUserSearchResults,
   addExistingUserToProject,
   inviteForm,
   onInviteNameChange,
@@ -95,7 +97,6 @@ export function SettingsSection({
   const projectMembers = selectedProject.memberIds
     .map((memberId) => users.find((user) => user.id === memberId))
     .filter((user): user is AppUser => Boolean(user));
-  const availableUsers = users.filter((user) => !selectedProject.memberIds.includes(user.id));
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
   const settingsMessageIsSuccess = projectSettingsMessage === "Project settings saved.";
 
@@ -326,22 +327,36 @@ export function SettingsSection({
 
         <div className="panel">
           <SectionTitle icon={UserRoundCheck} title="Add People" action="Existing or invite" />
-          <div className="addMemberBox">
-            <label>
-              <span>Existing user</span>
-              <select value={teamUserId} onChange={(event) => setTeamUserId(event.target.value)}>
-                <option value="">Choose user</option>
-                {availableUsers.map((user) => (
-                  <option value={user.id} key={user.id}>
-                    {user.name} · {user.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="primaryButton" type="button" disabled={!teamUserId} onClick={addExistingUserToProject}>
-              <Plus size={17} />
-              Add User
-            </button>
+          <div className="addMemberSearch">
+            <div className="addMemberBox addMemberBoxSearch">
+              <label>
+                <span>Search users</span>
+                <input value={teamUserSearch} onChange={(event) => setTeamUserSearch(event.target.value)} placeholder="Name or email" />
+              </label>
+            </div>
+
+            {teamUserSearchResults.length > 0 ? (
+              <div className="teamSearchResultsOverlay">
+                <div className="teamList teamSearchResultsList">
+                  {teamUserSearchResults.map((user) => (
+                    <div className="teamMember" key={user.id}>
+                      <span className="avatar" style={{ background: user.avatarColor }}>
+                        {user.initials}
+                      </span>
+                      <div>
+                        <strong>{user.name}</strong>
+                        <span>{user.email}</span>
+                      </div>
+                      <span>{user.title}</span>
+                      <button className="ghostButton" type="button" onClick={() => addExistingUserToProject(user.id)} disabled={!canManageProject}>
+                        <Plus size={16} />
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <form className="inviteForm" onSubmit={inviteUserToProject}>

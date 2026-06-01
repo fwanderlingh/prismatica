@@ -1,0 +1,213 @@
+import { ArrowLeft, ArrowRight, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
+import type { Decision, Study } from "@/lib/prismaData";
+import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
+import type { DecisionValue } from "@/lib/workflow";
+
+type StageEvaluation = {
+  state: string;
+  label: string;
+};
+
+type ScreeningSectionProps = {
+  projectScreeningStudies: Study[];
+  screeningProgress: number;
+  screenedByMe: number;
+  decisions: Decision[];
+  selectedProjectId: string;
+  currentUserId: string;
+  studyIndex: number;
+  setStudyIndex: (index: number | ((previous: number) => number)) => void;
+  titleAbstractEvaluations: Map<string, StageEvaluation>;
+  formatDecision: (value: DecisionValue) => string;
+  decisionTone: (value: DecisionValue) => "success" | "warning" | "danger" | "info" | "neutral";
+  currentStudy: Study;
+  stageEvaluation: StageEvaluation;
+  highlightText: (text: string) => React.ReactNode;
+  screeningNote: string;
+  setScreeningNote: (value: string) => void;
+  currentUserDecision: Decision | undefined;
+  currentStageDecisions: Decision[];
+  formatConflictResolutionHint: (requiredVotes: number) => string;
+  selectedProjectAbstractRequiredVotes: number;
+  addScreeningDecision: (value: Exclude<DecisionValue, "not_retrieved">) => void;
+  undoLastDecision: () => void;
+};
+
+export function ScreeningSection({
+  projectScreeningStudies,
+  screeningProgress,
+  screenedByMe,
+  decisions,
+  selectedProjectId,
+  currentUserId,
+  studyIndex,
+  setStudyIndex,
+  titleAbstractEvaluations,
+  formatDecision,
+  decisionTone,
+  currentStudy,
+  stageEvaluation,
+  highlightText,
+  screeningNote,
+  setScreeningNote,
+  currentUserDecision,
+  currentStageDecisions,
+  formatConflictResolutionHint,
+  selectedProjectAbstractRequiredVotes,
+  addScreeningDecision,
+  undoLastDecision
+}: ScreeningSectionProps) {
+  if (projectScreeningStudies.length === 0) {
+    return (
+      <div className="viewStack">
+        <section className="overviewBand compactBand">
+          <div>
+            <p className="eyebrow">Title and abstract screening</p>
+            <h1>Reviewer Queue</h1>
+            <p className="subtle">Screening starts after imports are committed and canonical studies are created.</p>
+          </div>
+        </section>
+        <section className="panel">
+          <EmptyState
+            icon={FileSearch}
+            title="No citations ready for screening"
+            description="Import RIS or BibTeX records to populate the title and abstract screening queue."
+          />
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="viewStack">
+      <section className="overviewBand compactBand">
+        <div>
+          <p className="eyebrow">Title and abstract screening</p>
+          <h1>Reviewer Queue</h1>
+          <p className="subtle">Blind mode returns only your decision and aggregate state.</p>
+        </div>
+        <div className="progressBlock">
+          <span>{screeningProgress}% of project queue</span>
+          <div className="progressTrack">
+            <i style={{ width: `${screeningProgress}%` }} />
+          </div>
+        </div>
+      </section>
+
+      <section className="screeningLayout">
+        <aside className="panel queuePanel">
+          <SectionTitle icon={ListChecks} title="Queue" action={`${screenedByMe}/${projectScreeningStudies.length}`} />
+          <div className="queueList">
+            {projectScreeningStudies.map((study, index) => {
+              const decision = decisions.find(
+                (candidate) =>
+                  candidate.projectId === selectedProjectId &&
+                  candidate.studyId === study.id &&
+                  candidate.userId === currentUserId &&
+                  candidate.stage === "title_abstract" &&
+                  candidate.isCurrent
+              );
+              const queueEvaluation = titleAbstractEvaluations.get(study.id);
+              const hasQueueConflict = queueEvaluation?.state === "conflict" || queueEvaluation?.state === "needs_third_vote";
+              return (
+                <button
+                  className={index === studyIndex ? "queueItem active" : "queueItem"}
+                  type="button"
+                  key={study.id}
+                  onClick={() => setStudyIndex(index)}
+                >
+                  <span>{study.title}</span>
+                  <span className="queueBadges">
+                    {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
+                    {decision ? <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} /> : <Badge label="open" tone="neutral" />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        <article className="panel citationPanel">
+          <div className="citationHeader">
+            <div>
+              <p className="eyebrow">{currentStudy.source}</p>
+              <h2>{currentStudy.title}</h2>
+              <p className="subtle">
+                {currentStudy.authors.length > 0 ? currentStudy.authors.join(", ") : "No authors parsed"} · {currentStudy.journal} ·{" "}
+                {currentStudy.year > 0 ? currentStudy.year : "Year needs review"}
+              </p>
+            </div>
+            <Badge label={stageEvaluation.label} tone={stageEvaluation.state === "conflict" ? "danger" : "info"} />
+          </div>
+          <div className="metaStrip">
+            <span>
+              DOI {renderDoiLink(currentStudy.doi, currentStudy.doi || "Missing")}
+            </span>
+            <span className={currentStudy.keywords.length > 0 ? undefined : "emptyMetaValue"}>
+              {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
+            </span>
+          </div>
+          <p className="abstractText">{highlightText(currentStudy.abstract)}</p>
+          <textarea
+            value={screeningNote}
+            onChange={(event) => setScreeningNote(event.target.value)}
+            placeholder="My note"
+            aria-label="Screening note"
+          />
+        </article>
+
+        <aside className="panel actionPanel">
+          <SectionTitle icon={PanelRight} title="Decision" action="Current reviewer" />
+          <div className="decisionState">
+            <span>My current vote</span>
+            <strong>{currentUserDecision ? formatDecision(currentUserDecision.decisionValue) : "No vote"}</strong>
+          </div>
+          {stageEvaluation.state === "conflict" || stageEvaluation.state === "needs_third_vote" ? (
+            <div className="conflictVotesBox">
+              <strong>{stageEvaluation.label}</strong>
+              <p>{formatConflictResolutionHint(selectedProjectAbstractRequiredVotes)}</p>
+              <div className="voteStrip">
+                {currentStageDecisions.map((decision) => (
+                  <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
+                    <strong>{decision.userName}</strong>
+                    {formatDecision(decision.decisionValue)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="decisionButtons">
+            <button className="includeButton" type="button" onClick={() => addScreeningDecision("include")}>
+              <CheckCircle2 size={18} />
+              Include
+            </button>
+            <button className="maybeButton" type="button" onClick={() => addScreeningDecision("maybe")}>
+              <Minus size={18} />
+              Maybe
+            </button>
+            <button className="excludeButton" type="button" onClick={() => addScreeningDecision("exclude")}>
+              <XCircle size={18} />
+              Exclude
+            </button>
+          </div>
+          <div className="buttonRow">
+            <button className="ghostButton iconOnly" type="button" onClick={() => setStudyIndex((index) => Math.max(index - 1, 0))} title="Previous citation">
+              <ArrowLeft size={17} />
+            </button>
+            <button className="ghostButton" type="button" onClick={undoLastDecision} title="Undo latest decision">
+              <History size={17} />
+              Undo
+            </button>
+            <button className="ghostButton iconOnly" type="button" onClick={() => setStudyIndex((index) => Math.min(index + 1, projectScreeningStudies.length - 1))} title="Next citation">
+              <ArrowRight size={17} />
+            </button>
+          </div>
+          <div className="secureBox">
+            <Lock size={17} />
+            <span>Other reviewer votes are hidden while blind mode is enabled.</span>
+          </div>
+        </aside>
+      </section>
+    </div>
+  );
+}

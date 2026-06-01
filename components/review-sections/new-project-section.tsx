@@ -180,37 +180,41 @@ export function NewProjectSection({
 
           <div className="panel">
             <SectionTitle icon={Users} title="Team" action={`${newProjectForm.memberIds.length} selected`} />
-            <div className="addMemberBox">
-              <label>
-                <span>Search Reviewers</span>
-                <input
-                  value={memberSearch}
-                  onChange={(event) => onMemberSearchChange(event.target.value)}
-                  placeholder="Name or email"
-                />
-              </label>
-            </div>
-
-            {memberSearchResults.length > 0 ? (
-              <div className="teamList">
-                {memberSearchResults.map((user) => (
-                  <div className="teamMember" key={user.id}>
-                    <span className="avatar" style={{ background: user.avatarColor }}>
-                      {user.initials}
-                    </span>
-                    <div>
-                      <strong>{user.name}</strong>
-                      <span>{user.email}</span>
-                    </div>
-                    <span>{user.title}</span>
-                    <button className="ghostButton" type="button" onClick={() => onAddMember(user.id)} disabled={user.id === currentUser.id}>
-                      <UserPlus size={16} />
-                      Add
-                    </button>
-                  </div>
-                ))}
+            <div className="addMemberSearch">
+              <div className="addMemberBox addMemberBoxSearch">
+                <label>
+                  <span>Search Reviewers</span>
+                  <input
+                    value={memberSearch}
+                    onChange={(event) => onMemberSearchChange(event.target.value)}
+                    placeholder="Name or email"
+                  />
+                </label>
               </div>
-            ) : null}
+
+              {memberSearchResults.length > 0 ? (
+                <div className="teamSearchResultsOverlay">
+                  <div className="teamList teamSearchResultsList">
+                    {memberSearchResults.map((user) => (
+                      <div className="teamMember" key={user.id}>
+                        <span className="avatar" style={{ background: user.avatarColor }}>
+                          {user.initials}
+                        </span>
+                        <div>
+                          <strong>{user.name}</strong>
+                          <span>{user.email}</span>
+                        </div>
+                        <span>{user.title}</span>
+                        <button className="ghostButton" type="button" onClick={() => onAddMember(user.id)} disabled={user.id === currentUser.id}>
+                          <UserPlus size={16} />
+                          Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
 
             {canShowInviteForm ? (
               <form
