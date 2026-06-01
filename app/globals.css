@@ -2989,6 +2989,40 @@ button:disabled {
   opacity: 0.55;
 }
 
+.notFoundPage {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: calc(20px * var(--ui-scale));
+}
+
+.notFoundCard {
+  width: min(calc(560px * var(--ui-scale)), 100%);
+  display: grid;
+  gap: calc(12px * var(--ui-scale));
+  padding: calc(28px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(14px * var(--ui-scale));
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.notFoundCode {
+  color: var(--teal);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.notFoundCard p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.notFoundCard .primaryButton {
+  width: fit-content;
+}
+
 @media (max-width: 1180px) {
   .metricGrid,
   .qualityGrid,

@@ -1,5 +1,62 @@
+import { notFound } from "next/navigation";
 import { PrismaReviewApp } from "@/components/prisma-review-app";
 
-export default function CatchAllPage() {
+type CatchAllPageProps = {
+  params: {
+    slug?: string[];
+  };
+};
+
+const validStaticRoutes = new Set([
+  "about",
+  "profile",
+  "sign-in"
+]);
+
+const validProjectSubroutes = new Set([
+  "imports",
+  "dedup",
+  "screening",
+  "screen/title-abstract",
+  "full-text",
+  "extraction",
+  "extraction/consensus",
+  "risk",
+  "exports",
+  "audit",
+  "settings"
+]);
+
+function isKnownCatchAllRoute(slug: string[]) {
+  if (slug.length === 0) {
+    return true;
+  }
+
+  const joined = slug.join("/");
+  if (validStaticRoutes.has(joined)) {
+    return true;
+  }
+
+  if (joined === "projects/new" || joined === "admin/reviews" || joined === "admin/users") {
+    return true;
+  }
+
+  if (slug[0] !== "projects" || !slug[1] || slug[1] === "new") {
+    return false;
+  }
+
+  if (slug.length === 2) {
+    return true;
+  }
+
+  return validProjectSubroutes.has(slug.slice(2).join("/"));
+}
+
+export default function CatchAllPage({ params }: CatchAllPageProps) {
+  const slug = params.slug ?? [];
+  if (!isKnownCatchAllRoute(slug)) {
+    notFound();
+  }
+
   return <PrismaReviewApp />;
 }

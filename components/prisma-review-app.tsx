@@ -311,6 +311,28 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
   };
 }
 
+function sanitizeRedirectTarget(redirectTarget: string | null) {
+  if (!redirectTarget) {
+    return null;
+  }
+
+  try {
+    const url = new URL(redirectTarget, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      return null;
+    }
+
+    const normalizedPath = normalizePathname(url.pathname);
+    if (normalizedPath === "/sign-in") {
+      return null;
+    }
+
+    return `${normalizedPath}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 type ProjectSettingsForm = Omit<NewProjectForm, "memberIds">;
 
 type ImportDetailForm = {
@@ -452,6 +474,7 @@ export function PrismaReviewApp() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const skipUrlSyncRef = useRef(false);
+  const isApplyingPostAuthRedirectRef = useRef(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -844,6 +867,29 @@ export function PrismaReviewApp() {
     }
   }
 
+  function applyPostAuthRedirect() {
+    const params = new URLSearchParams(window.location.search);
+    const target = sanitizeRedirectTarget(params.get("redirect"));
+
+    if (!target) {
+      skipUrlSyncRef.current = false;
+      setActiveView("dashboard");
+      return;
+    }
+
+    const redirectUrl = new URL(target, window.location.origin);
+    const routeState = parseRouteState(redirectUrl.pathname, redirectUrl.search);
+    const nextUrl = `${normalizePathname(redirectUrl.pathname)}${redirectUrl.search}${redirectUrl.hash}`;
+
+    isApplyingPostAuthRedirectRef.current = true;
+    skipUrlSyncRef.current = true;
+    setActiveView(routeState.view);
+    if (routeState.projectId) {
+      setSelectedProjectId(routeState.projectId);
+    }
+    window.history.replaceState(null, "", nextUrl);
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -891,6 +937,10 @@ export function PrismaReviewApp() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
     const nextPath = normalizePathname(buildPathForState(activeView, selectedProjectId));
     const currentPath = normalizePathname(window.location.pathname);
     const nextUrl = `${nextPath}${window.location.hash}`;
@@ -904,7 +954,35 @@ export function PrismaReviewApp() {
     if (nextUrl !== currentUrl) {
       window.history.pushState(null, "", nextUrl);
     }
-  }, [activeView, selectedProjectId]);
+  }, [activeView, isAuthenticated, selectedProjectId]);
+
+  useEffect(() => {
+    if (!isAuthResolved) {
+      return;
+    }
+
+    const currentPath = normalizePathname(window.location.pathname);
+    const currentWithSearch = `${currentPath}${window.location.search}`;
+
+    if (!isAuthenticated) {
+      if (currentPath === "/sign-in") {
+        return;
+      }
+
+      const nextUrl = `/sign-in?redirect=${encodeURIComponent(currentWithSearch)}`;
+      window.history.replaceState(null, "", nextUrl);
+      return;
+    }
+
+    if (isApplyingPostAuthRedirectRef.current) {
+      isApplyingPostAuthRedirectRef.current = false;
+      return;
+    }
+
+    if (currentPath === "/sign-in") {
+      applyPostAuthRedirect();
+    }
+  }, [isAuthResolved, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated || userProjects.length === 0) {
@@ -913,6 +991,12 @@ export function PrismaReviewApp() {
 
     const canAccessSelected = userProjects.some((project) => project.id === selectedProjectId);
     if (!canAccessSelected) {
+      const pathParts = normalizePathname(window.location.pathname).split("/").filter(Boolean);
+      const projectIdFromPath = pathParts[0] === "projects" && pathParts[1] && pathParts[1] !== "new" ? pathParts[1] : null;
+      if (projectIdFromPath) {
+        window.location.assign(`/projects/${encodeURIComponent(projectIdFromPath)}/not-found`);
+        return;
+      }
       setSelectedProjectId(userProjects[0].id);
     }
   }, [isAuthenticated, selectedProjectId, userProjects]);
@@ -1153,7 +1237,7 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setIsAuthenticated(true);
-      setActiveView("dashboard");
+      applyPostAuthRedirect();
     } catch (error) {
       setLoginError(getErrorMessage(error));
     }
@@ -1199,7 +1283,7 @@ export function PrismaReviewApp() {
       applySuccessfulRegistration(payload.currentUser.email, registerForm.password);
       resetNewProjectForm(payload.currentUser);
       setIsAuthenticated(true);
-      setActiveView("dashboard");
+      applyPostAuthRedirect();
     } catch (error) {
       setLoginError(getErrorMessage(error));
       loadAuthConfig().catch(() => undefined);
