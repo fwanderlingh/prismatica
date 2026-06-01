@@ -2,10 +2,18 @@ import { notFound } from "next/navigation";
 import { PrismaReviewApp } from "@/components/prisma-review-app";
 
 type CatchAllPageProps = {
-  params: {
-    slug?: string[];
-  };
+  params:
+    | {
+        slug?: string[];
+      }
+    | Promise<{
+        slug?: string[];
+      }>;
 };
+
+async function resolveParams(params: CatchAllPageProps["params"]) {
+  return params instanceof Promise ? await params : params;
+}
 
 const validStaticRoutes = new Set([
   "about",
@@ -52,8 +60,9 @@ function isKnownCatchAllRoute(slug: string[]) {
   return validProjectSubroutes.has(slug.slice(2).join("/"));
 }
 
-export default function CatchAllPage({ params }: CatchAllPageProps) {
-  const slug = params.slug ?? [];
+export default async function CatchAllPage({ params }: CatchAllPageProps) {
+  const resolvedParams = await resolveParams(params);
+  const slug = resolvedParams.slug ?? [];
   if (!isKnownCatchAllRoute(slug)) {
     notFound();
   }

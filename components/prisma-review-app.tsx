@@ -491,6 +491,7 @@ export function PrismaReviewApp() {
   const [extractionConsensus, setExtractionConsensus] = useState<ExtractionConsensus[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
+  const [requestedProjectId, setRequestedProjectId] = useState<string | null>(null);
   const [teamUserSearch, setTeamUserSearch] = useState("");
   const [inviteForm, setInviteForm] = useState({
     name: "",
@@ -884,6 +885,7 @@ export function PrismaReviewApp() {
     isApplyingPostAuthRedirectRef.current = true;
     skipUrlSyncRef.current = true;
     setActiveView(routeState.view);
+    setRequestedProjectId(routeState.projectId ?? null);
     if (routeState.projectId) {
       setSelectedProjectId(routeState.projectId);
     }
@@ -926,6 +928,7 @@ export function PrismaReviewApp() {
 
       skipUrlSyncRef.current = true;
       setActiveView(routeState.view);
+      setRequestedProjectId(routeState.projectId ?? null);
       if (routeState.projectId) {
         setSelectedProjectId(routeState.projectId);
       }
@@ -985,21 +988,37 @@ export function PrismaReviewApp() {
   }, [isAuthResolved, isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || userProjects.length === 0) {
+    if (!isAuthenticated || !isAuthResolved) {
+      return;
+    }
+
+    const routeProjectId = requestedProjectId;
+    if (routeProjectId) {
+      const canAccessRouteProject = userProjects.some((project) => project.id === routeProjectId);
+      if (!canAccessRouteProject) {
+        const notFoundUrl = `/__not-found?missingProjectId=${encodeURIComponent(routeProjectId)}`;
+        if (normalizePathname(window.location.pathname) !== "/__not-found") {
+          window.location.replace(notFoundUrl);
+        }
+        return;
+      }
+
+      if (selectedProjectId !== routeProjectId) {
+        skipUrlSyncRef.current = true;
+        setSelectedProjectId(routeProjectId);
+      }
+      return;
+    }
+
+    if (userProjects.length === 0) {
       return;
     }
 
     const canAccessSelected = userProjects.some((project) => project.id === selectedProjectId);
     if (!canAccessSelected) {
-      const pathParts = normalizePathname(window.location.pathname).split("/").filter(Boolean);
-      const projectIdFromPath = pathParts[0] === "projects" && pathParts[1] && pathParts[1] !== "new" ? pathParts[1] : null;
-      if (projectIdFromPath) {
-        window.location.assign(`/projects/${encodeURIComponent(projectIdFromPath)}/not-found`);
-        return;
-      }
       setSelectedProjectId(userProjects[0].id);
     }
-  }, [isAuthenticated, selectedProjectId, userProjects]);
+  }, [isAuthenticated, isAuthResolved, requestedProjectId, selectedProjectId, userProjects]);
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
@@ -1303,6 +1322,7 @@ export function PrismaReviewApp() {
   }
 
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
+    setRequestedProjectId(projectId);
     setSelectedProjectId(projectId);
     setActiveView(view);
     setIsMobileNavOpen(false);
