@@ -1,4 +1,3 @@
-import type { FormEvent } from "react";
 import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, Plus, Trash2 } from "lucide-react";
 import {
   type AppUser,
@@ -13,6 +12,10 @@ import {
   type ViewKey
 } from "@/lib/prismaData";
 import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
 
 type ExtractionTemplateFieldForm = {
   id: string;
@@ -34,7 +37,7 @@ type ExtractionSectionProps = {
   currentUser: AppUser;
   extractionMessage: string;
   activeExtractionTemplate?: ExtractionTemplate;
-  createExtractionTemplate: (event: FormEvent<HTMLFormElement>) => void;
+  createExtractionTemplate: (event: FormSubmitEvent) => void;
   extractionTemplateForm: ExtractionTemplateForm;
   setExtractionTemplateTitle: (title: string) => void;
   removeExtractionTemplateField: (fieldId: string) => void;
@@ -48,7 +51,7 @@ type ExtractionSectionProps = {
   projectScreeningStudies: Study[];
   extractionResponses: ExtractionResponse[];
   activeExtractionResponse?: ExtractionResponse;
-  submitExtractionResponse: (event: FormEvent<HTMLFormElement>) => void;
+  submitExtractionResponse: (event: FormSubmitEvent) => void;
   extractionFormValues: Record<string, ExtractionResponseValue | undefined>;
   updateExtractionValue: (fieldId: string, value: ExtractionResponseValue) => void;
   toggleExtractionChoice: (fieldId: string, option: string, checked: boolean) => void;

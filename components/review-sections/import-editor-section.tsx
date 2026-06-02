@@ -1,7 +1,10 @@
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, Database, FileSearch, FileText, PenLine, Trash2, X } from "lucide-react";
-import type { FormEvent } from "react";
 import type { ImportBatch, Study } from "@/lib/prismaData";
 import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
 
 type StudyEditForm = {
   title: string;
@@ -29,11 +32,11 @@ type ImportEditorSectionProps = {
   closeImportEditor: () => void;
   deleteImportBatch: (importId: string) => void;
   openScreening: () => void;
-  updateImportDetails: (event: FormEvent<HTMLFormElement>) => void;
+  updateImportDetails: (event: FormSubmitEvent) => void;
   onImportSourceNameChange: (value: string) => void;
   onImportFilenameChange: (value: string) => void;
   reviewImportWarnings: (importId: string) => void;
-  updateImportStudy: (event: FormEvent<HTMLFormElement>) => void;
+  updateImportStudy: (event: FormSubmitEvent) => void;
   onStudyEditFormChange: (updates: Partial<StudyEditForm>) => void;
   cancelStudyEdit: () => void;
   editImportStudy: (study: Study) => void;

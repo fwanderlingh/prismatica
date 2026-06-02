@@ -40,40 +40,51 @@ export function ExportsSection({
   formatNumber
 }: ExportsSectionProps) {
   const exportMessageIsSuccess = /downloaded|generated|exported/i.test(exportMessage);
+  const isZeroDataProject =
+    recordsIdentified === 0 &&
+    exportConsistency.screenedAndPreScreenRemovedTotal === 0 &&
+    activeCounts.recordsScreened === 0 &&
+    exportConsistency.screenBalanceTotal === 0 &&
+    activeCounts.reportsSought === 0 &&
+    exportConsistency.retrievalBalanceTotal === 0 &&
+    activeCounts.reportsAssessed === 0 &&
+    exportConsistency.assessedBalanceTotal === 0 &&
+    exportConsistency.excludedWithoutReasonCount === 0;
+
   const validations = [
     {
       label: exportConsistency.identifiedCheckOk
         ? "Identified records cover screening and pre-screen removals"
         : "Identified records do not cover screening and pre-screen removals",
-      ok: exportConsistency.identifiedCheckOk,
+      status: isZeroDataProject ? "muted" : exportConsistency.identifiedCheckOk ? "ok" : "warning",
       detail: `Identified: ${formatNumber(recordsIdentified)}. Screened + pre-screen removals: ${formatNumber(exportConsistency.screenedAndPreScreenRemovedTotal)}.`
     },
     {
       label: exportConsistency.screenedCheckOk
         ? "Screening decisions are fully balanced"
         : "Screening decisions are not fully balanced",
-      ok: exportConsistency.screenedCheckOk,
+      status: isZeroDataProject ? "muted" : exportConsistency.screenedCheckOk ? "ok" : "warning",
       detail: `Screened: ${formatNumber(activeCounts.recordsScreened)}. Excluded + moved to full text: ${formatNumber(exportConsistency.screenBalanceTotal)}.`
     },
     {
       label: exportConsistency.retrievalCheckOk
         ? "Retrieval outcomes are fully balanced"
         : "Retrieval outcomes are not fully balanced",
-      ok: exportConsistency.retrievalCheckOk,
+      status: isZeroDataProject ? "muted" : exportConsistency.retrievalCheckOk ? "ok" : "warning",
       detail: `Reports sought: ${formatNumber(activeCounts.reportsSought)}. Assessed + not retrieved: ${formatNumber(exportConsistency.retrievalBalanceTotal)}.`
     },
     {
       label: exportConsistency.assessedCheckOk
         ? "Eligibility decisions are fully balanced"
         : "Eligibility decisions are not fully balanced",
-      ok: exportConsistency.assessedCheckOk,
+      status: isZeroDataProject ? "muted" : exportConsistency.assessedCheckOk ? "ok" : "warning",
       detail: `Assessed reports: ${formatNumber(activeCounts.reportsAssessed)}. Exclusions with reasons + included studies: ${formatNumber(exportConsistency.assessedBalanceTotal)}.`
     },
     {
       label: exportConsistency.exclusionReasonCheckOk
         ? "Every current full-text exclusion has a reason"
         : "Some current full-text exclusions are missing a reason",
-      ok: exportConsistency.exclusionReasonCheckOk,
+      status: isZeroDataProject ? "muted" : exportConsistency.exclusionReasonCheckOk ? "ok" : "warning",
       detail: `Current full-text exclusions missing reason: ${formatNumber(exportConsistency.excludedWithoutReasonCount)}.`
     }
   ];
@@ -133,12 +144,25 @@ export function ExportsSection({
         </div>
 
         <div className="panel">
-          <SectionTitle icon={CheckCircle2} title="Consistency Checks" action={`${exportConsistency.passedCount}/${exportConsistency.totalCount} passed`} />
+          <SectionTitle
+            icon={CheckCircle2}
+            title="Consistency Checks"
+            action={isZeroDataProject ? "Awaiting data" : `${exportConsistency.passedCount}/${exportConsistency.totalCount} passed`}
+          />
           <p className="subtle">These are live integrity checks from current project data, not demo placeholders.</p>
           <div className="validationList">
             {validations.map((validation) => (
-              <div className={validation.ok ? "validationItem ok" : "validationItem warning"} key={validation.label}>
-                {validation.ok ? <Check size={17} /> : <X size={17} />}
+              <div
+                className={
+                  validation.status === "muted"
+                    ? "validationItem muted"
+                    : validation.status === "ok"
+                      ? "validationItem ok"
+                      : "validationItem warning"
+                }
+                key={validation.label}
+              >
+                {validation.status === "muted" ? <CheckCircle2 size={17} /> : validation.status === "ok" ? <Check size={17} /> : <X size={17} />}
                 <div>
                   <span>{validation.label}</span>
                   <small>{validation.detail}</small>

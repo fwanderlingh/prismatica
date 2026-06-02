@@ -47,6 +47,7 @@ export type PublicAuthConfigPayload = {
 
 export type AppMutationPayload = AppStatePayload & {
   selectedProjectId?: string;
+  createdUserId?: string;
   message?: string;
   temporaryPassword?: string;
   decisionAction?: DecisionActionPayload;

@@ -668,11 +668,19 @@ export function getAppStateForUser(userId: string): AppStatePayload {
 
 export function deleteProjectForUser(userId: string, projectId: string): AppMutationPayload {
   const state = readState();
-  const currentUser = requireAdminUser(state, userId);
+  const currentUser = getUser(state, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
   const project = getProject(state, projectId);
 
   if (!project) {
     throw new ApiError("Review not found.", 404);
+  }
+
+  if (!currentUser.isAdmin && !isProjectOwner(project, userId)) {
+    throw new ApiError("Only project owners can delete this review.", 403);
   }
 
   const removedStudyIds = new Set(state.studies.filter((study) => study.projectId === projectId).map((study) => study.id));
@@ -948,6 +956,70 @@ export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: s
   return {
     ...buildPayload(state, adminUser.id),
     message: `Deleted account ${targetUser.name}.`
+  };
+}
+
+export function adminCreateUserForUser(
+  adminUserIdInput: string,
+  input: {
+    name?: string;
+    email?: string;
+    organization?: string;
+    title?: string;
+    password?: string;
+  }
+): AppMutationPayload {
+  const state = readState();
+  const adminUser = requireAdminUser(state, adminUserIdInput);
+
+  const name = input.name?.trim() ?? "";
+  const email = input.email?.trim().toLowerCase() ?? "";
+  const organization = input.organization?.trim() ?? "";
+  const title = input.title?.trim() || "Reviewer";
+
+  if (!name || !email || !organization) {
+    throw new ApiError("Enter name, email, and organization to create a user.");
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new ApiError("Enter a valid email address.");
+  }
+
+  if (state.users.some((user) => user.email.toLowerCase() === email)) {
+    throw new ApiError("That email already has an account.", 409);
+  }
+
+  const temporaryPassword = input.password?.trim() || crypto.randomBytes(12).toString("base64url").slice(0, 16);
+  if (temporaryPassword.length < 8) {
+    throw new ApiError("Password must be at least 8 characters.");
+  }
+
+  const now = new Date().toISOString();
+  const newUser: StoredUser = {
+    id: createId(`user-${slugify(email)}`),
+    name,
+    email,
+    isAdmin: false,
+    initials: getInitials(name),
+    organization,
+    title,
+    timezone: "Europe/Rome",
+    avatarColor: pickAvatarColor(state.users.length),
+    websiteTheme: "system",
+    ...hashPassword(temporaryPassword),
+    createdAt: now,
+    updatedAt: now
+  };
+
+  state.users.push(newUser);
+  appendEvent(state, adminUser.name, `Created account ${newUser.name}`, newUser.id);
+  writeState(state);
+
+  return {
+    ...buildPayload(state, adminUser.id),
+    createdUserId: newUser.id,
+    temporaryPassword,
+    message: `Created account ${newUser.name}. Temporary password: ${temporaryPassword}`
   };
 }
 

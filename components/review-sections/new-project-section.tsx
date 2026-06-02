@@ -1,8 +1,11 @@
-import type { FormEvent } from "react";
 import { AlertTriangle, ArrowLeft, FileText, Lock, Mail, Plus, UserPlus, Users, X } from "lucide-react";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle } from "@/components/prisma-review-ui";
 import type { NewProjectForm } from "@/components/use-new-project-state";
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
 
 export type NewProjectInviteDraft = {
   name: string;
@@ -18,7 +21,7 @@ type NewProjectSectionProps = {
   creationStatus: string;
   creationSummary: string;
   onBack: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSubmit: (event: FormSubmitEvent) => void;
   onTitleChange: (value: string) => void;
   onOrganizationChange: (value: string) => void;
   onProtocolIdChange: (value: string) => void;

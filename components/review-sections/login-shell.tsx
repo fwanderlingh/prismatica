@@ -1,6 +1,9 @@
 import { AlertTriangle, Eye, EyeOff, Info, LogIn, PenLine } from "lucide-react";
-import type { FormEvent } from "react";
 import type { AuthMode, RegisterForm } from "@/components/use-auth-state";
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
 
 type LoginShellProps = {
   registrationEnabled: boolean;
@@ -16,8 +19,8 @@ type LoginShellProps = {
   brandTagline: string;
   brandLogoAlt: string;
   onSwitchAuthMode: (mode: AuthMode) => void;
-  onLoginSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onRegisterSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onLoginSubmit: (event: FormSubmitEvent) => void;
+  onRegisterSubmit: (event: FormSubmitEvent) => void;
   onLoginEmailChange: (value: string) => void;
   onLoginPasswordChange: (value: string) => void;
   onToggleLoginPassword: () => void;

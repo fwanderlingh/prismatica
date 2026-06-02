@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { useState } from "react";
 import { AlertTriangle, Check, FileText, Lock, Plus, Settings, UserRoundCheck, Users, X } from "lucide-react";
 import { type AppUser, type ReviewProject, roleRows } from "@/lib/prismaData";
 import { Badge, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
@@ -23,13 +23,17 @@ type InviteFormShape = {
   title: string;
 };
 
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
+
 type SettingsSectionProps = {
   selectedProject: ReviewProject;
   currentUser: AppUser;
   users: AppUser[];
   projectSettingsForm: ProjectSettingsFormShape;
   projectSettingsMessage: string;
-  updateProjectSettings: (event: FormEvent<HTMLFormElement>) => void;
+  updateProjectSettings: (event: FormSubmitEvent) => void;
   onSettingsTitleChange: (value: string) => void;
   onSettingsOrganizationChange: (value: string) => void;
   onSettingsProtocolIdChange: (value: string) => void;
@@ -49,7 +53,7 @@ type SettingsSectionProps = {
   onInviteNameChange: (value: string) => void;
   onInviteEmailChange: (value: string) => void;
   onInviteTitleChange: (value: string) => void;
-  inviteUserToProject: (event: FormEvent<HTMLFormElement>) => void;
+  inviteUserToProject: (event: FormSubmitEvent) => void;
   teamMessage: string;
   toggleProjectOwner: (userId: string) => void;
   removeUserFromProject: (userId: string) => void;
@@ -57,7 +61,12 @@ type SettingsSectionProps = {
   teamRemovePendingUserId: string | null;
   isSavingProjectSettings: boolean;
   hasProjectSeedData: boolean;
+  deleteProjectMessage: string;
+  isDeletingProject: boolean;
+  onDeleteProject: () => void;
 };
+
+const DELETE_CONFIRMATION_TEXT = "I want to delete this review";
 
 export function SettingsSection({
   selectedProject,
@@ -92,12 +101,17 @@ export function SettingsSection({
   teamRolePendingUserId,
   teamRemovePendingUserId,
   isSavingProjectSettings,
-  hasProjectSeedData
+  hasProjectSeedData,
+  deleteProjectMessage,
+  isDeletingProject,
+  onDeleteProject
 }: SettingsSectionProps) {
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
   const projectMembers = selectedProject.memberIds
     .map((memberId) => users.find((user) => user.id === memberId))
     .filter((user): user is AppUser => Boolean(user));
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
+  const canSubmitDelete = canManageProject && deleteConfirmationInput.trim() === DELETE_CONFIRMATION_TEXT;
   const settingsMessageIsSuccess = projectSettingsMessage === "Project settings saved.";
 
   return (
@@ -425,6 +439,48 @@ export function SettingsSection({
           </table>
         </div>
       </section>
+
+      {canManageProject ? (
+        <section className="panel formActions">
+          <div>
+            <strong>Danger zone</strong>
+            <span>This permanently deletes this review and all its imports, studies, reports, decisions, and audit history.</span>
+          </div>
+          <div className="projectDeleteActions">
+            <label>
+              <span>Type exactly: {DELETE_CONFIRMATION_TEXT}</span>
+              <input
+                value={deleteConfirmationInput}
+                onChange={(event) => setDeleteConfirmationInput(event.target.value)}
+                placeholder={DELETE_CONFIRMATION_TEXT}
+                autoComplete="off"
+              />
+            </label>
+            <button className="dangerButton" type="button" onClick={onDeleteProject} disabled={!canSubmitDelete || isDeletingProject}>
+              {isDeletingProject ? (
+                <>
+                  <span className="inlineSpinner" aria-hidden="true" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <X size={16} />
+                  Delete review
+                </>
+              )}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {deleteProjectMessage ? (
+        <section className="panel">
+          <div className="validationItem blocked">
+            <AlertTriangle size={17} />
+            <span>{deleteProjectMessage}</span>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

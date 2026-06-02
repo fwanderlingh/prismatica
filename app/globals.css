@@ -2645,6 +2645,19 @@ select:disabled {
   grid-template-columns: calc(34px * var(--ui-scale)) minmax(0, 1fr) auto;
 }
 
+.adminManagedUserSwitch .userSwitchActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+.adminManagedUserSwitch .userSwitchActions button {
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .userSwitchActions {
   display: flex;
   flex-wrap: wrap;
@@ -2682,6 +2695,29 @@ select:disabled {
 .formActions span {
   margin-top: calc(4px * var(--ui-scale));
   color: var(--muted);
+}
+
+.projectDeleteActions {
+  display: grid;
+  gap: calc(10px * var(--ui-scale));
+  justify-items: end;
+}
+
+.projectDeleteActions label {
+  display: grid;
+  gap: calc(7px * var(--ui-scale));
+  justify-items: start;
+}
+
+.projectDeleteActions label span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.projectDeleteActions input {
+  min-width: min(calc(420px * var(--ui-scale)), 100%);
 }
 
 button:disabled {
@@ -2951,6 +2987,16 @@ button:disabled {
   background: var(--amber-soft);
 }
 
+.validationItem.muted {
+  color: var(--text-soft);
+  border-color: var(--border);
+  background: var(--surface-muted);
+}
+
+.adminDirectoryFeedback {
+  margin-top: calc(12px * var(--ui-scale));
+}
+
 .exportHistory {
   margin-top: calc(20px * var(--ui-scale));
   padding-top: calc(14px * var(--ui-scale));
@@ -3213,11 +3259,11 @@ button:disabled {
 
   .adminManagedUserSwitch .userSwitchActions {
     grid-column: 1 / -1;
-    justify-content: stretch;
+    width: 100%;
+    flex-wrap: nowrap;
   }
 
   .adminManagedUserSwitch .userSwitchActions button {
-    flex: 1 1 calc(150px * var(--ui-scale));
     justify-content: center;
   }
 
@@ -3302,7 +3348,9 @@ button:disabled {
 
   .adminManagedUserSwitch .userSwitchActions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    flex-wrap: nowrap;
   }
 
   .adminManagedUserSwitch .userSwitchActions button {

@@ -1,7 +1,18 @@
-import { AlertTriangle, Check, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, Check, ShieldCheck, UserPlus, Users } from "lucide-react";
 import type { AppAuthSettings } from "@/lib/apiTypes";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
+
+type AdminCreateUserForm = {
+  name: string;
+  email: string;
+  organization: string;
+  title: string;
+};
 
 type RegisteredUsersSectionProps = {
   users: AppUser[];
@@ -11,6 +22,13 @@ type RegisteredUsersSectionProps = {
   authSettingsMessage: string;
   adminResetUserPassword: (user: AppUser) => void;
   adminDeleteUser: (user: AppUser) => void;
+  createUserForm: AdminCreateUserForm;
+  onCreateUserFormNameChange: (value: string) => void;
+  onCreateUserFormEmailChange: (value: string) => void;
+  onCreateUserFormOrganizationChange: (value: string) => void;
+  onCreateUserFormTitleChange: (value: string) => void;
+  onCreateUser: (event: FormSubmitEvent) => void;
+  isCreatingUser: boolean;
   updateRegistrationSetting: (enabled: boolean) => void;
 };
 
@@ -22,8 +40,17 @@ export function RegisteredUsersSection({
   authSettingsMessage,
   adminResetUserPassword,
   adminDeleteUser,
+  createUserForm,
+  onCreateUserFormNameChange,
+  onCreateUserFormEmailChange,
+  onCreateUserFormOrganizationChange,
+  onCreateUserFormTitleChange,
+  onCreateUser,
+  isCreatingUser,
   updateRegistrationSetting
 }: RegisteredUsersSectionProps) {
+  const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -75,11 +102,47 @@ export function RegisteredUsersSection({
             ))}
           </div>
           {adminDirectoryMessage ? (
-            <div className={adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? "validationItem ok" : "validationItem blocked"}>
-              {adminDirectoryMessage.startsWith("Temporary password") || adminDirectoryMessage.startsWith("Deleted account") ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <div className={adminDirectoryMessageIsSuccess ? "validationItem ok adminDirectoryFeedback" : "validationItem blocked adminDirectoryFeedback"}>
+              {adminDirectoryMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
               <span>{adminDirectoryMessage}</span>
             </div>
           ) : null}
+        </div>
+
+        <div className="panel">
+          <SectionTitle icon={UserPlus} title="Create User" action="Admin only" />
+          <p className="subtle">Create a reviewer account directly. A temporary password will be generated and shown after creation.</p>
+          <form className="inviteForm" onSubmit={onCreateUser}>
+            <label>
+              <span>Name</span>
+              <input value={createUserForm.name} onChange={(event) => onCreateUserFormNameChange(event.target.value)} />
+            </label>
+            <label>
+              <span>Email</span>
+              <input value={createUserForm.email} onChange={(event) => onCreateUserFormEmailChange(event.target.value)} />
+            </label>
+            <label>
+              <span>Organization</span>
+              <input value={createUserForm.organization} onChange={(event) => onCreateUserFormOrganizationChange(event.target.value)} />
+            </label>
+            <label>
+              <span>Role title</span>
+              <input value={createUserForm.title} onChange={(event) => onCreateUserFormTitleChange(event.target.value)} />
+            </label>
+            <button className="ghostButton" type="submit" disabled={isCreatingUser}>
+              {isCreatingUser ? (
+                <>
+                  <span className="inlineSpinner" aria-hidden="true" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <UserPlus size={17} />
+                  Create user
+                </>
+              )}
+            </button>
+          </form>
         </div>
 
         <div className="panel">

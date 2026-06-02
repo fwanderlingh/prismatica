@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -131,6 +131,10 @@ type NavItem = {
 type DecisionAction = {
   studyId: string;
   previousDecisionId?: string;
+};
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
 };
 
 type WorkflowConflict = {
@@ -513,6 +517,8 @@ export function PrismaReviewApp() {
   const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsForm>(emptyProjectSettingsForm);
   const [projectSettingsMessage, setProjectSettingsMessage] = useState("");
   const [isSavingProjectSettings, setIsSavingProjectSettings] = useState(false);
+  const [deleteProjectMessage, setDeleteProjectMessage] = useState("");
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>(seedDedupCandidates);
@@ -539,6 +545,13 @@ export function PrismaReviewApp() {
   const [studyEditForm, setStudyEditForm] = useState<StudyEditForm>(emptyStudyEditForm);
   const [accountMessage, setAccountMessage] = useState("");
   const [adminDirectoryMessage, setAdminDirectoryMessage] = useState("");
+  const [isCreatingAdminUser, setIsCreatingAdminUser] = useState(false);
+  const [adminCreateUserForm, setAdminCreateUserForm] = useState({
+    name: "",
+    email: "",
+    organization: "",
+    title: "Reviewer"
+  });
   const [accountForm, setAccountForm] = useState({
     organization: "",
     title: "",
@@ -1237,7 +1250,7 @@ export function PrismaReviewApp() {
     });
   }
 
-  async function handleLogin(event?: FormEvent<HTMLFormElement>) {
+  async function handleLogin(event?: FormSubmitEvent) {
     event?.preventDefault();
 
     if (!loginPassword.trim()) {
@@ -1262,7 +1275,7 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function handleRegistration(event: FormEvent<HTMLFormElement>) {
+  async function handleRegistration(event: FormSubmitEvent) {
     event.preventDefault();
     if (!authSettings.registrationEnabled) {
       setLoginError("Public registration is disabled. Ask an administrator for an account.");
@@ -1388,7 +1401,7 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function inviteUserToProject(event: FormEvent<HTMLFormElement>) {
+  async function inviteUserToProject(event: FormSubmitEvent) {
     event.preventDefault();
     const email = inviteForm.email.trim().toLowerCase();
     const name = inviteForm.name.trim();
@@ -1466,6 +1479,28 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function deleteCurrentProjectFromSettings() {
+    if (!window.confirm(`Delete review "${selectedProject.title}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setDeleteProjectMessage("");
+    try {
+      setIsDeletingProject(true);
+      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}`, {
+        method: "DELETE"
+      });
+      applyAppState(payload);
+      setRequestedProjectId(null);
+      setActiveView("dashboard");
+      setDashboardMessage(payload.message ?? `Deleted review ${selectedProject.title}.`);
+    } catch (error) {
+      setDeleteProjectMessage(getErrorMessage(error));
+    } finally {
+      setIsDeletingProject(false);
+    }
+  }
+
   async function toggleProjectOwner(userId: string) {
     const user = users.find((candidate) => candidate.id === userId);
     if (!user) {
@@ -1497,7 +1532,7 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function createProject(event: FormEvent<HTMLFormElement>) {
+  async function createProject(event: FormSubmitEvent) {
     event.preventDefault();
     const title = newProjectForm.title.trim();
     const dueDate = newProjectForm.dueDate.trim();
@@ -1609,7 +1644,7 @@ export function PrismaReviewApp() {
     setQueuedNewProjectInvites((previous) => previous.filter((invite) => normalizeEmail(invite.email) !== normalizeEmail(email)));
   }
 
-  async function updateProjectSettings(event: FormEvent<HTMLFormElement>) {
+  async function updateProjectSettings(event: FormSubmitEvent) {
     event.preventDefault();
     const title = projectSettingsForm.title.trim();
     const dueDate = projectSettingsForm.dueDate.trim();
@@ -1664,7 +1699,7 @@ export function PrismaReviewApp() {
     }));
   }
 
-  async function createExtractionTemplate(event: FormEvent<HTMLFormElement>) {
+  async function createExtractionTemplate(event: FormSubmitEvent) {
     event.preventDefault();
     setExtractionMessage("");
     try {
@@ -1716,7 +1751,7 @@ export function PrismaReviewApp() {
     updateConsensusValue(fieldId, checked ? [...currentChoices, option] : currentChoices.filter((choice) => choice !== option));
   }
 
-  async function submitExtractionResponse(event: FormEvent<HTMLFormElement>) {
+  async function submitExtractionResponse(event: FormSubmitEvent) {
     event.preventDefault();
     if (!activeExtractionTemplate || !activeExtractionReport) {
       return;
@@ -1740,7 +1775,7 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function finalizeExtractionConsensus(event: FormEvent<HTMLFormElement>) {
+  async function finalizeExtractionConsensus(event: FormSubmitEvent) {
     event.preventDefault();
     if (!activeExtractionTemplate || !activeExtractionReport) {
       return;
@@ -1840,7 +1875,7 @@ export function PrismaReviewApp() {
     setImportDetailMessage("");
   }
 
-  async function updateImportDetails(event: FormEvent<HTMLFormElement>) {
+  async function updateImportDetails(event: FormSubmitEvent) {
     event.preventDefault();
     if (!selectedImportId) {
       return;
@@ -1884,7 +1919,7 @@ export function PrismaReviewApp() {
     setImportDetailMessage("");
   }
 
-  async function updateImportStudy(event: FormEvent<HTMLFormElement>) {
+  async function updateImportStudy(event: FormSubmitEvent) {
     event.preventDefault();
     if (!selectedImportId || !studyEditId) {
       return;
@@ -1948,7 +1983,7 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function updateAccount(event: FormEvent<HTMLFormElement>) {
+  async function updateAccount(event: FormSubmitEvent) {
     event.preventDefault();
     setAccountMessage("");
     try {
@@ -1993,6 +2028,30 @@ export function PrismaReviewApp() {
       setAdminDirectoryMessage(payload.message ?? `Deleted account ${user.name}.`);
     } catch (error) {
       setAdminDirectoryMessage(getErrorMessage(error));
+    }
+  }
+
+  async function adminCreateUser(event: FormSubmitEvent) {
+    event.preventDefault();
+    setAdminDirectoryMessage("");
+
+    try {
+      setIsCreatingAdminUser(true);
+      const payload = await apiRequest<AppMutationPayload>("/api/admin/users", {
+        method: "POST",
+        body: JSON.stringify(adminCreateUserForm)
+      });
+      applyAppState(payload);
+      setAdminCreateUserForm((previous) => ({
+        ...previous,
+        name: "",
+        email: ""
+      }));
+      setAdminDirectoryMessage(payload.message ?? "User account created.");
+    } catch (error) {
+      setAdminDirectoryMessage(getErrorMessage(error));
+    } finally {
+      setIsCreatingAdminUser(false);
     }
   }
 
@@ -2486,6 +2545,9 @@ export function PrismaReviewApp() {
         teamRemovePendingUserId={teamRemovePendingUserId}
         isSavingProjectSettings={isSavingProjectSettings}
         hasProjectSeedData={hasProjectSeedData}
+        deleteProjectMessage={deleteProjectMessage}
+        isDeletingProject={isDeletingProject}
+        onDeleteProject={deleteCurrentProjectFromSettings}
       />
     );
   }
@@ -2559,6 +2621,13 @@ export function PrismaReviewApp() {
         authSettingsMessage={authSettingsMessage}
         adminResetUserPassword={adminResetUserPassword}
         adminDeleteUser={adminDeleteUser}
+        createUserForm={adminCreateUserForm}
+        onCreateUserFormNameChange={(value) => setAdminCreateUserForm((previous) => ({ ...previous, name: value }))}
+        onCreateUserFormEmailChange={(value) => setAdminCreateUserForm((previous) => ({ ...previous, email: value }))}
+        onCreateUserFormOrganizationChange={(value) => setAdminCreateUserForm((previous) => ({ ...previous, organization: value }))}
+        onCreateUserFormTitleChange={(value) => setAdminCreateUserForm((previous) => ({ ...previous, title: value }))}
+        onCreateUser={adminCreateUser}
+        isCreatingUser={isCreatingAdminUser}
         updateRegistrationSetting={updateRegistrationSetting}
       />
     );

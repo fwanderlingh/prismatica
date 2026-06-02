@@ -1,7 +1,10 @@
-import type { FormEvent } from "react";
 import { AlertTriangle, Check, LogOut, Settings, UserCircle } from "lucide-react";
 import { type AppUser, type WebsiteTheme } from "@/lib/prismaData";
 import { SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
 
 type AccountFormShape = {
   organization: string;
@@ -14,7 +17,7 @@ type AccountFormShape = {
 type ProfileSectionProps = {
   currentUser: AppUser;
   handleLogout: () => void;
-  updateAccount: (event: FormEvent<HTMLFormElement>) => void;
+  updateAccount: (event: FormSubmitEvent) => void;
   accountForm: AccountFormShape;
   onAccountOrganizationChange: (value: string) => void;
   onAccountTitleChange: (value: string) => void;

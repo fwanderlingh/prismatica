@@ -1,4 +1,3 @@
-import type { FormEvent } from "react";
 import { AlertTriangle, Check, ClipboardCheck, GitMerge } from "lucide-react";
 import {
   type AppUser,
@@ -13,6 +12,10 @@ import {
   type ViewKey
 } from "@/lib/prismaData";
 import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
+
+type FormSubmitEvent = {
+  preventDefault: () => void;
+};
 
 type ConsensusSectionProps = {
   activeCounts: PrismaCounts;
@@ -30,7 +33,7 @@ type ConsensusSectionProps = {
   setActiveExtractionReportId: (reportId: string) => void;
   formatExtractionResponseValue: (value: ExtractionResponseValue | undefined) => string;
   formatAuditTime: (value: string) => string;
-  finalizeExtractionConsensus: (event: FormEvent<HTMLFormElement>) => void;
+  finalizeExtractionConsensus: (event: FormSubmitEvent) => void;
   consensusFormValues: Record<string, ExtractionResponseValue | undefined>;
   updateConsensusValue: (fieldId: string, value: ExtractionResponseValue) => void;
   toggleConsensusChoice: (fieldId: string, option: string, checked: boolean) => void;
