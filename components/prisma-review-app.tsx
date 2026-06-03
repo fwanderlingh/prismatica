@@ -422,7 +422,14 @@ function createBlankExtractionField(type: ExtractionFieldType = "multiline_text"
 
 const emptyExtractionTemplateForm: ExtractionTemplateForm = {
   title: "Data Template",
-  fields: [createBlankExtractionField()]
+  fields: [
+    {
+      id: "field-initial",
+      title: "",
+      type: "multiline_text",
+      optionsText: ""
+    }
+  ]
 };
 
 const guestUser: AppUser = {

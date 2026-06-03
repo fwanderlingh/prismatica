@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { PrismaReviewApp } from "@/components/prisma-review-app";
+import { PrismaReviewAppClient } from "@/components/prisma-review-app-client";
 
 type CatchAllPageProps = {
   params:
@@ -67,5 +67,5 @@ export default async function CatchAllPage({ params }: CatchAllPageProps) {
     notFound();
   }
 
-  return <PrismaReviewApp />;
+  return <PrismaReviewAppClient />;
 }

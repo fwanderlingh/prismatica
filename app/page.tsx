@@ -1,5 +1,5 @@
-import { PrismaReviewApp } from "@/components/prisma-review-app";
+import { PrismaReviewAppClient } from "@/components/prisma-review-app-client";
 
 export default function Home() {
-  return <PrismaReviewApp />;
+  return <PrismaReviewAppClient />;
 }
