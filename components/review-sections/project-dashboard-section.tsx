@@ -1,16 +1,9 @@
 import { Activity, AlertTriangle, Bell, ChevronRight, History, Settings, Users } from "lucide-react";
-import type { Decision, PrismaCounts, Report, ReviewProject, Study, WorkflowEvent, AppUser } from "@/lib/prismaData";
+import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser } from "@/lib/prismaData";
 import { Badge, EmptyState, Metric, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 
-type WorkflowConflict = {
-  id: string;
-  stage: "title_abstract" | "full_text";
-  title: string;
-  subtitle: string;
-  label: string;
-  decisions: Decision[];
+type WorkflowConflict = ProjectWorkflowConflict & {
   studyIndex?: number;
-  reportId?: string;
 };
 
 type ProjectUserStatRow = {
@@ -74,6 +67,8 @@ export function ProjectDashboardSection({
   onOpenSettings,
   onOpenAudit
 }: ProjectDashboardSectionProps) {
+  const alertCount = workflowConflicts.length;
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -84,24 +79,26 @@ export function ProjectDashboardSection({
             {selectedProject.protocolId} · {selectedProject.organization} · {formatProjectPhase(selectedProject.stage)}
           </p>
         </div>
-        <div className="toolbarCluster">
-          <button
-            className="ghostButton"
-            type="button"
-            title={workflowConflicts.length > 0 ? "Open the first unresolved conflict" : "No open conflicts"}
-            onClick={() => {
-              if (workflowConflicts.length > 0) {
-                openConflict(workflowConflicts[0]);
-              }
-            }}
-          >
-            <Bell size={17} />
-            Alerts ({workflowConflicts.length})
-          </button>
-          <button className="primaryButton" type="button" title="Open project settings" onClick={onOpenSettings}>
-            <Settings size={17} />
-            Settings
-          </button>
+        <div className="overviewSideStack">
+          <div className="toolbarCluster">
+            <button
+              className="ghostButton"
+              type="button"
+              title={alertCount > 0 ? "Open the first unresolved workflow conflict" : "No unresolved workflow conflicts"}
+              onClick={() => {
+                if (alertCount > 0) {
+                  openConflict(workflowConflicts[0]);
+                }
+              }}
+            >
+              <Bell size={17} />
+              Alerts ({alertCount})
+            </button>
+            <button className="primaryButton" type="button" title="Open project settings" onClick={onOpenSettings}>
+              <Settings size={17} />
+              Settings
+            </button>
+          </div>
         </div>
       </section>
 
@@ -125,12 +122,19 @@ export function ProjectDashboardSection({
                     <p>{conflict.subtitle}</p>
                   </div>
                   <div className="voteStrip" aria-label={`${conflict.title} votes`}>
-                    {conflict.decisions.map((decision) => (
-                      <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
-                        <strong>{decision.userName}</strong>
-                        {formatDecision(decision.decisionValue)}
+                    {conflict.decisions.length > 0 ? (
+                      conflict.decisions.map((decision) => (
+                        <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
+                          <strong>{decision.userName}</strong>
+                          {formatDecision(decision.decisionValue)}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="votePill neutral">
+                        <strong>Blind mode</strong>
+                        Vote details hidden
                       </span>
-                    ))}
+                    )}
                   </div>
                 </div>
                 <button className="ghostButton" type="button" onClick={() => openConflict(conflict)}>

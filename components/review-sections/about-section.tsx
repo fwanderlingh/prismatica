@@ -46,7 +46,7 @@ export function AboutSection() {
           {[
             ["Project governance", "Review setup, membership, owner controls, blind mode, vote thresholds, and registration security."],
             ["Citation workflow", "RIS/BibTeX import, parser warning review, deduplication workspace, and title/abstract screening."],
-            ["Full-text review", "Report queues, PDF upload and validation, DOI links, retrieval status, exclusion reasons, and conflict handling."],
+            ["Full-text review", "Report queues, PDF upload, DOI links, retrieval status, exclusion reasons, and conflict handling."],
             ["Audit and export", "Append-only workflow events, paged audit history, PRISMA count preview, and export validation checks."]
           ].map(([title, description]) => (
             <article className="aboutFeature" key={title}>

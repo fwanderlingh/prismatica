@@ -88,7 +88,7 @@ export function ExtractionSection({
   updateExtractionValue,
   toggleExtractionChoice
 }: ExtractionSectionProps) {
-  const validatedPdfCount = projectReportQueue.filter((report) => report.fileName && report.isPdfValidated).length;
+  const uploadedPdfCount = projectReportQueue.filter((report) => report.fileName).length;
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
   const extractionMessageIsSuccess = /created|submitted|saved/i.test(extractionMessage);
 
@@ -107,14 +107,14 @@ export function ExtractionSection({
             <EmptyState
               icon={ClipboardCheck}
               title="No included studies yet"
-              description="Files appear here after a report is retrieved, its PDF is validated, and the full-text decision reaches Include."
+              description="Files appear here after a report is retrieved, its PDF is uploaded, and the full-text decision reaches Include."
             />
           </div>
           <div className="panel">
             <SectionTitle icon={BookOpen} title="File Readiness" action="Full-text gate" />
             <div className="stateRows">
               <StatusRow label="Full-text reports" value={projectReportQueue.length.toString()} tone={projectReportQueue.length > 0 ? "info" : "warning"} />
-              <StatusRow label="Validated PDFs" value={validatedPdfCount.toString()} tone={validatedPdfCount > 0 ? "secure" : "warning"} />
+              <StatusRow label="Uploaded PDFs" value={uploadedPdfCount.toString()} tone={uploadedPdfCount > 0 ? "secure" : "warning"} />
               <StatusRow label="Included for extraction" value={activeCounts.studiesIncluded.toString()} tone="danger" />
             </div>
             {projectReportQueue.length > 0 ? (
@@ -133,7 +133,7 @@ export function ExtractionSection({
                         <td>
                           <strong>{report.title}</strong>
                         </td>
-                        <td>{report.fileName ? (report.isPdfValidated ? "Validated" : "Needs validation") : "Missing"}</td>
+                        <td>{report.fileName ? "Uploaded" : "Missing"}</td>
                         <td>{projectExtractionStudyIds.has(report.studyId) ? "Visible" : "Awaiting Include"}</td>
                       </tr>
                     ))}

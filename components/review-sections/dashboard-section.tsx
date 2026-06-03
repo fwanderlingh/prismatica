@@ -7,11 +7,16 @@ type DashboardSectionProps = {
   userProjects: ReviewProject[];
   users: AppUser[];
   dashboardMessage: string;
+  getProjectPhaseProgress: (project: ReviewProject) => ProjectPhaseProgress;
   formatProjectPhase: (stage: ReviewProject["stage"]) => string;
   projectPhaseBadgeTone: (stage: ReviewProject["stage"]) => "success" | "warning" | "danger" | "info" | "neutral";
   openProject: (projectId: string, view?: ViewKey) => void;
   formatEuDate: (value: string) => string;
-  formatNumber: (value: number) => string;
+};
+
+type ProjectPhaseProgress = {
+  percent: number;
+  label: string;
 };
 
 export function DashboardSection({
@@ -19,11 +24,11 @@ export function DashboardSection({
   userProjects,
   users,
   dashboardMessage,
+  getProjectPhaseProgress,
   formatProjectPhase,
   projectPhaseBadgeTone,
   openProject,
-  formatEuDate,
-  formatNumber
+  formatEuDate
 }: DashboardSectionProps) {
   return (
     <div className="viewStack">
@@ -51,7 +56,7 @@ export function DashboardSection({
           const ownerNames = project.ownerIds
             .map((ownerId) => users.find((user) => user.id === ownerId)?.name)
             .filter((name): name is string => Boolean(name));
-          const progress = project.recordsTotal > 0 ? Math.round((project.recordsScreened / project.recordsTotal) * 100) : 0;
+          const progress = getProjectPhaseProgress(project);
           return (
             <article className="panel projectCard" key={project.id}>
               <div className="projectCardHeader">
@@ -81,9 +86,9 @@ export function DashboardSection({
                 ) : null}
               </div>
               <div className="progressBlock">
-                <span>{progress}% screened · {formatNumber(project.recordsScreened)} of {formatNumber(project.recordsTotal)} records</span>
+                <span>{progress.label}</span>
                 <div className="progressTrack">
-                  <i style={{ width: `${progress}%` }} />
+                  <i style={{ width: `${progress.percent}%` }} />
                 </div>
               </div>
               <div className="buttonRow">

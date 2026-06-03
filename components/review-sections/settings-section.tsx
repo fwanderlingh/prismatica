@@ -15,6 +15,7 @@ type ProjectSettingsFormShape = {
   fullTextRequiredVotes: number;
   extractionRequiredVotes: number;
   maybePolicy: "advance_to_full_text" | "conflict" | "third_vote";
+  requireSequentialPhases: boolean;
 };
 
 type InviteFormShape = {
@@ -45,6 +46,7 @@ type SettingsSectionProps = {
   onSettingsFullTextVotesChange: (value: number) => void;
   onSettingsExtractionVotesChange: (value: number) => void;
   onSettingsMaybePolicyChange: (value: ProjectSettingsFormShape["maybePolicy"]) => void;
+  onSettingsRequireSequentialPhasesChange: (value: boolean) => void;
   teamUserSearch: string;
   setTeamUserSearch: (value: string) => void;
   teamUserSearchResults: AppUser[];
@@ -88,6 +90,7 @@ export function SettingsSection({
   onSettingsFullTextVotesChange,
   onSettingsExtractionVotesChange,
   onSettingsMaybePolicyChange,
+  onSettingsRequireSequentialPhasesChange,
   teamUserSearch,
   setTeamUserSearch,
   teamUserSearchResults,
@@ -231,6 +234,16 @@ export function SettingsSection({
 
           <div className="panel">
             <SectionTitle icon={Settings} title="State Machine" action="Project policy" />
+            <label className="toggleRow">
+              <input
+                type="checkbox"
+                checked={projectSettingsForm.requireSequentialPhases}
+                onChange={(event) => onSettingsRequireSequentialPhasesChange(event.target.checked)}
+                disabled={!canManageProject}
+              />
+              <span />
+              <strong>Lock future phases until the previous phase is complete</strong>
+            </label>
             <div className="formGrid compactFormGrid">
               <label>
                 <span>Title/abstract votes</span>

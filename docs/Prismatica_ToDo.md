@@ -3,6 +3,7 @@ PRISMATICA
 
 ## To DO:
 
+0. Add a project switch to make future phases accessible only if the previous one is completed.
 
 1. Add a flow diagram generator: https://github.com/prisma-flowdiagram/PRISMA2020ok
 

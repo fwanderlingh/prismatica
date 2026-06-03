@@ -69,50 +69,46 @@ export function RegisteredUsersSection({
         <div className="panel">
           <SectionTitle icon={Users} title="User Accounts" action={`${users.length} registered`} />
           <div className="memberPicker">
-            {users.map((user) => (
-              <div className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"} adminManagedUserSwitch`} key={user.id}>
-                <span className="avatar" style={{ background: user.avatarColor }}>
-                  {user.initials}
-                </span>
-                <div>
-                  <strong>{user.name}</strong>
-                  <small>
-                    {user.email} · {user.title}
-                    {user.isAdmin ? " · administrator" : ""}
-                  </small>
-                </div>
-                <div className="userSwitchActions">
-                  {(() => {
-                    const isResettingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "reset";
-                    const isDeletingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "delete";
-                    const disableUserActions = user.id === currentUser.id || user.isAdmin || pendingUserAction !== null;
+            {users.map((user) => {
+              const isResettingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "reset";
+              const isDeletingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "delete";
+              const disableUserActions = user.id === currentUser.id || user.isAdmin || pendingUserAction !== null;
 
-                    return (
-                      <>
-                  <button
-                    className="ghostButton"
-                    type="button"
-                    disabled={disableUserActions}
-                    onClick={() => adminResetUserPassword(user)}
-                  >
-                    {isResettingUser ? <span className="inlineSpinner" aria-hidden="true" /> : null}
-                    {isResettingUser ? "Resetting..." : "Reset password"}
-                  </button>
-                  <button
-                    className="dangerButton"
-                    type="button"
-                    disabled={disableUserActions}
-                    onClick={() => adminDeleteUser(user)}
-                  >
-                    {isDeletingUser ? <span className="inlineSpinner" aria-hidden="true" /> : null}
-                    {isDeletingUser ? "Deleting..." : "Delete"}
-                  </button>
-                      </>
-                    );
-                  })()}
+              return (
+                <div className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"} adminManagedUserSwitch`} key={user.id}>
+                  <span className="avatar" style={{ background: user.avatarColor }}>
+                    {user.initials}
+                  </span>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <small>
+                      {user.email} · {user.title}
+                      {user.isAdmin ? " · administrator" : ""}
+                    </small>
+                  </div>
+                  <div className="userSwitchActions">
+                    <button
+                      className="ghostButton"
+                      type="button"
+                      disabled={disableUserActions}
+                      onClick={() => adminResetUserPassword(user)}
+                    >
+                      {isResettingUser ? <span className="inlineSpinner" aria-hidden="true" /> : null}
+                      {isResettingUser ? "Resetting..." : "Reset password"}
+                    </button>
+                    <button
+                      className="dangerButton"
+                      type="button"
+                      disabled={disableUserActions}
+                      onClick={() => adminDeleteUser(user)}
+                    >
+                      {isDeletingUser ? <span className="inlineSpinner" aria-hidden="true" /> : null}
+                      {isDeletingUser ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {adminDirectoryMessage ? (
             <div className={adminDirectoryMessageIsSuccess ? "validationItem ok adminDirectoryFeedback" : "validationItem blocked adminDirectoryFeedback"}>

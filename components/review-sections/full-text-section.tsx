@@ -6,7 +6,6 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
-  FileCheck2,
   Upload,
   XCircle
 } from "lucide-react";
@@ -20,8 +19,14 @@ type FullTextUpdateInput = {
   exclusionReasonId?: string;
 };
 
+type ProjectPhaseProgress = {
+  percent: number;
+  label: string;
+};
+
 type FullTextSectionProps = {
   hasProjectSeedData: boolean;
+  phaseProgress: ProjectPhaseProgress;
   projectReportQueue: Report[];
   activeReport: Report;
   decisions: Decision[];
@@ -31,9 +36,8 @@ type FullTextSectionProps = {
   setActiveReportId: (reportId: string) => void;
   setFullTextMessage: (message: string) => void;
   pdfInputRef: RefObject<HTMLInputElement | null>;
-  pendingFullTextAction: "upload" | "validate" | "retrieval" | "include" | "exclude" | null;
+  pendingFullTextAction: "upload" | "retrieval" | "include" | "exclude" | null;
   uploadReportPdf: (event: ChangeEvent<HTMLInputElement>) => void;
-  validateReportPdf: () => void;
   updateFullTextReport: (input: FullTextUpdateInput) => void;
   formatDecision: (value: DecisionValue) => string;
   formatConflictResolutionHint: (requiredVotes: number) => string;
@@ -44,8 +48,11 @@ type FullTextSectionProps = {
   studies: Study[];
 };
 
+
+
 export function FullTextSection({
   hasProjectSeedData,
+  phaseProgress,
   projectReportQueue,
   activeReport,
   decisions,
@@ -57,7 +64,6 @@ export function FullTextSection({
   pdfInputRef,
   pendingFullTextAction,
   uploadReportPdf,
-  validateReportPdf,
   updateFullTextReport,
   formatDecision,
   formatConflictResolutionHint,
@@ -113,14 +119,24 @@ export function FullTextSection({
   const selectedDecision = activeFullTextDecision?.decisionValue;
   const canExclude = selectedDecision === "exclude";
   const pdfDisplayName = activeReport.fileName || activeReport.pdfName || "No PDF uploaded";
-  const pdfStatus = activeReport.isPdfValidated ? "Validated" : activeReport.fileName ? "Uploaded, not validated" : "Missing PDF";
-  const canInclude = activeReport.retrievalStatus === "retrieved" && activeReport.isPdfValidated;
+  const hasUploadedPdf = Boolean(activeReport.fileName);
+  const uploadedPdfCount = projectReportQueue.filter((report) => report.fileName).length;
+  const uploadedPdfPercent = projectReportQueue.length > 0 ? Math.round((uploadedPdfCount / projectReportQueue.length) * 100) : 0;
+  const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
+  const canInclude = activeReport.retrievalStatus === "retrieved" && hasUploadedPdf;
+  const canRecordFullTextDecision = hasUploadedPdf;
   const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
   const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
   const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
   const fullTextStatusLabel = activeReport.fullTextStatusLabel ?? visibleFullTextEvaluation.label;
   const hasFullTextConflict = fullTextStatus === "conflict" || fullTextStatus === "needs_third_vote";
   const messageIsSuccess = /updated|saved|uploaded|completed/i.test(fullTextMessage);
+  const messageIsError = /error|failed|invalid|cannot|unable|missing|required|not found|forbidden|unauthorized|denied/i.test(fullTextMessage);
+  const fullTextMessageClassName = messageIsSuccess
+    ? "validationItem ok"
+    : messageIsError
+      ? "validationItem blocked"
+      : "validationItem muted";
   const pdfViewerUrl = activeReport.fileName
     ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
     : "";
@@ -136,6 +152,20 @@ export function FullTextSection({
           <p className="eyebrow">Full-text screening</p>
           <h1>Report Review</h1>
           <p className="subtle">Retrieval status and report-level exclusion reasons feed the PRISMA export.</p>
+        </div>
+        <div className="progressStack">
+          <div className="progressBlock">
+            <span>{phaseProgress.label}</span>
+            <div className="progressTrack">
+              <i style={{ width: `${phaseProgress.percent}%` }} />
+            </div>
+          </div>
+          <div className="progressBlock">
+            <span>{uploadedPdfPercent}% PDFs uploaded · {uploadedPdfCount} of {projectReportQueue.length} reports</span>
+            <div className="progressTrack">
+              <i style={{ width: `${uploadedPdfPercent}%` }} />
+            </div>
+          </div>
         </div>
         <div className="reportPicker">
           <div>
@@ -199,8 +229,8 @@ export function FullTextSection({
       </section>
 
       {fullTextMessage ? (
-        <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-          {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+        <div className={fullTextMessageClassName}>
+          {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
           <span>{fullTextMessage}</span>
         </div>
       ) : null}
@@ -213,13 +243,15 @@ export function FullTextSection({
             </strong>
             <div className="toolbarCluster">
               <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
-              <button className="ghostButton" type="button" title="Upload PDF" disabled={isFullTextActionPending} onClick={() => pdfInputRef.current?.click()}>
+              <button
+                className={hasUploadedPdf ? "ghostButton" : "primaryButton missingPdfUploadButton"}
+                type="button"
+                title={hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
+                disabled={isFullTextActionPending}
+                onClick={() => pdfInputRef.current?.click()}
+              >
                 {pendingFullTextAction === "upload" ? <span className="inlineSpinner" aria-hidden="true" /> : <Upload size={16} />}
-                {pendingFullTextAction === "upload" ? "Uploading..." : "PDF"}
-              </button>
-              <button className="ghostButton" type="button" title="Validate PDF" disabled={!activeReport.fileName || isFullTextActionPending} onClick={validateReportPdf}>
-                {pendingFullTextAction === "validate" ? <span className="inlineSpinner" aria-hidden="true" /> : <FileCheck2 size={16} />}
-                {pendingFullTextAction === "validate" ? "Validating..." : "Validate"}
+                {pendingFullTextAction === "upload" ? "Uploading..." : hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
               </button>
             </div>
           </div>
@@ -256,7 +288,7 @@ export function FullTextSection({
           </div>
 
           <div className="pdfStatusGrid">
-            <StatusRow label="PDF" value={pdfStatus} tone={activeReport.isPdfValidated ? "secure" : activeReport.fileName ? "warning" : "danger"} />
+            <StatusRow label="PDF" value={pdfStatus} tone={hasUploadedPdf ? "secure" : "danger"} />
             <StatusRow
               label="Full-text status"
               value={fullTextStatusLabel}
@@ -319,7 +351,7 @@ export function FullTextSection({
             <button
               className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
               type="button"
-              disabled={isFullTextActionPending}
+              disabled={!canRecordFullTextDecision || isFullTextActionPending}
               onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
             >
               {pendingFullTextAction === "exclude" ? <span className="inlineSpinner" aria-hidden="true" /> : <XCircle size={18} />}
@@ -330,7 +362,7 @@ export function FullTextSection({
           <label className="fieldLabel" htmlFor="exclusion-reason">
             Exclusion reason
           </label>
-          <select id="exclusion-reason" value={fullTextReason} disabled={isFullTextActionPending} onChange={(event) => setFullTextReason(event.target.value)}>
+          <select id="exclusion-reason" value={fullTextReason} disabled={!canRecordFullTextDecision || isFullTextActionPending} onChange={(event) => setFullTextReason(event.target.value)}>
             {exclusionReasons.map((reason) => (
               <option value={reason} key={reason}>
                 {reason}
@@ -341,11 +373,13 @@ export function FullTextSection({
           <div className={canInclude && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
             {canInclude && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
-              {hasFullTextConflict
+              {!hasUploadedPdf
+                ? "Upload the PDF before recording a full-text vote or exclusion reason."
+                : hasFullTextConflict
                 ? "This report is in resolve-conflict state and cannot advance to extraction until the votes are reconciled."
                 : canInclude
-                ? "Include is available for this retrieved and validated report."
-                : "Include requires retrieved status and a validated PDF."}
+                ? "Include is available for this retrieved report with an uploaded PDF."
+                : "Include requires retrieved status and an uploaded PDF."}
             </span>
           </div>
           {canExclude ? (

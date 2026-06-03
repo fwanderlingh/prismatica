@@ -123,6 +123,7 @@ async function ensureSchema(client) {
       full_text_required_votes INTEGER NOT NULL,
       extraction_required_votes INTEGER NOT NULL,
       maybe_policy TEXT NOT NULL,
+      require_sequential_phases BOOLEAN NOT NULL,
       reviewers INTEGER NOT NULL,
       last_event TEXT NOT NULL,
       description TEXT NOT NULL,
@@ -262,6 +263,7 @@ async function ensureSchema(client) {
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS full_text_required_votes INTEGER;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS extraction_required_votes INTEGER;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS maybe_policy TEXT;
+    ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS require_sequential_phases BOOLEAN;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS reviewers INTEGER;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS last_event TEXT;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS description TEXT;
@@ -367,7 +369,7 @@ async function readProjects(client) {
       SELECT
         id, title, organization, protocol_id, blind_mode,
         abstract_required_votes, full_text_required_votes, extraction_required_votes,
-        maybe_policy, reviewers, last_event, description, search_strategies,
+        maybe_policy, require_sequential_phases, reviewers, last_event, description, search_strategies,
         status, stage, owner_id, owner_ids, member_ids,
         created_at_text, updated_at_text, due_date,
         records_total, records_screened, conflicts, studies_included,
@@ -389,6 +391,7 @@ async function readProjects(client) {
       fullTextRequiredVotes: row.full_text_required_votes ?? payload?.fullTextRequiredVotes ?? 2,
       extractionRequiredVotes: row.extraction_required_votes ?? payload?.extractionRequiredVotes ?? 2,
       maybePolicy: row.maybe_policy ?? payload?.maybePolicy ?? "advance_to_full_text",
+      requireSequentialPhases: row.require_sequential_phases ?? payload?.requireSequentialPhases ?? true,
       reviewers: row.reviewers ?? payload?.reviewers ?? 0,
       lastEvent: row.last_event ?? payload?.lastEvent ?? "",
       description: row.description ?? payload?.description ?? "",
@@ -640,7 +643,7 @@ async function writeProjects(client, state) {
         INSERT INTO review_projects (
           id, position, title, organization, protocol_id, blind_mode,
           abstract_required_votes, full_text_required_votes, extraction_required_votes,
-          maybe_policy, reviewers, last_event, description, search_strategies,
+          maybe_policy, require_sequential_phases, reviewers, last_event, description, search_strategies,
           status, stage, owner_id, owner_ids, member_ids,
           created_at_text, updated_at_text, due_date,
           records_total, records_screened, conflicts, studies_included,
@@ -648,11 +651,11 @@ async function writeProjects(client, state) {
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
           $7, $8, $9,
-          $10, $11, $12, $13, $14,
-          $15, $16, $17, $18::jsonb, $19::jsonb,
-          $20, $21, $22,
-          $23, $24, $25, $26,
-          $27::jsonb
+          $10, $11, $12, $13, $14, $15,
+          $16, $17, $18, $19::jsonb, $20::jsonb,
+          $21, $22, $23,
+          $24, $25, $26, $27,
+          $28::jsonb
         )
       `,
       [
@@ -666,6 +669,7 @@ async function writeProjects(client, state) {
         Number(project.fullTextRequiredVotes ?? 2),
         Number(project.extractionRequiredVotes ?? 2),
         project.maybePolicy,
+        Boolean(project.requireSequentialPhases ?? true),
         Number(project.reviewers ?? 0),
         project.lastEvent,
         project.description,

@@ -13,6 +13,7 @@ export type NewProjectForm = {
   fullTextRequiredVotes: number;
   extractionRequiredVotes: number;
   maybePolicy: "advance_to_full_text" | "conflict" | "third_vote";
+  requireSequentialPhases: boolean;
   memberIds: string[];
 };
 
@@ -28,6 +29,7 @@ const emptyNewProjectForm: NewProjectForm = {
   fullTextRequiredVotes: 2,
   extractionRequiredVotes: 2,
   maybePolicy: "advance_to_full_text",
+  requireSequentialPhases: true,
   memberIds: []
 };
 

@@ -44,6 +44,7 @@ export type ProjectSummary = {
   fullTextRequiredVotes: number;
   extractionRequiredVotes: number;
   maybePolicy: MaybePolicy;
+  requireSequentialPhases: boolean;
   reviewers: number;
   lastEvent: string;
 };
@@ -135,6 +136,18 @@ export type Decision = {
   isCurrent: boolean;
   supersedesDecisionId?: string;
   createdAt: string;
+};
+
+export type ProjectWorkflowConflict = {
+  id: string;
+  projectId: string;
+  stage: "title_abstract" | "full_text";
+  title: string;
+  subtitle: string;
+  label: string;
+  decisions: Decision[];
+  studyId?: string;
+  reportId?: string;
 };
 
 export type ExtractionFieldType = "multiline_text" | "single_choice" | "multiple_choice";
@@ -254,6 +267,7 @@ export const projectSummary: ProjectSummary = {
   fullTextRequiredVotes: 2,
   extractionRequiredVotes: 2,
   maybePolicy: "advance_to_full_text",
+  requireSequentialPhases: true,
   reviewers: 8,
   lastEvent: "PRISMA counts recalculated 7 minutes ago"
 };

@@ -243,7 +243,7 @@ h3 {
   align-items: center;
   gap: calc(16px * var(--ui-scale));
   min-width: 0;
-  padding: calc(18px * var(--ui-scale)) calc(22px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(22px * var(--ui-scale)) calc(8px * var(--ui-scale));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, transparent), color-mix(in srgb, var(--bg) 74%, transparent));
   backdrop-filter: blur(calc(10px * var(--ui-scale)));
@@ -518,6 +518,15 @@ h3 {
 .navItem.phase-pending .navPhaseMarker {
   border-color: #b9c5ca;
   background: transparent;
+}
+
+.navItem.phase-locked {
+  color: var(--muted);
+  /*background: var(--surface-tint)*/;
+}
+
+.navItem.phase-locked > svg {
+  color: var(--muted);
 }
 
 .navPhaseMarker {
@@ -1061,6 +1070,17 @@ h3 {
   display: var(--overview-band-subtle-display);
 }
 
+.overviewSideStack {
+  display: grid;
+  gap: calc(10px * var(--ui-scale));
+  justify-items: end;
+  min-width: min(100%, calc(360px * var(--ui-scale)));
+}
+
+.overviewSideStack .toolbarCluster {
+  justify-content: flex-end;
+}
+
 .toolbarCluster,
 .buttonRow {
   flex-wrap: wrap;
@@ -1140,6 +1160,17 @@ h3 {
 .primaryButton:hover {
   color: #ffffff;
   background: #0f696b;
+}
+
+.missingPdfUploadButton {
+  border-color: var(--amber);
+  background: var(--amber);
+  box-shadow: 0 0 0 calc(3px * var(--ui-scale)) rgba(178, 119, 22, 0.16);
+}
+
+.missingPdfUploadButton:hover:not(:disabled),
+.missingPdfUploadButton:focus-visible {
+  background: #96620f;
 }
 
 a.primaryButton[href^="http"],
@@ -1860,13 +1891,15 @@ td span {
 }
 
 .badge {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
+  justify-content: center;
   min-height: calc(24px * var(--ui-scale));
   padding: 0 calc(8px * var(--ui-scale));
   border-radius: calc(999px * var(--ui-scale));
   font-size: 0.76rem;
   font-weight: 800;
+  text-align: center;
   text-transform: capitalize;
 }
 
@@ -2232,6 +2265,16 @@ td span {
   min-width: calc(240px * var(--ui-scale));
 }
 
+.progressStack {
+  display: grid;
+  gap: calc(12px * var(--ui-scale));
+  min-width: min(100%, calc(320px * var(--ui-scale)));
+}
+
+.progressStack .progressBlock {
+  min-width: 0;
+}
+
 .progressBlock span {
   color: var(--muted);
   font-weight: 760;
@@ -2257,9 +2300,28 @@ td span {
   gap: calc(16px * var(--ui-scale));
 }
 
+.queuePanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(calc(820px * var(--ui-scale)), calc(100vh - calc(180px * var(--ui-scale))));
+}
+
 .queuePanel,
 .actionPanel {
   align-self: start;
+}
+
+.queuePanel .sectionTitle,
+.queuePanel > .sectionTitle,
+.queuePanel > :first-child {
+  flex: 0 0 auto;
+}
+
+.queuePanel .queueList {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: calc(4px * var(--ui-scale));
 }
 
 .queueItem {
@@ -2292,6 +2354,7 @@ td span {
 .queueBadges {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: calc(6px * var(--ui-scale));
 }
 
@@ -2307,10 +2370,14 @@ td span {
 
 .queueItem .badge {
   display: inline-flex;
+  justify-content: center;
+  min-width: calc(88px * var(--ui-scale));
   overflow: visible;
   color: inherit;
   font-size: 0.76rem;
-  line-height: normal;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
   -webkit-box-orient: initial;
   -webkit-line-clamp: initial;
   line-clamp: initial;
@@ -2344,8 +2411,16 @@ td span {
 .citationHeader {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: calc(18px * var(--ui-scale));
   margin-bottom: calc(14px * var(--ui-scale));
+}
+
+.citationHeader .badge {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  min-width: calc(118px * var(--ui-scale));
+  white-space: nowrap;
 }
 
 .citationHeader h2 {
@@ -2416,6 +2491,7 @@ textarea {
   border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-muted);
+  margin-top: calc(10px * var(--ui-scale));
 }
 
 .decisionState span {
@@ -3192,7 +3268,7 @@ button:disabled {
   border-radius: var(--radius);
   font-weight: 700;
   line-height: 1.35;
-  margin-top: calc(10px * var(--ui-scale));
+  /*margin-top: calc(10px * var(--ui-scale));*/
 }
 
 .validationItem small {
@@ -3353,6 +3429,15 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .queuePanel {
+    max-height: none;
+  }
+
+  .queuePanel .queueList {
+    overflow-y: visible;
+    padding-right: 0;
+  }
+
   .provenanceStack {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3461,6 +3546,14 @@ button:disabled {
   }
 
   .toolbarCluster {
+    justify-content: flex-start;
+  }
+
+  .overviewSideStack {
+    justify-items: stretch;
+  }
+
+  .overviewSideStack .toolbarCluster {
     justify-content: flex-start;
   }
 

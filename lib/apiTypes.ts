@@ -6,6 +6,7 @@ import type {
   ExtractionResponse,
   ExtractionTemplate,
   ImportBatch,
+  ProjectWorkflowConflict,
   Report,
   ReviewProject,
   Study,
@@ -29,6 +30,7 @@ export type AppStatePayload = {
   extractionResponses: ExtractionResponse[];
   extractionConsensus: ExtractionConsensus[];
   decisions: Decision[];
+  workflowConflicts: ProjectWorkflowConflict[];
   events: WorkflowEvent[];
   dedupCandidates: DedupCandidate[];
 };

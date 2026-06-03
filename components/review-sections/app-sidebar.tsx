@@ -25,6 +25,7 @@ type AppSidebarProps = {
   reviewPhaseNavKeys: Set<ViewKey>;
   exportFailedCount: number;
   getPhaseNavState: (key: ViewKey, stage: ReviewProject["stage"]) => "done" | "current" | "pending" | null;
+  canNavigateToProjectView: (key: ViewKey) => boolean;
   formatProjectPhase: (stage: ReviewProject["stage"]) => string;
   projectPhaseBadgeTone: (stage: ReviewProject["stage"]) => "success" | "warning" | "danger" | "info" | "neutral";
   onGoDashboard: () => void;
@@ -48,6 +49,7 @@ export function AppSidebar({
   reviewPhaseNavKeys,
   exportFailedCount,
   getPhaseNavState,
+  canNavigateToProjectView,
   formatProjectPhase,
   projectPhaseBadgeTone,
   onGoDashboard,
@@ -55,6 +57,8 @@ export function AppSidebar({
   onToggleSidebar,
   onToggleMobileNav
 }: AppSidebarProps) {
+  const homeItem = globalNavItems.find((item) => item.key === "dashboard");
+
   return (
     <aside className={["sidebar", isMobileNavOpen ? "open" : "", isSidebarCollapsed ? "collapsed" : ""].filter(Boolean).join(" ")} aria-label="Project navigation">
       <div className="sidebarHeader">
@@ -91,27 +95,19 @@ export function AppSidebar({
       <nav className="navList">
         {isProjectView ? (
           <>
-            {(() => {
-              const homeItem = globalNavItems.find((item) => item.key === "dashboard");
-              if (!homeItem) {
-                return null;
-              }
-
-              const { Icon, path } = homeItem;
-              return (
-                <button
-                  className={["navItem", "navItemUtility", activeView === "dashboard" ? "active" : ""].filter(Boolean).join(" ")}
-                  type="button"
-                  data-tooltip="Home"
-                  aria-current={activeView === "dashboard" ? "page" : undefined}
-                  onClick={onGoDashboard}
-                  title={path}
-                >
-                  {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
-                  <span className="navLabel">Home</span>
-                </button>
-              );
-            })()}
+            {homeItem ? (
+              <button
+                className={["navItem", "navItemUtility", activeView === "dashboard" ? "active" : ""].filter(Boolean).join(" ")}
+                type="button"
+                data-tooltip="Home"
+                aria-current={activeView === "dashboard" ? "page" : undefined}
+                onClick={onGoDashboard}
+                title={homeItem.path}
+              >
+                {homeItem.Icon ? <homeItem.Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
+                <span className="navLabel">Home</span>
+              </button>
+            ) : null}
 
             <div className="navSection">
               <span className="navSectionTitle">Review Phases</span>
@@ -119,7 +115,9 @@ export function AppSidebar({
                 .filter((item) => reviewPhaseNavKeys.has(item.key))
                 .map(({ key, label, path, Icon }) => {
                   const phaseState = getPhaseNavState(key, selectedProject.stage);
-                  const navClassName = ["navItem", "navItemPhase", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
+                  const isLocked = !canNavigateToProjectView(key);
+                  const effectivePhaseState = isLocked ? "pending" : phaseState;
+                  const navClassName = ["navItem", "navItemPhase", activeView === key ? "active" : "", effectivePhaseState ? `phase-${effectivePhaseState}` : "", isLocked ? "phase-locked" : ""]
                     .filter(Boolean)
                     .join(" ");
                   return (
@@ -129,12 +127,14 @@ export function AppSidebar({
                       key={key}
                       data-tooltip={label}
                       aria-current={activeView === key ? "page" : undefined}
+                      aria-disabled={isLocked || undefined}
+                      disabled={isLocked}
                       onClick={() => onNavigate(key)}
-                      title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
+                      title={isLocked ? `${path} · previous phase incomplete` : phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
                     >
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>
-                      {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
+                      {effectivePhaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
                     </button>
                   );
                 })}

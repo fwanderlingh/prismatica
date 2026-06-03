@@ -23,7 +23,6 @@ import {
   Eye,
   EyeOff,
   FileArchive,
-  FileCheck2,
   FileSearch,
   FileText,
   FlaskConical,
@@ -76,6 +75,7 @@ import {
   type ExtractionResponseValue,
   type ExtractionTemplate,
   type ImportBatch,
+  type ProjectWorkflowConflict,
   type PrismaCounts,
   type ReviewProject,
   type Report,
@@ -85,7 +85,7 @@ import {
   type WorkflowEvent
 } from "@/lib/prismaData";
 import type { ApiErrorPayload, AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
-import { evaluateStage, type DecisionValue } from "@/lib/workflow";
+import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
 import {
   Badge,
   EmptyState,
@@ -137,15 +137,8 @@ type FormSubmitEvent = {
   preventDefault: () => void;
 };
 
-type WorkflowConflict = {
-  id: string;
-  stage: "title_abstract" | "full_text";
-  title: string;
-  subtitle: string;
-  label: string;
-  decisions: Decision[];
+type WorkflowConflict = ProjectWorkflowConflict & {
   studyIndex?: number;
-  reportId?: string;
 };
 
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -379,6 +372,11 @@ type ProjectUserStats = {
 };
 
 type PhaseNavState = "done" | "current" | "pending";
+type PhaseAccessMap = Partial<Record<ViewKey, boolean>>;
+type ProjectPhaseProgress = {
+  percent: number;
+  label: string;
+};
 
 const exclusionReasons = Object.keys(prismaCounts.reportsExcludedWithReasons);
 
@@ -393,7 +391,8 @@ const emptyProjectSettingsForm: ProjectSettingsForm = {
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
   extractionRequiredVotes: 2,
-  maybePolicy: "advance_to_full_text"
+  maybePolicy: "advance_to_full_text",
+  requireSequentialPhases: true
 };
 
 const emptyImportDetailForm: ImportDetailForm = {
@@ -535,6 +534,7 @@ export function PrismaReviewApp() {
   const [deleteProjectMessage, setDeleteProjectMessage] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
+  const [serverWorkflowConflicts, setServerWorkflowConflicts] = useState<ProjectWorkflowConflict[]>([]);
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>(seedDedupCandidates);
   const [pendingDedupAction, setPendingDedupAction] = useState<DedupCandidate["status"] | null>(null);
@@ -543,7 +543,7 @@ export function PrismaReviewApp() {
   const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
   const [isUndoingScreeningDecision, setIsUndoingScreeningDecision] = useState(false);
   const [screeningNote, setScreeningNote] = useState("");
-  const [activeReportId, setActiveReportId] = useState(reportQueue[0].id);
+  const [activeReportId, setActiveReportId] = useState("");
   const [auditPage, setAuditPage] = useState(1);
   const [activeExtractionReportId, setActiveExtractionReportId] = useState("");
   const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
@@ -558,7 +558,7 @@ export function PrismaReviewApp() {
   const [isExportingConsensusCsv, setIsExportingConsensusCsv] = useState(false);
   const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
   const [fullTextMessage, setFullTextMessage] = useState("");
-  const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "validate" | "retrieval" | "include" | "exclude" | null>(null);
+  const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "retrieval" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
@@ -587,6 +587,7 @@ export function PrismaReviewApp() {
   const bibtexInputRef = useRef<HTMLInputElement>(null);
   const risInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const previousSettingsProjectIdRef = useRef(selectedProjectId);
 
   const {
     authMode,
@@ -661,7 +662,19 @@ export function PrismaReviewApp() {
   const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
   const importedProjectStudies = studies.filter((study) => study.projectId === selectedProject.id);
   const projectScreeningStudies = hasProjectSeedData ? screeningStudies : importedProjectStudies;
-  const projectReportQueue = hasProjectSeedData ? reportQueue : reports.filter((report) => report.projectId === selectedProject.id);
+  const reportOrderByStudyId = new Map(
+    projectScreeningStudies.map((study, index) => [study.id, study.importItemId ?? index + 1])
+  );
+  const projectReportQueue = (hasProjectSeedData ? reportQueue : reports.filter((report) => report.projectId === selectedProject.id))
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = reportOrderByStudyId.get(left.studyId) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = reportOrderByStudyId.get(right.studyId) ?? Number.MAX_SAFE_INTEGER;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      return left.title.localeCompare(right.title);
+    });
   const projectExtractionStudyIds = new Set(projectScreeningStudies.filter((study) => study.stage === "extraction").map((study) => study.id));
   const projectExtractionReports = projectReportQueue.filter((report) => projectExtractionStudyIds.has(report.studyId));
   const projectExtractionReportKey = projectExtractionReports.map((report) => report.id).join("|");
@@ -715,84 +728,32 @@ export function PrismaReviewApp() {
       ),
     [decisions, projectScreeningStudies, selectedProject.abstractRequiredVotes, selectedProject.id, selectedProject.maybePolicy]
   );
-  const workflowConflicts = useMemo<WorkflowConflict[]>(() => {
-    const titleAbstractConflicts = projectScreeningStudies.flatMap((study, index) => {
-      const currentDecisions = decisions.filter(
-        (decision) =>
-          decision.projectId === selectedProject.id &&
-          decision.studyId === study.id &&
-          decision.stage === "title_abstract" &&
-          decision.isCurrent
-      );
-      const evaluation =
-        titleAbstractEvaluations.get(study.id) ??
-        evaluateStage(
-          "title_abstract",
-          currentDecisions.map((decision) => decision.decisionValue),
-          selectedProject.abstractRequiredVotes,
-          selectedProject.maybePolicy
-        );
-
-      if (evaluation.state !== "conflict" && evaluation.state !== "needs_third_vote") {
-        return [];
+  const workflowConflicts = useMemo<WorkflowConflict[]>(
+    () =>
+      serverWorkflowConflicts
+        .filter((conflict) => conflict.projectId === selectedProject.id)
+        .map((conflict) => ({
+          ...conflict,
+          studyIndex:
+            conflict.stage === "title_abstract" && conflict.studyId
+              ? projectScreeningStudies.findIndex((study) => study.id === conflict.studyId)
+              : undefined
+        })),
+    [projectScreeningStudies, selectedProject.id, serverWorkflowConflicts]
+  );
+  const titleAbstractConflictEvaluations = useMemo(() => {
+    const evaluations = new Map(titleAbstractEvaluations);
+    for (const conflict of workflowConflicts) {
+      if (conflict.stage !== "title_abstract" || !conflict.studyId) {
+        continue;
       }
-
-      return [
-        {
-          id: `title_abstract:${study.id}`,
-          stage: "title_abstract" as const,
-          title: study.title,
-          subtitle: `${study.source} · ${study.year > 0 ? study.year : "Year needs review"}`,
-          label: evaluation.label,
-          decisions: currentDecisions,
-          studyIndex: index
-        }
-      ];
-    });
-
-    const fullTextConflicts = projectReportQueue.flatMap((report) => {
-      const currentDecisions = decisions.filter(
-        (decision) =>
-          decision.projectId === selectedProject.id &&
-          decision.reportId === report.id &&
-          decision.stage === "full_text" &&
-          decision.isCurrent
-      );
-      const evaluation = evaluateStage(
-        "full_text",
-        currentDecisions.map((decision) => decision.decisionValue),
-        report.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
-        selectedProject.maybePolicy
-      );
-
-      if (evaluation.state !== "conflict" && evaluation.state !== "needs_third_vote") {
-        return [];
-      }
-
-      return [
-        {
-          id: `full_text:${report.id}`,
-          stage: "full_text" as const,
-          title: report.title,
-          subtitle: report.citation,
-          label: evaluation.label,
-          decisions: currentDecisions,
-          reportId: report.id
-        }
-      ];
-    });
-
-    return [...titleAbstractConflicts, ...fullTextConflicts];
-  }, [
-    decisions,
-    projectReportQueue,
-    projectScreeningStudies,
-    selectedProject.abstractRequiredVotes,
-    selectedProject.fullTextRequiredVotes,
-    selectedProject.id,
-    selectedProject.maybePolicy,
-    titleAbstractEvaluations
-  ]);
+      evaluations.set(conflict.studyId, {
+        state: conflict.label === "Third vote needed" ? "needs_third_vote" : "conflict",
+        label: conflict.label
+      });
+    }
+    return evaluations;
+  }, [titleAbstractEvaluations, workflowConflicts]);
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
   const projectStudyIds = new Set(projectScreeningStudies.map((study) => study.id));
   const projectReportIds = new Set(projectReportQueue.map((report) => report.id));
@@ -915,6 +876,94 @@ export function PrismaReviewApp() {
   }, [activeCounts, decisions, recordsIdentified, reportsExcludedTotal, selectedProject.id]);
   const screeningProgress =
     projectScreeningStudies.length > 0 ? Math.round((screenedByMe / projectScreeningStudies.length) * 100) : 0;
+  const sequentialPhaseAccess = useMemo<PhaseAccessMap>(() => {
+    if (selectedProject.stage === "complete") {
+      return {
+        imports: true,
+        dedup: true,
+        screening: true,
+        fullText: true,
+        extraction: true,
+        consensus: true
+      };
+    }
+
+    const importsComplete = recordsIdentified > 0 || selectedProject.recordsTotal > 0 || projectScreeningStudies.length > 0;
+    const currentPhaseIndex = getProjectPhaseIndex(selectedProject.stage);
+    const dedupComplete = importsComplete && projectDedupCandidates.every((candidate) => candidate.status !== "pending");
+    const screeningComplete =
+      dedupComplete &&
+      projectScreeningStudies.length > 0 &&
+      projectScreeningStudies.every((study) => isTitleAbstractEvaluationComplete(titleAbstractConflictEvaluations.get(study.id)));
+    const fullTextAvailable = currentPhaseIndex >= 2 && projectReportQueue.length > 0;
+    const fullTextComplete =
+      (screeningComplete || fullTextAvailable) &&
+      projectReportQueue.length > 0 &&
+      projectReportQueue.every((report) => {
+        const currentDecisions = decisions.filter(
+          (decision) =>
+            decision.projectId === selectedProject.id &&
+            decision.reportId === report.id &&
+            decision.stage === "full_text" &&
+            decision.isCurrent
+        );
+        const evaluation = evaluateStage(
+          "full_text",
+          currentDecisions.map((decision) => decision.decisionValue),
+          report.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
+          selectedProject.maybePolicy
+        );
+        return isFullTextEvaluationComplete(evaluation);
+      });
+    const extractionAvailable = (currentPhaseIndex >= 3 || fullTextComplete) && activeCounts.studiesIncluded > 0;
+
+    return {
+      imports: true,
+      dedup: importsComplete || currentPhaseIndex >= 1,
+      screening: dedupComplete || currentPhaseIndex >= 1,
+      fullText: fullTextAvailable || (screeningComplete && projectReportQueue.length > 0),
+      extraction: extractionAvailable,
+      consensus: extractionAvailable
+    };
+  }, [
+    activeCounts.studiesIncluded,
+    decisions,
+    projectDedupCandidates,
+    projectReportQueue,
+    projectScreeningStudies,
+    recordsIdentified,
+    selectedProject.fullTextRequiredVotes,
+    selectedProject.id,
+    selectedProject.maybePolicy,
+    selectedProject.recordsTotal,
+    selectedProject.stage,
+    titleAbstractConflictEvaluations
+  ]);
+
+  function canNavigateToProjectView(view: ViewKey) {
+    if (!selectedProject.requireSequentialPhases || !reviewPhaseNavKeys.has(view)) {
+      return true;
+    }
+    return sequentialPhaseAccess[view] ?? true;
+  }
+
+  function navigateToProjectView(view: ViewKey) {
+    if (!canNavigateToProjectView(view)) {
+      setActiveView("projectDashboard");
+      setIsMobileNavOpen(false);
+      return;
+    }
+
+    setActiveView(view);
+    setIsMobileNavOpen(false);
+  }
+
+  function getSelectedProjectWorkflowStepState(step: "imports" | "screening" | "fullText" | "extraction", stage: ReviewProject["stage"]) {
+    if (selectedProject.requireSequentialPhases && !canNavigateToProjectView(step)) {
+      return "pending";
+    }
+    return getWorkflowStepState(step, stage);
+  }
 
   async function loadAuthConfig() {
     const payload = await apiRequest<PublicAuthConfigPayload>("/api/auth/config");
@@ -1078,6 +1127,17 @@ export function PrismaReviewApp() {
   }, [isAuthenticated, isAuthResolved, requestedProjectId, selectedProjectId, userProjects]);
 
   useEffect(() => {
+    if (!isAuthenticated || !isAuthResolved || !selectedProject.requireSequentialPhases || !reviewPhaseNavKeys.has(activeView)) {
+      return;
+    }
+
+    if (!canNavigateToProjectView(activeView)) {
+      setActiveView("projectDashboard");
+      setIsMobileNavOpen(false);
+    }
+  }, [activeView, isAuthenticated, isAuthResolved, selectedProject.requireSequentialPhases, sequentialPhaseAccess]);
+
+  useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
       if (activeView !== "screening") {
         return;
@@ -1142,6 +1202,7 @@ export function PrismaReviewApp() {
   }, [currentUser.websiteTheme]);
 
   useEffect(() => {
+    const hasProjectChanged = previousSettingsProjectIdRef.current !== selectedProject.id;
     setProjectSettingsForm({
       title: selectedProject.title,
       organization: selectedProject.organization,
@@ -1153,9 +1214,13 @@ export function PrismaReviewApp() {
       abstractRequiredVotes: selectedProject.abstractRequiredVotes,
       fullTextRequiredVotes: selectedProject.fullTextRequiredVotes,
       extractionRequiredVotes: selectedProject.extractionRequiredVotes,
-      maybePolicy: selectedProject.maybePolicy
+      maybePolicy: selectedProject.maybePolicy,
+      requireSequentialPhases: selectedProject.requireSequentialPhases
     });
-    setProjectSettingsMessage("");
+    if (hasProjectChanged) {
+      setProjectSettingsMessage("");
+      previousSettingsProjectIdRef.current = selectedProject.id;
+    }
   }, [
     selectedProject.abstractRequiredVotes,
     selectedProject.blindMode,
@@ -1167,6 +1232,7 @@ export function PrismaReviewApp() {
     selectedProject.maybePolicy,
     selectedProject.organization,
     selectedProject.protocolId,
+    selectedProject.requireSequentialPhases,
     selectedProject.searchStrategies,
     selectedProject.title
   ]);
@@ -1279,6 +1345,7 @@ export function PrismaReviewApp() {
     setExtractionResponses(payload.extractionResponses);
     setExtractionConsensus(payload.extractionConsensus);
     setDecisions(payload.decisions);
+    setServerWorkflowConflicts(payload.workflowConflicts ?? []);
     setEvents(payload.events);
     setDedupCandidates(payload.dedupCandidates);
     setCurrentUserId(payload.currentUser.id);
@@ -1379,12 +1446,13 @@ export function PrismaReviewApp() {
   }
 
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
+    const nextView = projectId === selectedProject.id && !canNavigateToProjectView(view) ? "projectDashboard" : view;
     setRequestedProjectId(projectId);
     setSelectedProjectId(projectId);
-    setActiveView(view);
+    setActiveView(nextView);
     setIsMobileNavOpen(false);
     setStudyIndex(0);
-    setActiveReportId(reportQueue[0].id);
+    setActiveReportId("");
     setFullTextMessage("");
   }
 
@@ -1393,11 +1461,11 @@ export function PrismaReviewApp() {
     setFullTextMessage("");
     if (conflict.stage === "full_text" && conflict.reportId) {
       setActiveReportId(conflict.reportId);
-      setActiveView("fullText");
+      navigateToProjectView("fullText");
       return;
     }
-    setStudyIndex(conflict.studyIndex ?? 0);
-    setActiveView("screening");
+    setStudyIndex(Math.max(conflict.studyIndex ?? 0, 0));
+    navigateToProjectView("screening");
   }
 
   function updateProjectSettingsForm<Key extends keyof ProjectSettingsForm>(key: Key, value: ProjectSettingsForm[Key]) {
@@ -1712,6 +1780,11 @@ export function PrismaReviewApp() {
         body: JSON.stringify(projectSettingsForm)
       });
       applyAppState(payload);
+
+      // Reload state after save so derived screening context reflects persisted server values.
+      const refreshedPayload = await apiRequest<AppStatePayload>("/api/app-state");
+      applyAppState(refreshedPayload);
+
       setProjectSettingsMessage("Project settings saved.");
     } catch (error) {
       setProjectSettingsMessage(getErrorMessage(error));
@@ -2267,26 +2340,7 @@ export function PrismaReviewApp() {
         })
       });
       applyAppState(payload);
-      setFullTextMessage(`${file.name} uploaded. Run validation before including the study.`);
-    } catch (error) {
-      setFullTextMessage(getErrorMessage(error));
-    } finally {
-      setPendingFullTextAction(null);
-    }
-  }
-
-  async function validateReportPdf() {
-    if (!activeReport?.id) {
-      return;
-    }
-
-    setPendingFullTextAction("validate");
-    try {
-      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}/validate`, {
-        method: "POST"
-      });
-      applyAppState(payload);
-      setFullTextMessage("PDF validation completed.");
+      setFullTextMessage(`${file.name} uploaded.`);
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
     } finally {
@@ -2342,11 +2396,20 @@ export function PrismaReviewApp() {
         userProjects={userProjects}
         users={users}
         dashboardMessage={dashboardMessage}
+        getProjectPhaseProgress={(project) => {
+          const projectStudies = project.id === "demo-review" ? screeningStudies : studies.filter((study) => study.projectId === project.id);
+          const projectReports = project.id === "demo-review" ? reportQueue : reports.filter((report) => report.projectId === project.id);
+          return getProjectPhaseProgress(
+            project,
+            getCountsForProject(project, projectStudies, projectReports, decisions, extractionResponses, extractionTemplates),
+            projectReports,
+            formatNumber
+          );
+        }}
         formatProjectPhase={formatProjectPhase}
         projectPhaseBadgeTone={projectPhaseBadgeTone}
         openProject={openProject}
         formatEuDate={formatEuDate}
-        formatNumber={formatNumber}
       />
     );
   }
@@ -2369,15 +2432,15 @@ export function PrismaReviewApp() {
         formatProjectPhase={formatProjectPhase}
         projectPhaseStatusTone={projectPhaseStatusTone}
         formatMaybePolicy={formatMaybePolicy}
-        getWorkflowStepState={getWorkflowStepState}
+        getWorkflowStepState={getSelectedProjectWorkflowStepState}
         formatConflictStage={formatConflictStage}
         decisionTone={decisionTone}
         formatDecision={formatDecision}
         formatAuditTime={formatAuditTime}
         formatAuditEntityLabel={formatAuditEntityLabel}
         openConflict={openConflict}
-        onOpenSettings={() => setActiveView("settings")}
-        onOpenAudit={() => setActiveView("audit")}
+        onOpenSettings={() => navigateToProjectView("settings")}
+        onOpenAudit={() => navigateToProjectView("audit")}
       />
     );
   }
@@ -2396,7 +2459,7 @@ export function PrismaReviewApp() {
         isSavingStudyEdit={isSavingStudyEdit}
         closeImportEditor={closeImportEditor}
         deleteImportBatch={deleteImportBatch}
-        openScreening={() => setActiveView("screening")}
+        openScreening={() => navigateToProjectView("screening")}
         updateImportDetails={updateImportDetails}
         onImportSourceNameChange={(value) => setImportDetailForm((previous) => ({ ...previous, sourceName: value }))}
         onImportFilenameChange={(value) => setImportDetailForm((previous) => ({ ...previous, filename: value }))}
@@ -2465,9 +2528,9 @@ export function PrismaReviewApp() {
         currentUserId={currentUser.id}
         studyIndex={studyIndex}
         setStudyIndex={setStudyIndex}
-        titleAbstractEvaluations={titleAbstractEvaluations}
+        titleAbstractEvaluations={titleAbstractConflictEvaluations}
         currentStudy={currentStudy}
-        stageEvaluation={stageEvaluation}
+        stageEvaluation={titleAbstractConflictEvaluations.get(currentStudy.id) ?? stageEvaluation}
         screeningNote={screeningNote}
         setScreeningNote={setScreeningNote}
         currentUserDecision={currentUserDecision}
@@ -2489,6 +2552,7 @@ export function PrismaReviewApp() {
     return (
       <FullTextSection
         hasProjectSeedData={hasProjectSeedData}
+        phaseProgress={getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber)}
         projectReportQueue={projectReportQueue}
         activeReport={activeReport}
         decisions={decisions}
@@ -2500,7 +2564,6 @@ export function PrismaReviewApp() {
         pdfInputRef={pdfInputRef}
         pendingFullTextAction={pendingFullTextAction}
         uploadReportPdf={uploadReportPdf}
-        validateReportPdf={validateReportPdf}
         updateFullTextReport={updateFullTextReport}
         formatDecision={formatDecision}
         formatConflictResolutionHint={formatConflictResolutionHint}
@@ -2534,7 +2597,7 @@ export function PrismaReviewApp() {
         addExtractionTemplateField={addExtractionTemplateField}
         activeExtractionReport={activeExtractionReport}
         projectExtractionReports={projectExtractionReports}
-        setActiveView={setActiveView}
+        setActiveView={navigateToProjectView}
         setActiveExtractionReportId={setActiveExtractionReportId}
         setActiveReportId={setActiveReportId}
         projectScreeningStudies={projectScreeningStudies}
@@ -2563,7 +2626,7 @@ export function PrismaReviewApp() {
         activeExtractionReport={activeExtractionReport}
         projectScreeningStudies={projectScreeningStudies}
         activeExtractionConsensus={activeExtractionConsensus}
-        setActiveView={setActiveView}
+        setActiveView={navigateToProjectView}
         setActiveExtractionReportId={setActiveExtractionReportId}
         formatExtractionResponseValue={formatExtractionResponseValue}
         formatAuditTime={formatAuditTime}
@@ -2637,6 +2700,7 @@ export function PrismaReviewApp() {
         onSettingsFullTextVotesChange={(value) => updateProjectSettingsForm("fullTextRequiredVotes", value)}
         onSettingsExtractionVotesChange={(value) => updateProjectSettingsForm("extractionRequiredVotes", value)}
         onSettingsMaybePolicyChange={(value) => updateProjectSettingsForm("maybePolicy", value)}
+        onSettingsRequireSequentialPhasesChange={(value) => updateProjectSettingsForm("requireSequentialPhases", value)}
         teamUserSearch={teamUserSearch}
         setTeamUserSearch={setTeamUserSearch}
         teamUserSearchResults={teamUserSearchResults}
@@ -2868,16 +2932,14 @@ export function PrismaReviewApp() {
           reviewPhaseNavKeys={reviewPhaseNavKeys}
           exportFailedCount={exportConsistency.failedCount}
           getPhaseNavState={getPhaseNavState}
+          canNavigateToProjectView={canNavigateToProjectView}
           formatProjectPhase={formatProjectPhase}
           projectPhaseBadgeTone={projectPhaseBadgeTone}
           onGoDashboard={() => {
             setActiveView("dashboard");
             setIsMobileNavOpen(false);
           }}
-          onNavigate={(view) => {
-            setActiveView(view);
-            setIsMobileNavOpen(false);
-          }}
+          onNavigate={navigateToProjectView}
           onToggleSidebar={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
           onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
         />
@@ -2977,6 +3039,79 @@ function getCountsForProject(
   );
 }
 
+function getProjectPhaseProgress(
+  project: ReviewProject,
+  counts: PrismaCounts,
+  projectReports: Report[],
+  formatValue: (value: number) => string
+): ProjectPhaseProgress {
+  if (project.stage === "complete") {
+    return {
+      percent: 100,
+      label: `100% complete · ${formatValue(counts.studiesIncluded)} studies included`
+    };
+  }
+
+  if (project.stage === "extraction") {
+    const total = counts.studiesIncluded;
+    const value = counts.studiesExtracted;
+    const percent = getProgressPercent(value, total);
+    return {
+      percent,
+      label: `${percent}% extracted · ${formatValue(value)} of ${formatValue(total)} studies`
+    };
+  }
+
+  if (project.stage === "full_text") {
+    const total = projectReports.length > 0 ? projectReports.length : counts.reportsSought;
+    const value =
+      projectReports.length > 0
+        ? projectReports.filter((report) => isFullTextReportComplete(report, project)).length
+        : counts.reportsAssessed;
+    const percent = getProgressPercent(value, total);
+    return {
+      percent,
+      label: `${percent}% full-text reviewed · ${formatValue(value)} of ${formatValue(total)} reports`
+    };
+  }
+
+  if (project.stage === "screening") {
+    const total = project.recordsTotal;
+    const value = Math.min(project.recordsScreened, total);
+    const percent = getProgressPercent(value, total);
+    return {
+      percent,
+      label: `${percent}% screened · ${formatValue(value)} of ${formatValue(total)} records`
+    };
+  }
+
+  const imported = project.recordsTotal || counts.recordsIdentifiedDatabase + counts.recordsIdentifiedRegisters + counts.recordsIdentifiedOther;
+  return {
+    percent: imported > 0 ? 100 : 0,
+    label: `${formatValue(imported)} records imported`
+  };
+}
+
+function getProgressPercent(value: number, total: number) {
+  if (total <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
+}
+
+function isFullTextReportComplete(report: Report, project: ReviewProject) {
+  if (
+    report.fullTextStatus === "advance_extraction" ||
+    report.fullTextStatus === "excluded_full_text" ||
+    report.fullTextStatus === "report_not_retrieved"
+  ) {
+    return true;
+  }
+
+  const requiredVotes = report.fullTextRequiredVotes ?? project.fullTextRequiredVotes;
+  return Boolean(report.fullTextVoteCount && report.fullTextVoteCount >= requiredVotes && report.fullTextStatus === "manual_review");
+}
+
 function highlightText(text: string) {
   const escapedTerms = highlightRules.map((rule) => escapeRegExp(rule.term));
   const expression = new RegExp(`(${escapedTerms.join("|")})`, "gi");
@@ -3031,6 +3166,18 @@ function formatMaybePolicy(value: "advance_to_full_text" | "conflict" | "third_v
     return "Request third vote";
   }
   return "Treat as conflict";
+}
+
+function isTitleAbstractEvaluationComplete(evaluation: StageEvaluation | undefined) {
+  return evaluation?.state === "advance_full_text" || evaluation?.state === "excluded_abstract";
+}
+
+function isFullTextEvaluationComplete(evaluation: StageEvaluation | undefined) {
+  return (
+    evaluation?.state === "advance_extraction" ||
+    evaluation?.state === "excluded_full_text" ||
+    evaluation?.state === "report_not_retrieved"
+  );
 }
 
 function formatProjectPhase(stage: ReviewProject["stage"]) {

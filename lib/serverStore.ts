@@ -15,6 +15,7 @@ import {
   type ExtractionTemplate,
   type ExtractionTemplateField,
   type ImportBatch,
+  type ProjectWorkflowConflict,
   type Report,
   type ReviewProject,
   type Study,
@@ -65,6 +66,7 @@ type NewProjectInput = {
   fullTextRequiredVotes?: number;
   extractionRequiredVotes?: number;
   maybePolicy?: ReviewProject["maybePolicy"];
+  requireSequentialPhases?: boolean;
   memberIds?: string[];
 };
 
@@ -314,6 +316,8 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
           searchStrategies: typeof project.searchStrategies === "string" ? project.searchStrategies : "",
           fullTextRequiredVotes: clampFullTextVoteCount(project.fullTextRequiredVotes),
           extractionRequiredVotes: clampVoteCount(project.extractionRequiredVotes),
+          requireSequentialPhases:
+            typeof project.requireSequentialPhases === "boolean" ? project.requireSequentialPhases : true,
           ownerIds: normalizeOwnerIds(project, userIds),
           memberIds: normalizeMemberIds(project, userIds)
         }))
@@ -649,6 +653,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
       }
       return !project.blindMode || isProjectOwner(project, userId) || decision.userId === userId;
     }),
+    workflowConflicts: projects.flatMap((project) => buildProjectWorkflowConflicts(state, project, userId)),
     events: state.events
       .filter(
         (event) =>
@@ -660,6 +665,74 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
       .slice(0, 50),
     dedupCandidates: demoProjectAccessible ? state.dedupCandidates : []
   };
+}
+
+function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewProject, userId: string): ProjectWorkflowConflict[] {
+  const canSeeAllVotes = !project.blindMode || isProjectOwner(project, userId);
+  const visibleDecisions = (decisions: Decision[]) => (canSeeAllVotes ? decisions : decisions.filter((decision) => decision.userId === userId));
+  const projectStudies = state.studies.filter((study) => study.projectId === project.id);
+  const titleAbstractConflicts = projectStudies.flatMap((study): ProjectWorkflowConflict[] => {
+    const currentDecisions = state.decisions.filter(
+      (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
+    );
+    const evaluation = evaluateStage(
+      "title_abstract",
+      currentDecisions.map((decision) => decision.decisionValue),
+      project.abstractRequiredVotes,
+      project.maybePolicy
+    );
+
+    if (evaluation.state !== "conflict" && evaluation.state !== "needs_third_vote") {
+      return [];
+    }
+
+    return [
+      {
+        id: `title_abstract:${study.id}`,
+        projectId: project.id,
+        stage: "title_abstract",
+        studyId: study.id,
+        title: study.title,
+        subtitle: `${study.source} · ${study.year > 0 ? study.year : "Year needs review"}`,
+        label: evaluation.label,
+        decisions: visibleDecisions(currentDecisions)
+      }
+    ];
+  });
+
+  const fullTextConflicts = state.reports
+    .filter((report) => report.projectId === project.id)
+    .flatMap((report): ProjectWorkflowConflict[] => {
+      const currentDecisions = state.decisions.filter(
+        (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
+      );
+      const evaluation = evaluateStage(
+        "full_text",
+        currentDecisions.map((decision) => decision.decisionValue),
+        report.fullTextRequiredVotes ?? project.fullTextRequiredVotes,
+        project.maybePolicy
+      );
+
+      if (evaluation.state !== "conflict" && evaluation.state !== "needs_third_vote") {
+        return [];
+      }
+
+      return [
+        {
+          id: `full_text:${report.id}`,
+          projectId: project.id,
+          stage: "full_text",
+          studyId: report.studyId,
+          reportId: report.id,
+          title: report.title,
+          subtitle: report.citation,
+          label: evaluation.label,
+          decisions: visibleDecisions(currentDecisions)
+        }
+      ];
+    });
+
+  return [...titleAbstractConflicts, ...fullTextConflicts];
 }
 
 export function getAppStateForUser(userId: string): AppStatePayload {
@@ -1049,6 +1122,7 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes),
     extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes),
     maybePolicy: input.maybePolicy ?? "advance_to_full_text",
+    requireSequentialPhases: typeof input.requireSequentialPhases === "boolean" ? input.requireSequentialPhases : true,
     reviewers: memberIds.length,
     lastEvent: "Project created just now",
     description: input.description?.trim() || "New systematic review project.",
@@ -1111,6 +1185,8 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
           fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes ?? project.fullTextRequiredVotes),
           extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes ?? project.extractionRequiredVotes),
           maybePolicy,
+          requireSequentialPhases:
+            typeof input.requireSequentialPhases === "boolean" ? input.requireSequentialPhases : project.requireSequentialPhases,
           updatedAt: toEuToday(),
           lastEvent: "Project settings updated"
         }
@@ -1908,8 +1984,11 @@ export function updateReportForUser(
   if (decisionValue && !["include", "exclude", "not_retrieved"].includes(decisionValue)) {
     throw new ApiError("A full-text decision must be include, exclude, or not retrieved.");
   }
-  if (decisionValue === "include" && (nextRetrievalStatus !== "retrieved" || !report.isPdfValidated)) {
-    throw new ApiError("A full-text include requires retrieved status and a validated PDF.");
+  if (decisionValue && !report.fileName) {
+    throw new ApiError("Upload the report PDF before recording a full-text decision.");
+  }
+  if (decisionValue === "include" && nextRetrievalStatus !== "retrieved") {
+    throw new ApiError("A full-text include requires retrieved status.");
   }
   if (decisionValue === "exclude" && !input.exclusionReasonId?.trim()) {
     throw new ApiError("Choose an exclusion reason for a full-text exclusion.");
@@ -2009,10 +2088,10 @@ export async function uploadReportPdfForUser(
           storagePath,
           uploadedByUserId: currentUser.id,
           uploadedByUserName: currentUser.name,
-          isPdfValidated: false,
+          isPdfValidated: true,
           validationNotes: duplicate
             ? [`Duplicate PDF checksum also appears on ${duplicate.title}.`]
-            : ["PDF uploaded; validation pending."]
+            : ["PDF uploaded."]
         }
       : candidate
   );
@@ -2063,42 +2142,23 @@ export async function validateReportPdfForUser(userId: string, projectId: string
     throw new ApiError("Report not found.", 404);
   }
 
-  const validationNotes: string[] = [];
-  const storedPdf = await pdfStorage.readPdf({ report, projectId, reportId });
-  if (!storedPdf) {
-    validationNotes.push("PDF file is missing from storage.");
-  } else {
-    const buffer = storedPdf.buffer;
-    try {
-      validatePdfBuffer(buffer, report.size);
-    } catch (error) {
-      validationNotes.push(error instanceof Error ? error.message : "PDF validation failed.");
-    }
-    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
-    if (report.checksum && checksum !== report.checksum) {
-      validationNotes.push("PDF checksum no longer matches the uploaded file.");
-    }
-    const duplicate = report.checksum ? findDuplicateReportChecksum(state, projectId, reportId, report.checksum) : undefined;
-    if (duplicate) {
-      validationNotes.push(`Duplicate PDF checksum also appears on ${duplicate.title}.`);
-    }
+  if (!report.fileName) {
+    throw new ApiError("Upload a PDF before accepting it.");
   }
-  if (report.mimeType !== "application/pdf") {
-    validationNotes.push("Stored MIME type is not application/pdf.");
-  }
+
+  const duplicate = report.checksum ? findDuplicateReportChecksum(state, projectId, reportId, report.checksum) : undefined;
 
   state.reports = state.reports.map((candidate) =>
     candidate.id === reportId && candidate.projectId === projectId
       ? {
           ...candidate,
-          storagePath: storedPdf?.storagePath || candidate.storagePath,
-          isPdfValidated: validationNotes.length === 0,
-          validationNotes: validationNotes.length > 0 ? validationNotes : ["PDF header, size, MIME type, and checksum validated."]
+          isPdfValidated: true,
+          validationNotes: duplicate ? [`Duplicate PDF checksum also appears on ${duplicate.title}.`] : ["PDF uploaded."]
         }
       : candidate
   );
 
-  appendEvent(state, currentUser.name, validationNotes.length === 0 ? "Validated report PDF" : "PDF validation needs review", reportId);
+  appendEvent(state, currentUser.name, "Accepted uploaded PDF", reportId);
   writeState(state);
   return buildPayload(state, userId);
 }
