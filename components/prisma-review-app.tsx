@@ -167,7 +167,7 @@ const globalNavItems: NavItem[] = [
 ];
 
 const projectNavItems: NavItem[] = [
-  { key: "projectDashboard", label: "Project Overview", path: "/project/current/dashboard", Icon: LayoutDashboard },
+  { key: "projectDashboard", label: "Overview", path: "/project/current/dashboard", Icon: LayoutDashboard },
   { key: "imports", label: "Imports", path: "/project/current/imports", Icon: Import },
   { key: "dedup", label: "Dedup", path: "/project/current/dedup", Icon: GitMerge },
   { key: "screening", label: "Screening", path: "/project/current/screen/title-abstract", Icon: FileSearch },
@@ -256,6 +256,10 @@ function buildPathForState(view: ViewKey, projectId: string) {
     default:
       return "/";
   }
+}
+
+function getViewLabel(view: ViewKey) {
+  return globalNavItems.find((item) => item.key === view)?.label ?? projectNavItems.find((item) => item.key === view)?.label ?? "Review";
 }
 
 function parseRouteState(pathname: string, search: string): { view: ViewKey; projectId?: string } {
@@ -2285,7 +2289,7 @@ export function PrismaReviewApp() {
         formatAuditTime={formatAuditTime}
         formatAuditEntityLabel={formatAuditEntityLabel}
         openConflict={openConflict}
-        onOpenExport={() => setActiveView("exports")}
+        onOpenSettings={() => setActiveView("settings")}
         onOpenAudit={() => setActiveView("audit")}
       />
     );
@@ -2690,9 +2694,63 @@ export function PrismaReviewApp() {
     );
   }
 
+  const breadcrumbItems = isProjectView
+    ? [
+        {
+          label: "All Reviews",
+          onClick: () => {
+            setActiveView("dashboard");
+            setIsMobileNavOpen(false);
+          }
+        },
+        {
+          label: selectedProject.title,
+          current: activeView === "projectDashboard",
+          onClick:
+            activeView === "projectDashboard"
+              ? undefined
+              : () => {
+                  setActiveView("projectDashboard");
+                  setIsMobileNavOpen(false);
+                }
+        },
+        ...(activeView === "projectDashboard"
+          ? []
+          : [
+              {
+                label: getViewLabel(activeView),
+                current: true
+              }
+            ])
+      ]
+    : activeView === "dashboard"
+      ? [
+          {
+            label: getViewLabel(activeView),
+            current: true
+          }
+        ]
+      : [
+          {
+            label: "All Reviews",
+            onClick: () => {
+              setActiveView("dashboard");
+              setIsMobileNavOpen(false);
+            }
+          },
+          {
+            label: getViewLabel(activeView),
+            current: true
+          }
+        ];
+
   return (
     <AppShell
       isSidebarCollapsed={isSidebarCollapsed}
+      isMobileNavOpen={isMobileNavOpen}
+      brandLogoAlt={BRAND_LOGO_ALT}
+      currentUser={currentUser}
+      breadcrumbItems={breadcrumbItems}
       sidebar={
         <AppSidebar
           brandName={BRAND_NAME}
@@ -2723,6 +2781,19 @@ export function PrismaReviewApp() {
           onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
         />
       }
+      onGoDashboard={() => {
+        setActiveView("dashboard");
+        setIsMobileNavOpen(false);
+      }}
+      onNavigateProfile={() => {
+        setActiveView("profile");
+        setIsMobileNavOpen(false);
+      }}
+      onNavigateAbout={() => {
+        setActiveView("about");
+        setIsMobileNavOpen(false);
+      }}
+      onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
     >
       {renderActiveView()}
     </AppShell>

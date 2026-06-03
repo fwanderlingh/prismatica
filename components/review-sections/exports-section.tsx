@@ -93,7 +93,7 @@ export function ExportsSection({
     <div className="viewStack">
       <section className="overviewBand">
         <div>
-          <p className="eyebrow">Exports</p>
+          <p className="eyebrow">Project Exports</p>
           <h1>PRISMA Output Review</h1>
           <p className="subtle">Review flow totals and consistency checks before sharing project outputs.</p>
         </div>

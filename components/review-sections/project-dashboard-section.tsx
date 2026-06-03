@@ -1,6 +1,6 @@
-import { Activity, AlertTriangle, Bell, ChevronRight, Download, History, Users, BarChart3 } from "lucide-react";
+import { Activity, AlertTriangle, Bell, ChevronRight, History, Settings, Users } from "lucide-react";
 import type { Decision, PrismaCounts, Report, ReviewProject, Study, WorkflowEvent, AppUser } from "@/lib/prismaData";
-import { Badge, EmptyState, Metric, PrismaFlow, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+import { Badge, EmptyState, Metric, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 
 type WorkflowConflict = {
   id: string;
@@ -44,7 +44,7 @@ type ProjectDashboardSectionProps = {
   formatAuditEntityLabel: (event: WorkflowEvent, project: ReviewProject, studies: Study[], reports: Report[]) => string;
   formatAuditTime: (value: string) => string;
   formatNumber: (value: number) => string;
-  onOpenExport: () => void;
+  onOpenSettings: () => void;
   onOpenAudit: () => void;
 };
 
@@ -71,14 +71,14 @@ export function ProjectDashboardSection({
   formatAuditEntityLabel,
   formatAuditTime,
   formatNumber,
-  onOpenExport,
+  onOpenSettings,
   onOpenAudit
 }: ProjectDashboardSectionProps) {
   return (
     <div className="viewStack">
       <section className="overviewBand">
         <div>
-          <p className="eyebrow">Project dashboard</p>
+          <p className="eyebrow">Project Overview</p>
           <h1>{selectedProject.title}</h1>
           <p className="subtle">
             {selectedProject.protocolId} · {selectedProject.organization} · {formatProjectPhase(selectedProject.stage)}
@@ -98,9 +98,9 @@ export function ProjectDashboardSection({
             <Bell size={17} />
             Alerts ({workflowConflicts.length})
           </button>
-          <button className="primaryButton" type="button" title="Open export preview" onClick={onOpenExport}>
-            <Download size={17} />
-            Export
+          <button className="primaryButton" type="button" title="Open project settings" onClick={onOpenSettings}>
+            <Settings size={17} />
+            Settings
           </button>
         </div>
       </section>
@@ -257,10 +257,6 @@ export function ProjectDashboardSection({
         </div>
       </section>
 
-      <section className="panel">
-        <SectionTitle icon={BarChart3} title="PRISMA Count Preview" action="Validated counts" />
-        <PrismaFlow counts={activeCounts} reportsExcludedTotal={reportsExcludedTotal} />
-      </section>
     </div>
   );
 }

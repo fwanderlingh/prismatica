@@ -60,75 +60,77 @@ export function ProfileSection({
         </button>
       </section>
 
-      <section className="panel">
-        <SectionTitle icon={UserCircle} title="Account" action="Server session" />
-        <form className="accountForm" onSubmit={updateAccount}>
-          <label>
-            <span>Organization</span>
-            <input
-              value={accountForm.organization}
-              onChange={(event) => onAccountOrganizationChange(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>Role title</span>
-            <input
-              value={accountForm.title}
-              onChange={(event) => onAccountTitleChange(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>Current password</span>
-            <input
-              type="password"
-              value={accountForm.currentPassword}
-              onChange={(event) => onAccountCurrentPasswordChange(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>New password</span>
-            <input
-              type="password"
-              value={accountForm.newPassword}
-              onChange={(event) => onAccountNewPasswordChange(event.target.value)}
-            />
-          </label>
-          <div className="profileRows">
-            <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
-          </div>
-          {accountMessage ? (
-            <div className={accountMessage === "Account updated." ? "validationItem ok" : "validationItem blocked"}>
-              {accountMessage === "Account updated." ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{accountMessage}</span>
+      <div className="profileSplit">
+        <section className="panel">
+          <SectionTitle icon={UserCircle} title="Account" action="Server session" />
+          <form className="accountForm" onSubmit={updateAccount}>
+            <label>
+              <span>Organization</span>
+              <input
+                value={accountForm.organization}
+                onChange={(event) => onAccountOrganizationChange(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Role title</span>
+              <input
+                value={accountForm.title}
+                onChange={(event) => onAccountTitleChange(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Current password</span>
+              <input
+                type="password"
+                value={accountForm.currentPassword}
+                onChange={(event) => onAccountCurrentPasswordChange(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>New password</span>
+              <input
+                type="password"
+                value={accountForm.newPassword}
+                onChange={(event) => onAccountNewPasswordChange(event.target.value)}
+              />
+            </label>
+            <div className="profileRows">
+              <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
             </div>
-          ) : null}
-          <button className="primaryButton" type="submit">
-            <Check size={17} />
-            Save Account
-          </button>
-        </form>
-      </section>
+            {accountMessage ? (
+              <div className={accountMessage === "Account updated." ? "validationItem ok" : "validationItem blocked"}>
+                {accountMessage === "Account updated." ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{accountMessage}</span>
+              </div>
+            ) : null}
+            <button className="primaryButton" type="submit">
+              <Check size={17} />
+              Save Account
+            </button>
+          </form>
+        </section>
 
-      <section className="panel">
-        <SectionTitle icon={Settings} title="Profile Preferences" action="Interface" />
-        <form className="accountForm" onSubmit={updateAccount}>
-          <label>
-            <span>Website theme</span>
-            <select
-              value={accountForm.websiteTheme}
-              onChange={(event) => onAccountThemeChange(event.target.value as WebsiteTheme)}
-            >
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-              <option value="system">System</option>
-            </select>
-          </label>
-          <button className="primaryButton" type="submit">
-            <Check size={17} />
-            Save Preferences
-          </button>
-        </form>
-      </section>
+        <section className="panel">
+          <SectionTitle icon={Settings} title="Profile Preferences" action="Interface" />
+          <form className="accountForm" onSubmit={updateAccount}>
+            <label>
+              <span>Website theme</span>
+              <select
+                value={accountForm.websiteTheme}
+                onChange={(event) => onAccountThemeChange(event.target.value as WebsiteTheme)}
+              >
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="system">System</option>
+              </select>
+            </label>
+            <button className="primaryButton" type="submit">
+              <Check size={17} />
+              Save Preferences
+            </button>
+          </form>
+        </section>
+      </div>
     </div>
   );
 }

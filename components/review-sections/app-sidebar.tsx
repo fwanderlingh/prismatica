@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, PanelRight } from "lucide-react";
+import { PanelRight } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
 import { Badge } from "@/components/prisma-review-ui";
 
@@ -88,22 +88,31 @@ export function AppSidebar({
         </button>
       </div>
 
-      {isProjectView ? (
-        <div className="projectContext">
-          <button className="ghostButton" type="button" onClick={onGoDashboard}>
-            <ArrowLeft size={16} />
-            All Reviews
-          </button>
-          <div>
-            <Badge label={formatProjectPhase(selectedProject.stage)} tone={projectPhaseBadgeTone(selectedProject.stage)} />
-            <strong>{selectedProject.title}</strong>
-          </div>
-        </div>
-      ) : null}
-
       <nav className="navList">
         {isProjectView ? (
           <>
+            {(() => {
+              const homeItem = globalNavItems.find((item) => item.key === "dashboard");
+              if (!homeItem) {
+                return null;
+              }
+
+              const { Icon, path } = homeItem;
+              return (
+                <button
+                  className={["navItem", "navItemUtility", activeView === "dashboard" ? "active" : ""].filter(Boolean).join(" ")}
+                  type="button"
+                  data-tooltip="Home"
+                  aria-current={activeView === "dashboard" ? "page" : undefined}
+                  onClick={onGoDashboard}
+                  title={path}
+                >
+                  {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
+                  <span className="navLabel">Home</span>
+                </button>
+              );
+            })()}
+
             <div className="navSection">
               <span className="navSectionTitle">Review Phases</span>
               {projectNavItems
@@ -132,7 +141,7 @@ export function AppSidebar({
             </div>
 
             <div className="navSection">
-              <span className="navSectionTitle">Utilities</span>
+              <span className="navSectionTitle">Project Utilities</span>
               {projectNavItems
                 .filter((item) => !reviewPhaseNavKeys.has(item.key))
                 .map(({ key, label, path, Icon }) => {
@@ -157,21 +166,11 @@ export function AppSidebar({
                     </button>
                   );
                 })}
-              <button
-                className={["navItem", "navItemUtility", activeView === "profile" ? "active" : ""].filter(Boolean).join(" ")}
-                type="button"
-                data-tooltip="Profile"
-                aria-current={activeView === "profile" ? "page" : undefined}
-                onClick={() => onNavigate("profile")}
-                title="/profile"
-              >
-                <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>
-                <span className="navLabel">Profile</span>
-              </button>
             </div>
           </>
         ) : (
           globalNavItems
+            .filter((item) => !["profile", "about"].includes(item.key))
             .filter((item) => !["adminReviews", "registeredUsers"].includes(item.key) || currentUser.isAdmin)
             .map(({ key, label, path, Icon }) => {
               const navClassName = ["navItem", activeView === key ? "active" : ""].filter(Boolean).join(" ");
