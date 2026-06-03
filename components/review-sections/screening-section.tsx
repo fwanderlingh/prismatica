@@ -27,6 +27,8 @@ type ScreeningSectionProps = {
   setScreeningNote: (value: string) => void;
   currentUserDecision: Decision | undefined;
   currentStageDecisions: Decision[];
+  pendingScreeningDecision: Exclude<DecisionValue, "not_retrieved"> | null;
+  isUndoingScreeningDecision: boolean;
   formatConflictResolutionHint: (requiredVotes: number) => string;
   selectedProjectAbstractRequiredVotes: number;
   addScreeningDecision: (value: Exclude<DecisionValue, "not_retrieved">) => void;
@@ -52,11 +54,16 @@ export function ScreeningSection({
   setScreeningNote,
   currentUserDecision,
   currentStageDecisions,
+  pendingScreeningDecision,
+  isUndoingScreeningDecision,
   formatConflictResolutionHint,
   selectedProjectAbstractRequiredVotes,
   addScreeningDecision,
   undoLastDecision
 }: ScreeningSectionProps) {
+  const isSubmittingDecision = pendingScreeningDecision !== null;
+  const activeDecisionValue = currentUserDecision?.decisionValue;
+
   if (projectScreeningStudies.length === 0) {
     return (
       <div className="viewStack">
@@ -177,28 +184,61 @@ export function ScreeningSection({
             </div>
           ) : null}
           <div className="decisionButtons">
-            <button className="includeButton" type="button" onClick={() => addScreeningDecision("include")}>
-              <CheckCircle2 size={18} />
-              Include
+            <button
+              className={activeDecisionValue === "include" ? "includeButton active" : "includeButton"}
+              type="button"
+              onClick={() => addScreeningDecision("include")}
+              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+            >
+              {pendingScreeningDecision === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
+              {pendingScreeningDecision === "include" ? "Saving..." : "Include"}
             </button>
-            <button className="maybeButton" type="button" onClick={() => addScreeningDecision("maybe")}>
-              <Minus size={18} />
-              Maybe
+            <button
+              className={activeDecisionValue === "maybe" ? "maybeButton active" : "maybeButton"}
+              type="button"
+              onClick={() => addScreeningDecision("maybe")}
+              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+            >
+              {pendingScreeningDecision === "maybe" ? <span className="inlineSpinner" aria-hidden="true" /> : <Minus size={18} />}
+              {pendingScreeningDecision === "maybe" ? "Saving..." : "Maybe"}
             </button>
-            <button className="excludeButton" type="button" onClick={() => addScreeningDecision("exclude")}>
-              <XCircle size={18} />
-              Exclude
+            <button
+              className={activeDecisionValue === "exclude" ? "excludeButton active" : "excludeButton"}
+              type="button"
+              onClick={() => addScreeningDecision("exclude")}
+              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+            >
+              {pendingScreeningDecision === "exclude" ? <span className="inlineSpinner" aria-hidden="true" /> : <XCircle size={18} />}
+              {pendingScreeningDecision === "exclude" ? "Saving..." : "Exclude"}
             </button>
           </div>
           <div className="buttonRow">
-            <button className="ghostButton iconOnly" type="button" onClick={() => setStudyIndex((index) => Math.max(index - 1, 0))} title="Previous citation">
+            <button
+              className="ghostButton iconOnly"
+              type="button"
+              onClick={() => setStudyIndex((index) => Math.max(index - 1, 0))}
+              title="Previous citation"
+              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+            >
               <ArrowLeft size={17} />
             </button>
-            <button className="ghostButton" type="button" onClick={undoLastDecision} title="Undo latest decision">
-              <History size={17} />
-              Undo
+            <button
+              className="ghostButton"
+              type="button"
+              onClick={undoLastDecision}
+              title="Undo latest decision"
+              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+            >
+              {isUndoingScreeningDecision ? <span className="inlineSpinner" aria-hidden="true" /> : <History size={17} />}
+              {isUndoingScreeningDecision ? "Undoing..." : "Undo"}
             </button>
-            <button className="ghostButton iconOnly" type="button" onClick={() => setStudyIndex((index) => Math.min(index + 1, projectScreeningStudies.length - 1))} title="Next citation">
+            <button
+              className="ghostButton iconOnly"
+              type="button"
+              onClick={() => setStudyIndex((index) => Math.min(index + 1, projectScreeningStudies.length - 1))}
+              title="Next citation"
+              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+            >
               <ArrowRight size={17} />
             </button>
           </div>

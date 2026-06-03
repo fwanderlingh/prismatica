@@ -32,6 +32,8 @@ type ImportEditorSectionProps = {
   closeImportEditor: () => void;
   deleteImportBatch: (importId: string) => void;
   openScreening: () => void;
+  isSavingImportDetails: boolean;
+  isSavingStudyEdit: boolean;
   updateImportDetails: (event: FormSubmitEvent) => void;
   onImportSourceNameChange: (value: string) => void;
   onImportFilenameChange: (value: string) => void;
@@ -51,6 +53,8 @@ export function ImportEditorSection({
   importDetailForm,
   studyEditId,
   studyEditForm,
+  isSavingImportDetails,
+  isSavingStudyEdit,
   closeImportEditor,
   deleteImportBatch,
   openScreening,
@@ -112,9 +116,18 @@ export function ImportEditorSection({
               <input value={importDetailForm.filename} onChange={(event) => onImportFilenameChange(event.target.value)} />
             </label>
             <div className="buttonRow">
-              <button className="primaryButton" type="submit">
-                <Check size={17} />
-                Save Details
+              <button className="primaryButton" type="submit" disabled={isSavingImportDetails}>
+                {isSavingImportDetails ? (
+                  <>
+                    <span className="inlineSpinner" aria-hidden="true" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check size={17} />
+                    Save Details
+                  </>
+                )}
               </button>
               {batch.parserWarnings > 0 ? (
                 <button className="ghostButton" type="button" onClick={() => reviewImportWarnings(batch.id)}>
@@ -182,9 +195,18 @@ export function ImportEditorSection({
                         <textarea value={studyEditForm.abstract} onChange={(event) => onStudyEditFormChange({ abstract: event.target.value })} />
                       </label>
                       <div className="buttonRow">
-                        <button className="primaryButton" type="submit">
-                          <Check size={17} />
-                          Save Entry
+                        <button className="primaryButton" type="submit" disabled={isSavingStudyEdit}>
+                          {isSavingStudyEdit ? (
+                            <>
+                              <span className="inlineSpinner" aria-hidden="true" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Check size={17} />
+                              Save Entry
+                            </>
+                          )}
                         </button>
                         <button className="ghostButton" type="button" onClick={cancelStudyEdit}>
                           <X size={17} />

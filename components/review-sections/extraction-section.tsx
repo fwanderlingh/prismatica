@@ -38,6 +38,7 @@ type ExtractionSectionProps = {
   extractionMessage: string;
   activeExtractionTemplate?: ExtractionTemplate;
   createExtractionTemplate: (event: FormSubmitEvent) => void;
+  isCreatingExtractionTemplate: boolean;
   extractionTemplateForm: ExtractionTemplateForm;
   setExtractionTemplateTitle: (title: string) => void;
   removeExtractionTemplateField: (fieldId: string) => void;
@@ -52,6 +53,7 @@ type ExtractionSectionProps = {
   extractionResponses: ExtractionResponse[];
   activeExtractionResponse?: ExtractionResponse;
   submitExtractionResponse: (event: FormSubmitEvent) => void;
+  isSubmittingExtractionResponse: boolean;
   extractionFormValues: Record<string, ExtractionResponseValue | undefined>;
   updateExtractionValue: (fieldId: string, value: ExtractionResponseValue) => void;
   toggleExtractionChoice: (fieldId: string, option: string, checked: boolean) => void;
@@ -66,6 +68,7 @@ export function ExtractionSection({
   extractionMessage,
   activeExtractionTemplate,
   createExtractionTemplate,
+  isCreatingExtractionTemplate,
   extractionTemplateForm,
   setExtractionTemplateTitle,
   removeExtractionTemplateField,
@@ -80,6 +83,7 @@ export function ExtractionSection({
   extractionResponses,
   activeExtractionResponse,
   submitExtractionResponse,
+  isSubmittingExtractionResponse,
   extractionFormValues,
   updateExtractionValue,
   toggleExtractionChoice
@@ -229,9 +233,9 @@ export function ExtractionSection({
                 <Plus size={17} />
                 Multiple Choice
               </button>
-              <button className="primaryButton" type="submit">
-                <Check size={17} />
-                Create Template
+              <button className="primaryButton" type="submit" disabled={isCreatingExtractionTemplate}>
+                {isCreatingExtractionTemplate ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+                {isCreatingExtractionTemplate ? "Creating..." : "Create Template"}
               </button>
             </div>
           </form>
@@ -380,6 +384,7 @@ export function ExtractionSection({
                   <legend>{field.title}</legend>
                   {field.type === "multiline_text" ? (
                     <textarea
+                      disabled={isSubmittingExtractionResponse}
                       value={typeof value === "string" ? value : ""}
                       onChange={(event) => updateExtractionValue(field.id, event.target.value)}
                     />
@@ -391,6 +396,7 @@ export function ExtractionSection({
                           <input
                             type="radio"
                             name={field.id}
+                            disabled={isSubmittingExtractionResponse}
                             checked={value === option}
                             onChange={() => updateExtractionValue(field.id, option)}
                           />
@@ -407,6 +413,7 @@ export function ExtractionSection({
                           <label key={option}>
                             <input
                               type="checkbox"
+                                disabled={isSubmittingExtractionResponse}
                               checked={checked}
                               onChange={(event) => toggleExtractionChoice(field.id, option, event.target.checked)}
                             />
@@ -420,9 +427,9 @@ export function ExtractionSection({
               );
             })}
 
-            <button className="primaryButton" type="submit" disabled={!activeReportForExtraction}>
-              <Check size={17} />
-              Submit Extraction
+            <button className="primaryButton" type="submit" disabled={!activeReportForExtraction || isSubmittingExtractionResponse}>
+              {isSubmittingExtractionResponse ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+              {isSubmittingExtractionResponse ? "Submitting..." : "Submit Extraction"}
             </button>
           </form>
         </aside>

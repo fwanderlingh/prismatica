@@ -23,10 +23,17 @@ export type ReportPdfReadResult = {
   storagePath: string;
 };
 
+export type ReportPdfWriteMetadata = {
+  checksum?: string;
+  fileName?: string;
+  projectId?: string;
+  reportId?: string;
+};
+
 export type PdfStorageAdapter = {
   provider: PdfStorageProvider;
   buildStoragePath(input: ReportPdfLocationInput): string;
-  writePdf(storagePath: string, buffer: Buffer): Promise<void>;
+  writePdf(storagePath: string, buffer: Buffer, metadata?: ReportPdfWriteMetadata): Promise<void>;
   readPdf(input: ReportPdfReadInput): Promise<ReportPdfReadResult | null>;
 };
 
@@ -50,6 +57,18 @@ function reportPdfStoragePath(dataFileResolver: () => string, projectId: string,
   const safeReportId = slugify(reportId) || "report";
   const extension = path.extname(fileName).toLowerCase() || ".pdf";
   return path.join(reportPdfStorageDirectory(dataFileResolver, projectId), `${safeReportId}-${checksum}${extension}`);
+}
+
+function reportPdfObjectKey(projectId: string, reportId: string, checksum: string, fileName: string) {
+  const safeProjectId = slugify(projectId) || "project";
+  const safeReportId = slugify(reportId) || "report";
+  const extension = path.extname(fileName).toLowerCase() || ".pdf";
+  return `reports/${safeProjectId}/${safeReportId}-${checksum}${extension}`;
+}
+
+function minioLocalFallbackEnabled() {
+  const value = process.env.PRISMATICA_PDF_LOCAL_FALLBACK ?? process.env.PRISMATICA_MINIO_LOCAL_FALLBACK ?? "true";
+  return value.toLowerCase() !== "false";
 }
 
 function resolveLocalStoragePath(dataFileResolver: () => string, report: Report, projectId: string, reportId: string) {
@@ -108,21 +127,25 @@ function createLocalPdfStorage(options: PdfStorageOptions): PdfStorageAdapter {
   };
 }
 
-function createMinioPdfStorage(): PdfStorageAdapter {
+function createMinioPdfStorage(options: PdfStorageOptions): PdfStorageAdapter {
   const objectStorage = createObjectStorageFromEnv();
+  const localFallback = minioLocalFallbackEnabled() ? createLocalPdfStorage(options) : null;
+
   return {
     provider: "minio",
     buildStoragePath(input) {
-      const safeProjectId = slugify(input.projectId) || "project";
-      const safeReportId = slugify(input.reportId) || "report";
-      const extension = path.extname(input.fileName).toLowerCase() || ".pdf";
-      return `reports/${safeProjectId}/${safeReportId}-${input.checksum}${extension}`;
+      return reportPdfObjectKey(input.projectId, input.reportId, input.checksum, input.fileName);
     },
-    async writePdf(storagePath, buffer) {
+    async writePdf(storagePath, buffer, metadata) {
       await objectStorage.putObject({
         key: storagePath,
         body: buffer,
-        contentType: "application/pdf"
+        contentType: "application/pdf",
+        checksum: metadata?.checksum,
+        metadata: {
+          "project-id": metadata?.projectId,
+          "report-id": metadata?.reportId
+        }
       });
     },
     async readPdf(input) {
@@ -153,6 +176,16 @@ function createMinioPdfStorage(): PdfStorageAdapter {
         };
       }
 
+      if (localFallback) {
+        const localPdf = await localFallback.readPdf(input);
+        if (localPdf) {
+          return {
+            buffer: localPdf.buffer,
+            storagePath: input.report.storagePath || localPdf.storagePath
+          };
+        }
+      }
+
       return null;
     }
   };
@@ -161,7 +194,7 @@ function createMinioPdfStorage(): PdfStorageAdapter {
 export function createPdfStorageAdapter(options: PdfStorageOptions): PdfStorageAdapter {
   const provider = process.env.PRISMATICA_OBJECT_STORAGE_PROVIDER?.toLowerCase();
   if (provider === "minio") {
-    return createMinioPdfStorage();
+    return createMinioPdfStorage(options);
   }
   return createLocalPdfStorage(options);
 }

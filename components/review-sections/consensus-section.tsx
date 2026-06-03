@@ -34,6 +34,7 @@ type ConsensusSectionProps = {
   formatExtractionResponseValue: (value: ExtractionResponseValue | undefined) => string;
   formatAuditTime: (value: string) => string;
   finalizeExtractionConsensus: (event: FormSubmitEvent) => void;
+  isFinalizingExtractionConsensus: boolean;
   consensusFormValues: Record<string, ExtractionResponseValue | undefined>;
   updateConsensusValue: (fieldId: string, value: ExtractionResponseValue) => void;
   toggleConsensusChoice: (fieldId: string, option: string, checked: boolean) => void;
@@ -56,6 +57,7 @@ export function ConsensusSection({
   formatExtractionResponseValue,
   formatAuditTime,
   finalizeExtractionConsensus,
+  isFinalizingExtractionConsensus,
   consensusFormValues,
   updateConsensusValue,
   toggleConsensusChoice
@@ -279,6 +281,7 @@ export function ConsensusSection({
                     <legend>{field.title}</legend>
                     {field.type === "multiline_text" ? (
                       <textarea
+                        disabled={isFinalizingExtractionConsensus}
                         value={typeof value === "string" ? value : ""}
                         onChange={(event) => updateConsensusValue(field.id, event.target.value)}
                       />
@@ -290,6 +293,7 @@ export function ConsensusSection({
                             <input
                               type="radio"
                               name={`consensus-${field.id}`}
+                              disabled={isFinalizingExtractionConsensus}
                               checked={value === option}
                               onChange={() => updateConsensusValue(field.id, option)}
                             />
@@ -306,6 +310,7 @@ export function ConsensusSection({
                             <label key={option}>
                               <input
                                 type="checkbox"
+                                disabled={isFinalizingExtractionConsensus}
                                 checked={checked}
                                 onChange={(event) => toggleConsensusChoice(field.id, option, event.target.checked)}
                               />
@@ -319,9 +324,9 @@ export function ConsensusSection({
                 );
               })}
 
-              <button className="primaryButton" type="submit" disabled={!canArbitrate}>
-                <Check size={17} />
-                Finalize Consensus
+              <button className="primaryButton" type="submit" disabled={!canArbitrate || isFinalizingExtractionConsensus}>
+                {isFinalizingExtractionConsensus ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+                {isFinalizingExtractionConsensus ? "Finalizing..." : "Finalize Consensus"}
               </button>
             </form>
           )}

@@ -1993,7 +1993,7 @@ export async function uploadReportPdfForUser(
   validatePdfBuffer(buffer, input.size);
   const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
   const storagePath = pdfStorage.buildStoragePath({ projectId, reportId, checksum, fileName });
-  await pdfStorage.writePdf(storagePath, buffer);
+  await pdfStorage.writePdf(storagePath, buffer, { checksum, fileName, projectId, reportId });
 
   const duplicate = findDuplicateReportChecksum(state, projectId, reportId, checksum);
   state.reports = state.reports.map((candidate) =>

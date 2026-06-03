@@ -1086,6 +1086,38 @@ h3 {
   border-radius: var(--radius);
   font-weight: 760;
   white-space: nowrap;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+}
+
+.ghostButton:hover:not(:disabled),
+.primaryButton:hover:not(:disabled),
+.dangerButton:hover:not(:disabled),
+.includeButton:hover:not(:disabled),
+.maybeButton:hover:not(:disabled),
+.excludeButton:hover:not(:disabled),
+.ghostButton:focus-visible,
+.primaryButton:focus-visible,
+.dangerButton:focus-visible,
+.includeButton:focus-visible,
+.maybeButton:focus-visible,
+.excludeButton:focus-visible {
+  box-shadow: 0 calc(8px * var(--ui-scale)) calc(18px * var(--ui-scale)) rgba(23, 33, 38, 0.12);
+}
+
+.ghostButton:active:not(:disabled),
+.primaryButton:active:not(:disabled),
+.dangerButton:active:not(:disabled),
+.includeButton:active:not(:disabled),
+.maybeButton:active:not(:disabled),
+.excludeButton:active:not(:disabled) {
+  box-shadow: 0 calc(3px * var(--ui-scale)) calc(8px * var(--ui-scale)) rgba(23, 33, 38, 0.12);
 }
 
 .ghostButton {
@@ -1125,6 +1157,10 @@ a.primaryButton[target="_blank"]:focus-visible {
   color: #ffffff;
   border: calc(1px * var(--ui-scale)) solid var(--coral);
   background: var(--coral);
+}
+
+.dangerButton:hover {
+  background: #b8453d;
 }
 
 .iconOnly {
@@ -2409,10 +2445,22 @@ textarea {
   border-color: #bedfc8;
 }
 
+.includeButton:hover {
+  color: #124728;
+  background: #d9efdf;
+  border-color: #9bcca9;
+}
+
 .maybeButton {
   color: #7b4b05;
   background: var(--amber-soft);
   border-color: #f0d8a5;
+}
+
+.maybeButton:hover {
+  color: #643d05;
+  background: #fbe9c0;
+  border-color: #e2bf74;
 }
 
 .excludeButton {
@@ -2421,14 +2469,43 @@ textarea {
   border-color: #efcac5;
 }
 
+.excludeButton:hover {
+  color: #742720;
+  background: #f6dfdc;
+  border-color: #deada7;
+}
+
 .includeButton.active {
   color: #ffffff;
   background: var(--green);
+  border-color: var(--green);
+}
+
+.includeButton.active:hover {
+  color: #ffffff;
+  background: #256641;
+}
+
+.maybeButton.active {
+  color: #ffffff;
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.maybeButton.active:hover {
+  color: #ffffff;
+  background: #996613;
 }
 
 .excludeButton.active {
   color: #ffffff;
   background: var(--coral);
+  border-color: var(--coral);
+}
+
+.excludeButton.active:hover {
+  color: #ffffff;
+  background: #ad433b;
 }
 
 .fullTextLayout {
@@ -2870,6 +2947,8 @@ select:disabled {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+  transform: none;
+  box-shadow: none;
 }
 
 .profileHero {

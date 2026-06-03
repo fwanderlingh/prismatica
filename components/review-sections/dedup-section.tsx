@@ -8,6 +8,7 @@ type DedupSectionProps = {
   projectScreeningStudies: Study[];
   recordsIdentified: number;
   projectDedupCandidates: DedupCandidate[];
+  pendingDedupAction: DedupCandidate["status"] | null;
   updateDedupCandidate: (candidateId: string, status: DedupCandidate["status"]) => void;
 };
 
@@ -17,6 +18,7 @@ export function DedupSection({
   projectScreeningStudies,
   recordsIdentified,
   projectDedupCandidates,
+  pendingDedupAction,
   updateDedupCandidate
 }: DedupSectionProps) {
   if (!latestPendingDedup) {
@@ -84,13 +86,13 @@ export function DedupSection({
             ))}
           </ul>
           <div className="buttonRow">
-            <button className="primaryButton" type="button" onClick={() => updateDedupCandidate(latestPendingDedup.id, "confirmed")}>
-              <Check size={17} />
-              Confirm
+            <button className="primaryButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(latestPendingDedup.id, "confirmed")}>
+              {pendingDedupAction === "confirmed" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+              {pendingDedupAction === "confirmed" ? "Confirming..." : "Confirm"}
             </button>
-            <button className="dangerButton" type="button" onClick={() => updateDedupCandidate(latestPendingDedup.id, "rejected")}>
-              <X size={17} />
-              Reject
+            <button className="dangerButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(latestPendingDedup.id, "rejected")}>
+              {pendingDedupAction === "rejected" ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
+              {pendingDedupAction === "rejected" ? "Rejecting..." : "Reject"}
             </button>
           </div>
         </div>

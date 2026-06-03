@@ -1,8 +1,13 @@
-import { AlertTriangle, BarChart3, Check, CheckCircle2, FileText, X } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, CircleEllipsis, CheckCircle2, FileText, X } from "lucide-react";
 import type { PrismaCounts } from "@/lib/prismaData";
 import { PrismaFlow, SectionTitle } from "@/components/prisma-review-ui";
 
 type ExportConsistency = {
+  identifiedCheckActive: boolean;
+  screenedCheckActive: boolean;
+  retrievalCheckActive: boolean;
+  assessedCheckActive: boolean;
+  exclusionReasonCheckActive: boolean;
   identifiedCheckOk: boolean;
   screenedCheckOk: boolean;
   retrievalCheckOk: boolean;
@@ -13,6 +18,7 @@ type ExportConsistency = {
   retrievalBalanceTotal: number;
   assessedBalanceTotal: number;
   excludedWithoutReasonCount: number;
+  activeCount: number;
   failedCount: number;
   passedCount: number;
   totalCount: number;
@@ -24,6 +30,7 @@ type ExportsSectionProps = {
   reportsExcludedTotal: number;
   exportConsistency: ExportConsistency;
   exportMessage: string;
+  isExportingConsensusCsv: boolean;
   canExportExtractionCsv: boolean;
   downloadConsensusExtractionCsv: () => void;
   formatNumber: (value: number) => string;
@@ -35,6 +42,7 @@ export function ExportsSection({
   reportsExcludedTotal,
   exportConsistency,
   exportMessage,
+  isExportingConsensusCsv,
   canExportExtractionCsv,
   downloadConsensusExtractionCsv,
   formatNumber
@@ -56,35 +64,36 @@ export function ExportsSection({
       label: exportConsistency.identifiedCheckOk
         ? "Identified records cover screening and pre-screen removals"
         : "Identified records do not cover screening and pre-screen removals",
-      status: isZeroDataProject ? "muted" : exportConsistency.identifiedCheckOk ? "ok" : "warning",
+      status: isZeroDataProject || !exportConsistency.identifiedCheckActive ? "muted" : exportConsistency.identifiedCheckOk ? "ok" : "warning",
       detail: `Identified: ${formatNumber(recordsIdentified)}. Screened + pre-screen removals: ${formatNumber(exportConsistency.screenedAndPreScreenRemovedTotal)}.`
     },
     {
       label: exportConsistency.screenedCheckOk
         ? "Screening decisions are fully balanced"
         : "Screening decisions are not fully balanced",
-      status: isZeroDataProject ? "muted" : exportConsistency.screenedCheckOk ? "ok" : "warning",
+      status: isZeroDataProject || !exportConsistency.screenedCheckActive ? "muted" : exportConsistency.screenedCheckOk ? "ok" : "warning",
       detail: `Screened: ${formatNumber(activeCounts.recordsScreened)}. Excluded + moved to full text: ${formatNumber(exportConsistency.screenBalanceTotal)}.`
     },
     {
       label: exportConsistency.retrievalCheckOk
         ? "Retrieval outcomes are fully balanced"
         : "Retrieval outcomes are not fully balanced",
-      status: isZeroDataProject ? "muted" : exportConsistency.retrievalCheckOk ? "ok" : "warning",
+      status: isZeroDataProject || !exportConsistency.retrievalCheckActive ? "muted" : exportConsistency.retrievalCheckOk ? "ok" : "warning",
       detail: `Reports sought: ${formatNumber(activeCounts.reportsSought)}. Assessed + not retrieved: ${formatNumber(exportConsistency.retrievalBalanceTotal)}.`
     },
     {
       label: exportConsistency.assessedCheckOk
         ? "Eligibility decisions are fully balanced"
         : "Eligibility decisions are not fully balanced",
-      status: isZeroDataProject ? "muted" : exportConsistency.assessedCheckOk ? "ok" : "warning",
+      status: isZeroDataProject || !exportConsistency.assessedCheckActive ? "muted" : exportConsistency.assessedCheckOk ? "ok" : "warning",
       detail: `Assessed reports: ${formatNumber(activeCounts.reportsAssessed)}. Exclusions with reasons + included studies: ${formatNumber(exportConsistency.assessedBalanceTotal)}.`
     },
     {
       label: exportConsistency.exclusionReasonCheckOk
         ? "Every current full-text exclusion has a reason"
         : "Some current full-text exclusions are missing a reason",
-      status: isZeroDataProject ? "muted" : exportConsistency.exclusionReasonCheckOk ? "ok" : "warning",
+      status:
+        isZeroDataProject || !exportConsistency.exclusionReasonCheckActive ? "muted" : exportConsistency.exclusionReasonCheckOk ? "ok" : "warning",
       detail: `Current full-text exclusions missing reason: ${formatNumber(exportConsistency.excludedWithoutReasonCount)}.`
     }
   ];
@@ -128,10 +137,10 @@ export function ExportsSection({
                 type="button"
                 title="Download consensus extraction CSV"
                 onClick={downloadConsensusExtractionCsv}
-                disabled={!canExportExtractionCsv}
+                disabled={!canExportExtractionCsv || isExportingConsensusCsv}
               >
-                <FileText size={17} />
-                Export Extraction CSV
+                {isExportingConsensusCsv ? <span className="inlineSpinner" aria-hidden="true" /> : <FileText size={17} />}
+                {isExportingConsensusCsv ? "Exporting..." : "Export Extraction CSV"}
               </button>
             </div>
           </div>
@@ -145,9 +154,9 @@ export function ExportsSection({
 
         <div className="panel">
           <SectionTitle
-            icon={CheckCircle2}
+            icon={CircleEllipsis}
             title="Consistency Checks"
-            action={isZeroDataProject ? "Awaiting data" : `${exportConsistency.passedCount}/${exportConsistency.totalCount} passed`}
+            action={isZeroDataProject || exportConsistency.activeCount === 0 ? "Awaiting data" : `${exportConsistency.passedCount}/${exportConsistency.activeCount} passed`}
           />
           <p className="subtle">These are live integrity checks from current project data, not demo placeholders.</p>
           <div className="validationList">
@@ -162,7 +171,7 @@ export function ExportsSection({
                 }
                 key={validation.label}
               >
-                {validation.status === "muted" ? <CheckCircle2 size={17} /> : validation.status === "ok" ? <Check size={17} /> : <X size={17} />}
+                {validation.status === "muted" ? <CircleEllipsis size={17} /> : validation.status === "ok" ? <Check size={17} /> : <X size={17} />}
                 <div>
                   <span>{validation.label}</span>
                   <small>{validation.detail}</small>

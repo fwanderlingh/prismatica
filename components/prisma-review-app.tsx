@@ -528,13 +528,18 @@ export function PrismaReviewApp() {
   const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsForm>(emptyProjectSettingsForm);
   const [projectSettingsMessage, setProjectSettingsMessage] = useState("");
   const [isSavingProjectSettings, setIsSavingProjectSettings] = useState(false);
+  const [isSavingImportDetails, setIsSavingImportDetails] = useState(false);
+  const [isSavingStudyEdit, setIsSavingStudyEdit] = useState(false);
   const [deleteProjectMessage, setDeleteProjectMessage] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>(seedDedupCandidates);
+  const [pendingDedupAction, setPendingDedupAction] = useState<DedupCandidate["status"] | null>(null);
   const [studyIndex, setStudyIndex] = useState(0);
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
+  const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
+  const [isUndoingScreeningDecision, setIsUndoingScreeningDecision] = useState(false);
   const [screeningNote, setScreeningNote] = useState("");
   const [activeReportId, setActiveReportId] = useState(reportQueue[0].id);
   const [auditPage, setAuditPage] = useState(1);
@@ -542,11 +547,16 @@ export function PrismaReviewApp() {
   const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
   const [extractionFormValues, setExtractionFormValues] = useState<Record<string, ExtractionResponseValue>>({});
   const [extractionMessage, setExtractionMessage] = useState("");
+  const [isCreatingExtractionTemplate, setIsCreatingExtractionTemplate] = useState(false);
+  const [isSubmittingExtractionResponse, setIsSubmittingExtractionResponse] = useState(false);
   const [consensusFormValues, setConsensusFormValues] = useState<Record<string, ExtractionResponseValue>>({});
   const [consensusMessage, setConsensusMessage] = useState("");
+  const [isFinalizingExtractionConsensus, setIsFinalizingExtractionConsensus] = useState(false);
   const [exportMessage, setExportMessage] = useState("");
+  const [isExportingConsensusCsv, setIsExportingConsensusCsv] = useState(false);
   const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
   const [fullTextMessage, setFullTextMessage] = useState("");
+  const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "validate" | "retrieval" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
@@ -557,6 +567,8 @@ export function PrismaReviewApp() {
   const [accountMessage, setAccountMessage] = useState("");
   const [adminDirectoryMessage, setAdminDirectoryMessage] = useState("");
   const [isCreatingAdminUser, setIsCreatingAdminUser] = useState(false);
+  const [pendingAdminUserAction, setPendingAdminUserAction] = useState<{ userId: string; action: "reset" | "delete" } | null>(null);
+  const [isUpdatingRegistrationSetting, setIsUpdatingRegistrationSetting] = useState(false);
   const [adminCreateUserForm, setAdminCreateUserForm] = useState({
     name: "",
     email: "",
@@ -857,11 +869,24 @@ export function PrismaReviewApp() {
     );
     const excludedWithoutReasonCount = excludedFullTextDecisions.filter((decision) => !decision.exclusionReasonId).length;
 
-    const identifiedCheckOk = recordsIdentified >= screenedAndPreScreenRemovedTotal;
-    const screenedCheckOk = activeCounts.recordsScreened === screenBalanceTotal;
-    const retrievalCheckOk = activeCounts.reportsSought === retrievalBalanceTotal;
-    const assessedCheckOk = activeCounts.reportsAssessed === assessedBalanceTotal;
-    const exclusionReasonCheckOk = excludedWithoutReasonCount === 0;
+    const identifiedCheckActive = recordsIdentified > 0 || screenedAndPreScreenRemovedTotal > 0;
+    const screenedCheckActive = activeCounts.recordsScreened > 0 || screenBalanceTotal > 0;
+    const retrievalCheckActive = activeCounts.reportsSought > 0 || retrievalBalanceTotal > 0;
+    const assessedCheckActive = activeCounts.reportsAssessed > 0 || assessedBalanceTotal > 0;
+    const exclusionReasonCheckActive = excludedFullTextDecisions.length > 0;
+
+    const identifiedCheckOk = identifiedCheckActive && recordsIdentified >= screenedAndPreScreenRemovedTotal;
+    const screenedCheckOk = screenedCheckActive && activeCounts.recordsScreened === screenBalanceTotal;
+    const retrievalCheckOk = retrievalCheckActive && activeCounts.reportsSought === retrievalBalanceTotal;
+    const assessedCheckOk = assessedCheckActive && activeCounts.reportsAssessed === assessedBalanceTotal;
+    const exclusionReasonCheckOk = exclusionReasonCheckActive && excludedWithoutReasonCount === 0;
+    const activeCount = [
+      identifiedCheckActive,
+      screenedCheckActive,
+      retrievalCheckActive,
+      assessedCheckActive,
+      exclusionReasonCheckActive
+    ].filter(Boolean).length;
     const passedCount = [identifiedCheckOk, screenedCheckOk, retrievalCheckOk, assessedCheckOk, exclusionReasonCheckOk].filter(Boolean).length;
 
     return {
@@ -870,14 +895,20 @@ export function PrismaReviewApp() {
       retrievalBalanceTotal,
       assessedBalanceTotal,
       excludedWithoutReasonCount,
+      identifiedCheckActive,
+      screenedCheckActive,
+      retrievalCheckActive,
+      assessedCheckActive,
+      exclusionReasonCheckActive,
       identifiedCheckOk,
       screenedCheckOk,
       retrievalCheckOk,
       assessedCheckOk,
       exclusionReasonCheckOk,
+      activeCount,
       passedCount,
       totalCount: 5,
-      failedCount: 5 - passedCount
+      failedCount: activeCount - passedCount
     };
   }, [activeCounts, decisions, recordsIdentified, reportsExcludedTotal, selectedProject.id]);
   const screeningProgress =
@@ -1713,6 +1744,7 @@ export function PrismaReviewApp() {
   async function createExtractionTemplate(event: FormSubmitEvent) {
     event.preventDefault();
     setExtractionMessage("");
+    setIsCreatingExtractionTemplate(true);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/extraction-template`, {
         method: "POST",
@@ -1733,6 +1765,8 @@ export function PrismaReviewApp() {
       setExtractionMessage("Data template created.");
     } catch (error) {
       setExtractionMessage(getErrorMessage(error));
+    } finally {
+      setIsCreatingExtractionTemplate(false);
     }
   }
 
@@ -1769,6 +1803,7 @@ export function PrismaReviewApp() {
     }
 
     setExtractionMessage("");
+    setIsSubmittingExtractionResponse(true);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/extractions`, {
         method: "POST",
@@ -1783,6 +1818,8 @@ export function PrismaReviewApp() {
       setExtractionMessage("Extraction submitted.");
     } catch (error) {
       setExtractionMessage(getErrorMessage(error));
+    } finally {
+      setIsSubmittingExtractionResponse(false);
     }
   }
 
@@ -1793,6 +1830,7 @@ export function PrismaReviewApp() {
     }
 
     setConsensusMessage("");
+    setIsFinalizingExtractionConsensus(true);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/extractions/consensus`, {
         method: "POST",
@@ -1807,11 +1845,14 @@ export function PrismaReviewApp() {
       setConsensusMessage("Consensus finalized.");
     } catch (error) {
       setConsensusMessage(getErrorMessage(error));
+    } finally {
+      setIsFinalizingExtractionConsensus(false);
     }
   }
 
   async function downloadConsensusExtractionCsv() {
     setExportMessage("");
+    setIsExportingConsensusCsv(true);
 
     try {
       const response = await fetch(`/api/projects/${selectedProject.id}/exports`, {
@@ -1838,6 +1879,8 @@ export function PrismaReviewApp() {
       setExportMessage("Consensus extraction CSV downloaded.");
     } catch (error) {
       setExportMessage(getErrorMessage(error));
+    } finally {
+      setIsExportingConsensusCsv(false);
     }
   }
 
@@ -1892,6 +1935,7 @@ export function PrismaReviewApp() {
       return;
     }
 
+    setIsSavingImportDetails(true);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${selectedImportId}`, {
         method: "PATCH",
@@ -1901,6 +1945,8 @@ export function PrismaReviewApp() {
       setImportDetailMessage("Import details updated.");
     } catch (error) {
       setImportDetailMessage(getErrorMessage(error));
+    } finally {
+      setIsSavingImportDetails(false);
     }
   }
 
@@ -1936,6 +1982,7 @@ export function PrismaReviewApp() {
       return;
     }
 
+    setIsSavingStudyEdit(true);
     try {
       const payload = await apiRequest<AppMutationPayload>(
         `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${studyEditId}`,
@@ -1950,6 +1997,8 @@ export function PrismaReviewApp() {
       setImportDetailMessage("Citation entry updated.");
     } catch (error) {
       setImportDetailMessage(getErrorMessage(error));
+    } finally {
+      setIsSavingStudyEdit(false);
     }
   }
 
@@ -2015,6 +2064,7 @@ export function PrismaReviewApp() {
   }
 
   async function adminResetUserPassword(user: AppUser) {
+    setPendingAdminUserAction({ userId: user.id, action: "reset" });
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/admin/users/${user.id}/reset-password`, {
         method: "POST"
@@ -2023,6 +2073,8 @@ export function PrismaReviewApp() {
       setAdminDirectoryMessage(`Temporary password for ${user.name}: ${payload.temporaryPassword ?? "not returned"}`);
     } catch (error) {
       setAdminDirectoryMessage(getErrorMessage(error));
+    } finally {
+      setPendingAdminUserAction((previous) => (previous?.userId === user.id ? null : previous));
     }
   }
 
@@ -2031,6 +2083,7 @@ export function PrismaReviewApp() {
       return;
     }
 
+    setPendingAdminUserAction({ userId: user.id, action: "delete" });
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/admin/users/${user.id}`, {
         method: "DELETE"
@@ -2039,6 +2092,8 @@ export function PrismaReviewApp() {
       setAdminDirectoryMessage(payload.message ?? `Deleted account ${user.name}.`);
     } catch (error) {
       setAdminDirectoryMessage(getErrorMessage(error));
+    } finally {
+      setPendingAdminUserAction((previous) => (previous?.userId === user.id ? null : previous));
     }
   }
 
@@ -2068,6 +2123,7 @@ export function PrismaReviewApp() {
 
   async function updateRegistrationSetting(registrationEnabled: boolean) {
     setAuthSettingsMessage("");
+    setIsUpdatingRegistrationSetting(true);
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/admin/auth-settings", {
         method: "PATCH",
@@ -2077,6 +2133,8 @@ export function PrismaReviewApp() {
       setAuthSettingsMessage(payload.message ?? (registrationEnabled ? "Public registration enabled." : "Public registration disabled."));
     } catch (error) {
       setAuthSettingsMessage(getErrorMessage(error));
+    } finally {
+      setIsUpdatingRegistrationSetting(false);
     }
   }
 
@@ -2085,6 +2143,7 @@ export function PrismaReviewApp() {
       return;
     }
 
+    setPendingScreeningDecision(decisionValue);
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/decisions", {
         method: "POST",
@@ -2103,6 +2162,8 @@ export function PrismaReviewApp() {
       setStudyIndex((index) => Math.min(index + 1, Math.max(projectScreeningStudies.length - 1, 0)));
     } catch (error) {
       setLoginError(getErrorMessage(error));
+    } finally {
+      setPendingScreeningDecision(null);
     }
   }
 
@@ -2113,6 +2174,7 @@ export function PrismaReviewApp() {
     }
 
     const study = projectScreeningStudies.find((candidateStudy) => candidateStudy.id === lastAction.studyId);
+    setIsUndoingScreeningDecision(true);
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/decisions/undo", {
         method: "POST",
@@ -2129,10 +2191,13 @@ export function PrismaReviewApp() {
       }
     } catch (error) {
       setLoginError(getErrorMessage(error));
+    } finally {
+      setIsUndoingScreeningDecision(false);
     }
   }
 
   async function updateDedupCandidate(candidateId: string, status: DedupCandidate["status"]) {
+    setPendingDedupAction(status);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/dedup-candidates/${candidateId}`, {
         method: "PATCH",
@@ -2141,6 +2206,8 @@ export function PrismaReviewApp() {
       applyAppState(payload);
     } catch (error) {
       setLoginError(getErrorMessage(error));
+    } finally {
+      setPendingDedupAction(null);
     }
   }
 
@@ -2153,6 +2220,8 @@ export function PrismaReviewApp() {
       return;
     }
 
+    const action = input.decisionValue === "include" ? "include" : input.decisionValue === "exclude" ? "exclude" : "retrieval";
+    setPendingFullTextAction(action);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}`, {
         method: "PATCH",
@@ -2162,6 +2231,8 @@ export function PrismaReviewApp() {
       setFullTextMessage(input.decisionValue ? "Full-text decision saved." : "Retrieval status updated.");
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
+    } finally {
+      setPendingFullTextAction(null);
     }
   }
 
@@ -2173,6 +2244,7 @@ export function PrismaReviewApp() {
     }
 
     setFullTextMessage(`Uploading ${file.name}...`);
+    setPendingFullTextAction("upload");
     try {
       const contentBase64 = arrayBufferToBase64(await file.arrayBuffer());
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}/pdf`, {
@@ -2188,6 +2260,8 @@ export function PrismaReviewApp() {
       setFullTextMessage(`${file.name} uploaded. Run validation before including the study.`);
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
+    } finally {
+      setPendingFullTextAction(null);
     }
   }
 
@@ -2196,6 +2270,7 @@ export function PrismaReviewApp() {
       return;
     }
 
+    setPendingFullTextAction("validate");
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}/validate`, {
         method: "POST"
@@ -2204,6 +2279,8 @@ export function PrismaReviewApp() {
       setFullTextMessage("PDF validation completed.");
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
+    } finally {
+      setPendingFullTextAction(null);
     }
   }
 
@@ -2305,6 +2382,8 @@ export function PrismaReviewApp() {
         importDetailForm={importDetailForm}
         studyEditId={studyEditId}
         studyEditForm={studyEditForm}
+        isSavingImportDetails={isSavingImportDetails}
+        isSavingStudyEdit={isSavingStudyEdit}
         closeImportEditor={closeImportEditor}
         deleteImportBatch={deleteImportBatch}
         openScreening={() => setActiveView("screening")}
@@ -2359,6 +2438,7 @@ export function PrismaReviewApp() {
         projectScreeningStudies={projectScreeningStudies}
         recordsIdentified={recordsIdentified}
         projectDedupCandidates={projectDedupCandidates}
+        pendingDedupAction={pendingDedupAction}
         updateDedupCandidate={updateDedupCandidate}
       />
     );
@@ -2385,6 +2465,8 @@ export function PrismaReviewApp() {
         formatDecision={formatDecision}
         decisionTone={decisionTone}
         highlightText={highlightText}
+        pendingScreeningDecision={pendingScreeningDecision}
+        isUndoingScreeningDecision={isUndoingScreeningDecision}
         formatConflictResolutionHint={formatConflictResolutionHint}
         selectedProjectAbstractRequiredVotes={selectedProject.abstractRequiredVotes}
         addScreeningDecision={addScreeningDecision}
@@ -2406,6 +2488,7 @@ export function PrismaReviewApp() {
         setActiveReportId={setActiveReportId}
         setFullTextMessage={setFullTextMessage}
         pdfInputRef={pdfInputRef}
+        pendingFullTextAction={pendingFullTextAction}
         uploadReportPdf={uploadReportPdf}
         validateReportPdf={validateReportPdf}
         updateFullTextReport={updateFullTextReport}
@@ -2431,6 +2514,7 @@ export function PrismaReviewApp() {
         extractionMessage={extractionMessage}
         activeExtractionTemplate={activeExtractionTemplate}
         createExtractionTemplate={createExtractionTemplate}
+        isCreatingExtractionTemplate={isCreatingExtractionTemplate}
         extractionTemplateForm={extractionTemplateForm}
         setExtractionTemplateTitle={(title) =>
           setExtractionTemplateForm((previous) => ({ ...previous, title }))
@@ -2447,6 +2531,7 @@ export function PrismaReviewApp() {
         extractionResponses={extractionResponses}
         activeExtractionResponse={activeExtractionResponse}
         submitExtractionResponse={submitExtractionResponse}
+        isSubmittingExtractionResponse={isSubmittingExtractionResponse}
         extractionFormValues={extractionFormValues}
         updateExtractionValue={updateExtractionValue}
         toggleExtractionChoice={toggleExtractionChoice}
@@ -2473,6 +2558,7 @@ export function PrismaReviewApp() {
         formatExtractionResponseValue={formatExtractionResponseValue}
         formatAuditTime={formatAuditTime}
         finalizeExtractionConsensus={finalizeExtractionConsensus}
+        isFinalizingExtractionConsensus={isFinalizingExtractionConsensus}
         consensusFormValues={consensusFormValues}
         updateConsensusValue={updateConsensusValue}
         toggleConsensusChoice={toggleConsensusChoice}
@@ -2494,6 +2580,7 @@ export function PrismaReviewApp() {
         reportsExcludedTotal={reportsExcludedTotal}
         exportConsistency={exportConsistency}
         exportMessage={exportMessage}
+        isExportingConsensusCsv={isExportingConsensusCsv}
         canExportExtractionCsv={canExportExtractionCsv}
         downloadConsensusExtractionCsv={downloadConsensusExtractionCsv}
         formatNumber={formatNumber}
@@ -2639,6 +2726,8 @@ export function PrismaReviewApp() {
         onCreateUserFormTitleChange={(value) => setAdminCreateUserForm((previous) => ({ ...previous, title: value }))}
         onCreateUser={adminCreateUser}
         isCreatingUser={isCreatingAdminUser}
+        pendingUserAction={pendingAdminUserAction}
+        isUpdatingRegistrationSetting={isUpdatingRegistrationSetting}
         updateRegistrationSetting={updateRegistrationSetting}
       />
     );

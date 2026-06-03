@@ -31,6 +31,7 @@ type FullTextSectionProps = {
   setActiveReportId: (reportId: string) => void;
   setFullTextMessage: (message: string) => void;
   pdfInputRef: RefObject<HTMLInputElement | null>;
+  pendingFullTextAction: "upload" | "validate" | "retrieval" | "include" | "exclude" | null;
   uploadReportPdf: (event: ChangeEvent<HTMLInputElement>) => void;
   validateReportPdf: () => void;
   updateFullTextReport: (input: FullTextUpdateInput) => void;
@@ -54,6 +55,7 @@ export function FullTextSection({
   setActiveReportId,
   setFullTextMessage,
   pdfInputRef,
+  pendingFullTextAction,
   uploadReportPdf,
   validateReportPdf,
   updateFullTextReport,
@@ -125,6 +127,7 @@ export function FullTextSection({
   const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
   const canGoPreviousReport = activeReportIndex > 0;
   const canGoNextReport = activeReportIndex >= 0 && activeReportIndex < projectReportQueue.length - 1;
+  const isFullTextActionPending = pendingFullTextAction !== null;
 
   return (
     <div className="viewStack">
@@ -210,13 +213,13 @@ export function FullTextSection({
             </strong>
             <div className="toolbarCluster">
               <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
-              <button className="ghostButton" type="button" title="Upload PDF" onClick={() => pdfInputRef.current?.click()}>
-                <Upload size={16} />
-                PDF
+              <button className="ghostButton" type="button" title="Upload PDF" disabled={isFullTextActionPending} onClick={() => pdfInputRef.current?.click()}>
+                {pendingFullTextAction === "upload" ? <span className="inlineSpinner" aria-hidden="true" /> : <Upload size={16} />}
+                {pendingFullTextAction === "upload" ? "Uploading..." : "PDF"}
               </button>
-              <button className="ghostButton" type="button" title="Validate PDF" disabled={!activeReport.fileName} onClick={validateReportPdf}>
-                <FileCheck2 size={16} />
-                Validate
+              <button className="ghostButton" type="button" title="Validate PDF" disabled={!activeReport.fileName || isFullTextActionPending} onClick={validateReportPdf}>
+                {pendingFullTextAction === "validate" ? <span className="inlineSpinner" aria-hidden="true" /> : <FileCheck2 size={16} />}
+                {pendingFullTextAction === "validate" ? "Validating..." : "Validate"}
               </button>
             </div>
           </div>
@@ -275,6 +278,7 @@ export function FullTextSection({
           <select
             id="retrieval-status"
             value={activeReport.retrievalStatus}
+            disabled={isFullTextActionPending}
             onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
           >
             <option value="not_sought">Not sought</option>
@@ -306,26 +310,27 @@ export function FullTextSection({
             <button
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
               type="button"
-              disabled={!canInclude}
+              disabled={!canInclude || isFullTextActionPending}
               onClick={() => updateFullTextReport({ retrievalStatus: "retrieved", decisionValue: "include" })}
             >
-              <CheckCircle2 size={18} />
-              Include
+              {pendingFullTextAction === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
+              {pendingFullTextAction === "include" ? "Saving..." : "Include"}
             </button>
             <button
               className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
               type="button"
+              disabled={isFullTextActionPending}
               onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
             >
-              <XCircle size={18} />
-              Exclude
+              {pendingFullTextAction === "exclude" ? <span className="inlineSpinner" aria-hidden="true" /> : <XCircle size={18} />}
+              {pendingFullTextAction === "exclude" ? "Saving..." : "Exclude"}
             </button>
           </div>
 
           <label className="fieldLabel" htmlFor="exclusion-reason">
             Exclusion reason
           </label>
-          <select id="exclusion-reason" value={fullTextReason} onChange={(event) => setFullTextReason(event.target.value)}>
+          <select id="exclusion-reason" value={fullTextReason} disabled={isFullTextActionPending} onChange={(event) => setFullTextReason(event.target.value)}>
             {exclusionReasons.map((reason) => (
               <option value={reason} key={reason}>
                 {reason}

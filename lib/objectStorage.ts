@@ -1,3 +1,4 @@
+import { Readable } from "stream";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 export type ObjectStorageProvider = "local" | "minio";
@@ -7,6 +8,7 @@ export type PutObjectInput = {
   body: Uint8Array;
   contentType: string;
   checksum?: string;
+  metadata?: Record<string, string | undefined>;
 };
 
 export type ObjectStorage = {
@@ -47,11 +49,37 @@ function readMinioConfig(): MinioConfig {
   };
 }
 
-function streamToBuffer(streamBody: unknown): Promise<Uint8Array> {
+function isObjectNotFoundError(error: unknown) {
+  const candidate = error as { name?: string; Code?: string; code?: string; $metadata?: { httpStatusCode?: number } };
+  const errorName = candidate.name ?? candidate.Code ?? candidate.code ?? "";
+  if (errorName === "NoSuchBucket") {
+    return false;
+  }
+  return errorName === "NoSuchKey" || errorName === "NotFound" || candidate.$metadata?.httpStatusCode === 404;
+}
+
+function objectMetadata(input: PutObjectInput) {
+  const metadata = {
+    ...(input.checksum ? { checksum: input.checksum } : {}),
+    ...(input.metadata ?? {})
+  };
+  return Object.fromEntries(Object.entries(metadata).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0));
+}
+
+async function streamToBuffer(streamBody: unknown): Promise<Uint8Array> {
   const body = streamBody as { transformToByteArray?: () => Promise<Uint8Array> };
   if (body?.transformToByteArray) {
     return body.transformToByteArray();
   }
+
+  if (streamBody instanceof Readable || typeof (streamBody as AsyncIterable<Uint8Array> | undefined)?.[Symbol.asyncIterator] === "function") {
+    const chunks: Buffer[] = [];
+    for await (const chunk of streamBody as AsyncIterable<Buffer | Uint8Array | string>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
   throw new Error("Unsupported object body stream type returned by S3 client.");
 }
 
@@ -80,7 +108,7 @@ class MinioObjectStorage implements ObjectStorage {
         Key: input.key,
         Body: input.body,
         ContentType: input.contentType,
-        Metadata: input.checksum ? { checksum: input.checksum } : undefined
+        Metadata: objectMetadata(input)
       })
     );
   }
@@ -98,7 +126,7 @@ class MinioObjectStorage implements ObjectStorage {
       }
       return await streamToBuffer(output.Body);
     } catch (error) {
-      if ((error as { name?: string }).name === "NoSuchKey") {
+      if (isObjectNotFoundError(error)) {
         return null;
       }
       throw error;
@@ -115,7 +143,7 @@ class MinioObjectStorage implements ObjectStorage {
       );
       return true;
     } catch (error) {
-      if ((error as { name?: string }).name === "NotFound" || (error as { name?: string }).name === "NoSuchKey") {
+      if (isObjectNotFoundError(error)) {
         return false;
       }
       throw error;

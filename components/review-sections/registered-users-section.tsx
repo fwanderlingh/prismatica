@@ -29,6 +29,8 @@ type RegisteredUsersSectionProps = {
   onCreateUserFormTitleChange: (value: string) => void;
   onCreateUser: (event: FormSubmitEvent) => void;
   isCreatingUser: boolean;
+  pendingUserAction: { userId: string; action: "reset" | "delete" } | null;
+  isUpdatingRegistrationSetting: boolean;
   updateRegistrationSetting: (enabled: boolean) => void;
 };
 
@@ -47,6 +49,8 @@ export function RegisteredUsersSection({
   onCreateUserFormTitleChange,
   onCreateUser,
   isCreatingUser,
+  pendingUserAction,
+  isUpdatingRegistrationSetting,
   updateRegistrationSetting
 }: RegisteredUsersSectionProps) {
   const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
@@ -66,10 +70,7 @@ export function RegisteredUsersSection({
           <SectionTitle icon={Users} title="User Accounts" action={`${users.length} registered`} />
           <div className="memberPicker">
             {users.map((user) => (
-              <div
-                className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"} adminManagedUserSwitch`}
-                key={user.id}
-              >
+              <div className={`${user.id === currentUser.id ? "userSwitch active" : "userSwitch"} adminManagedUserSwitch`} key={user.id}>
                 <span className="avatar" style={{ background: user.avatarColor }}>
                   {user.initials}
                 </span>
@@ -81,22 +82,34 @@ export function RegisteredUsersSection({
                   </small>
                 </div>
                 <div className="userSwitchActions">
+                  {(() => {
+                    const isResettingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "reset";
+                    const isDeletingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "delete";
+                    const disableUserActions = user.id === currentUser.id || user.isAdmin || pendingUserAction !== null;
+
+                    return (
+                      <>
                   <button
                     className="ghostButton"
                     type="button"
-                    disabled={user.id === currentUser.id || user.isAdmin}
+                    disabled={disableUserActions}
                     onClick={() => adminResetUserPassword(user)}
                   >
-                    Reset password
+                    {isResettingUser ? <span className="inlineSpinner" aria-hidden="true" /> : null}
+                    {isResettingUser ? "Resetting..." : "Reset password"}
                   </button>
                   <button
                     className="dangerButton"
                     type="button"
-                    disabled={user.id === currentUser.id || user.isAdmin}
+                    disabled={disableUserActions}
                     onClick={() => adminDeleteUser(user)}
                   >
-                    Delete
+                    {isDeletingUser ? <span className="inlineSpinner" aria-hidden="true" /> : null}
+                    {isDeletingUser ? "Deleting..." : "Delete"}
                   </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
@@ -151,10 +164,11 @@ export function RegisteredUsersSection({
             <input
               type="checkbox"
               checked={authSettings.registrationEnabled}
+              disabled={isUpdatingRegistrationSetting}
               onChange={(event) => updateRegistrationSetting(event.target.checked)}
             />
             <span />
-            <strong>Allow public registration</strong>
+            <strong>{isUpdatingRegistrationSetting ? "Updating registration..." : "Allow public registration"}</strong>
           </label>
           <div className="stateRows">
             <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />

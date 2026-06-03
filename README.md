@@ -81,7 +81,7 @@ This uses Next.js experimental local HTTPS support.
 - Backend: Next API routes under `app/api`
 - State: Server-side JSON store with atomic writes
 - Auth: Signed HTTP-only cookies and session checks in server routes
-- Files: Uploaded PDFs stored on disk alongside the configured data store
+- Files: Uploaded PDFs stored on disk by default, or in MinIO/S3-compatible object storage
 
 Core modules:
 
@@ -168,6 +168,13 @@ export PRISMATICA_CAPTCHA_SECRET="replace-with-a-long-random-string"
 export PRISMATICA_SECURE_COOKIES="true"
 export PRISMATICA_USERS_SYNC_POSTGRES="true"
 export PRISMATICA_STORAGE_MODE="postgres"
+export PRISMATICA_OBJECT_STORAGE_PROVIDER="minio"
+export PRISMATICA_S3_ENDPOINT="http://127.0.0.1:9000"
+export PRISMATICA_S3_REGION="us-east-1"
+export PRISMATICA_S3_BUCKET="prismatica-pdfs"
+export PRISMATICA_S3_ACCESS_KEY="minio-access-key"
+export PRISMATICA_S3_SECRET_KEY="minio-secret-key"
+export PRISMATICA_S3_FORCE_PATH_STYLE="true"
 ```
 
 ### Session Secret Management
@@ -194,7 +201,30 @@ Notes:
 
 - Use `PRISMATICA_SECURE_COOKIES=true` only when serving over HTTPS.
 - `PRISMATICA_REGISTRATION_ENABLED=false` disables public registration for new data files.
-- Uploaded PDFs are stored under a sibling `pdfs/` folder near `PRISMATICA_DATA_FILE`.
+- Uploaded PDFs are stored under a sibling `pdfs/` folder near `PRISMATICA_DATA_FILE` unless `PRISMATICA_OBJECT_STORAGE_PROVIDER=minio` is enabled.
+
+### PDF Object Storage: MinIO
+
+Set `PRISMATICA_OBJECT_STORAGE_PROVIDER=minio` with the `PRISMATICA_S3_*` variables above to store new PDF uploads in MinIO or another S3-compatible service. Object keys use:
+
+```text
+reports/<project-id>/<report-id>-<sha256>.<extension>
+```
+
+During migration, MinIO mode still reads from the local PDF folder when an object is missing. Disable that fallback after backfill and verification:
+
+```bash
+export PRISMATICA_PDF_LOCAL_FALLBACK="false"
+```
+
+Backfill existing local PDFs into MinIO:
+
+```bash
+npm run backfill:pdfs:minio -- --dry-run
+npm run backfill:pdfs:minio
+```
+
+The backfill verifies each PDF checksum before upload and updates report `storagePath` values to the MinIO object key. It works with either JSON state or `PRISMATICA_STORAGE_MODE=postgres`.
 
 ### Users And Preferences: PostgreSQL Migration (Incremental)
 
@@ -229,8 +259,7 @@ When enabled (and `DATABASE_URL` is set), these mutations sync to PostgreSQL aut
 - profile updates (including password changes)
 - admin auth-settings updates
 - invited user creation
-- admin password reset
-- admin user deletion
+- admin users management
 
 Note: when `PRISMATICA_STORAGE_MODE=postgres` is enabled, full review state is persisted in PostgreSQL relational tables; `PRISMATICA_USERS_SYNC_POSTGRES` is only needed for the legacy JSON-primary transition mode.
 
