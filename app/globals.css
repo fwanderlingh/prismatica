@@ -3192,6 +3192,7 @@ button:disabled {
   border-radius: var(--radius);
   font-weight: 700;
   line-height: 1.35;
+  margin-top: calc(10px * var(--ui-scale));
 }
 
 .validationItem small {

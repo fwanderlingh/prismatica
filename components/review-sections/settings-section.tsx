@@ -57,8 +57,10 @@ type SettingsSectionProps = {
   teamMessage: string;
   toggleProjectOwner: (userId: string) => void;
   removeUserFromProject: (userId: string) => void;
+  teamAddPendingUserId: string | null;
   teamRolePendingUserId: string | null;
   teamRemovePendingUserId: string | null;
+  isInvitingProjectUser: boolean;
   isSavingProjectSettings: boolean;
   hasProjectSeedData: boolean;
   deleteProjectMessage: string;
@@ -98,8 +100,10 @@ export function SettingsSection({
   teamMessage,
   toggleProjectOwner,
   removeUserFromProject,
+  teamAddPendingUserId,
   teamRolePendingUserId,
   teamRemovePendingUserId,
+  isInvitingProjectUser,
   isSavingProjectSettings,
   hasProjectSeedData,
   deleteProjectMessage,
@@ -352,7 +356,10 @@ export function SettingsSection({
             {teamUserSearchResults.length > 0 ? (
               <div className="teamSearchResultsOverlay">
                 <div className="teamList teamSearchResultsList">
-                  {teamUserSearchResults.map((user) => (
+                  {teamUserSearchResults.map((user) => {
+                    const isAddActionPending = teamAddPendingUserId === user.id;
+
+                    return (
                     <div className="teamMember" key={user.id}>
                       <span className="avatar" style={{ background: user.avatarColor }}>
                         {user.initials}
@@ -362,12 +369,17 @@ export function SettingsSection({
                         <span>{user.email}</span>
                       </div>
                       <span>{user.title}</span>
-                      <button className="ghostButton" type="button" onClick={() => addExistingUserToProject(user.id)} disabled={!canManageProject}>
-                        <Plus size={16} />
-                        Add
+                      <button
+                        className="ghostButton"
+                        type="button"
+                        onClick={() => addExistingUserToProject(user.id)}
+                        disabled={!canManageProject || Boolean(teamAddPendingUserId) || isInvitingProjectUser}
+                      >
+                        {isAddActionPending ? <span className="inlineSpinner" aria-hidden="true" /> : <Plus size={16} />}
+                        {isAddActionPending ? "Adding..." : "Add"}
                       </button>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             ) : null}
@@ -376,19 +388,19 @@ export function SettingsSection({
           <form className="inviteForm" onSubmit={inviteUserToProject}>
             <label>
               <span>Invite name</span>
-              <input value={inviteForm.name} onChange={(event) => onInviteNameChange(event.target.value)} />
+              <input value={inviteForm.name} onChange={(event) => onInviteNameChange(event.target.value)} disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
             </label>
             <label>
               <span>Invite email</span>
-              <input value={inviteForm.email} onChange={(event) => onInviteEmailChange(event.target.value)} />
+              <input value={inviteForm.email} onChange={(event) => onInviteEmailChange(event.target.value)} disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
             </label>
             <label>
               <span>Role title</span>
-              <input value={inviteForm.title} onChange={(event) => onInviteTitleChange(event.target.value)} />
+              <input value={inviteForm.title} onChange={(event) => onInviteTitleChange(event.target.value)} disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
             </label>
-            <button className="ghostButton" type="submit">
-              <UserRoundCheck size={17} />
-              Invite
+            <button className="ghostButton" type="submit" disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)}>
+              {isInvitingProjectUser ? <span className="inlineSpinner" aria-hidden="true" /> : <UserRoundCheck size={17} />}
+              {isInvitingProjectUser ? "Inviting..." : "Invite"}
             </button>
           </form>
 

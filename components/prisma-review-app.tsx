@@ -516,6 +516,8 @@ export function PrismaReviewApp() {
   const [teamMessage, setTeamMessage] = useState("");
   const [teamRolePendingUserId, setTeamRolePendingUserId] = useState<string | null>(null);
   const [teamRemovePendingUserId, setTeamRemovePendingUserId] = useState<string | null>(null);
+  const [teamAddPendingUserId, setTeamAddPendingUserId] = useState<string | null>(null);
+  const [isInvitingProjectUser, setIsInvitingProjectUser] = useState(false);
   const [dashboardMessage, setDashboardMessage] = useState("");
   const [newProjectTeamMessage, setNewProjectTeamMessage] = useState("");
   const [newProjectMemberSearch, setNewProjectMemberSearch] = useState("");
@@ -1431,15 +1433,20 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const didUpdate = await updateProjectMembers(
-      selectedProject.id,
-      [...selectedProject.memberIds, user.id],
-      selectedProject.ownerIds,
-      `Added ${user.name} to project team`
-    );
-    if (didUpdate) {
-      setTeamUserSearch("");
-      setTeamMessage(`${user.name} added to ${selectedProject.title}.`);
+    setTeamAddPendingUserId(userId);
+    try {
+      const didUpdate = await updateProjectMembers(
+        selectedProject.id,
+        [...selectedProject.memberIds, user.id],
+        selectedProject.ownerIds,
+        `Added ${user.name} to project team`
+      );
+      if (didUpdate) {
+        setTeamUserSearch("");
+        setTeamMessage(`${user.name} added to ${selectedProject.title}.`);
+      }
+    } finally {
+      setTeamAddPendingUserId((previous) => (previous === userId ? null : previous));
     }
   }
 
@@ -1459,6 +1466,7 @@ export function PrismaReviewApp() {
       return;
     }
 
+    setIsInvitingProjectUser(true);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/invite`, {
         method: "POST",
@@ -1473,6 +1481,8 @@ export function PrismaReviewApp() {
       setTeamMessage(payload.message ?? `${name} invited to ${selectedProject.title}.`);
     } catch (error) {
       setTeamMessage(getErrorMessage(error));
+    } finally {
+      setIsInvitingProjectUser(false);
     }
   }
 
@@ -2639,8 +2649,10 @@ export function PrismaReviewApp() {
         teamMessage={teamMessage}
         toggleProjectOwner={toggleProjectOwner}
         removeUserFromProject={removeUserFromProject}
+        teamAddPendingUserId={teamAddPendingUserId}
         teamRolePendingUserId={teamRolePendingUserId}
         teamRemovePendingUserId={teamRemovePendingUserId}
+        isInvitingProjectUser={isInvitingProjectUser}
         isSavingProjectSettings={isSavingProjectSettings}
         hasProjectSeedData={hasProjectSeedData}
         deleteProjectMessage={deleteProjectMessage}
