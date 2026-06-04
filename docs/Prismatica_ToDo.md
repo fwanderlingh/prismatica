@@ -1,4 +1,4 @@
-ùPRISMATICA
+PRISMATICA
 ==========
 
 ## To DO:
