@@ -492,6 +492,7 @@ export function PrismaReviewApp() {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [pendingAuthAction, setPendingAuthAction] = useState<"login" | "register" | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
   const [authSettingsMessage, setAuthSettingsMessage] = useState("");
@@ -665,7 +666,7 @@ export function PrismaReviewApp() {
   const reportOrderByStudyId = new Map(
     projectScreeningStudies.map((study, index) => [study.id, study.importItemId ?? index + 1])
   );
-  const projectReportQueue = (hasProjectSeedData ? reportQueue : reports.filter((report) => report.projectId === selectedProject.id))
+  const projectReportQueue = (hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(selectedProject, importedProjectStudies, reports))
     .slice()
     .sort((left, right) => {
       const leftOrder = reportOrderByStudyId.get(left.studyId) ?? Number.MAX_SAFE_INTEGER;
@@ -1364,12 +1365,22 @@ export function PrismaReviewApp() {
   async function handleLogin(event?: FormSubmitEvent) {
     event?.preventDefault();
 
+    if (pendingAuthAction) {
+      return;
+    }
+
+    if (!loginEmail.trim()) {
+      setLoginError("Enter an email address to continue.");
+      return;
+    }
+
     if (!loginPassword.trim()) {
       setLoginError("Enter a password to continue.");
       return;
     }
 
     setLoginError("");
+    setPendingAuthAction("login");
     try {
       const payload = await apiRequest<AppStatePayload>("/api/auth/login", {
         method: "POST",
@@ -1383,11 +1394,17 @@ export function PrismaReviewApp() {
       applyPostAuthRedirect();
     } catch (error) {
       setLoginError(getErrorMessage(error));
+    } finally {
+      setPendingAuthAction(null);
     }
   }
 
   async function handleRegistration(event: FormSubmitEvent) {
     event.preventDefault();
+    if (pendingAuthAction) {
+      return;
+    }
+
     if (!authSettings.registrationEnabled) {
       setLoginError("Public registration is disabled. Ask an administrator for an account.");
       switchAuthMode("signIn");
@@ -1409,6 +1426,7 @@ export function PrismaReviewApp() {
     }
 
     setLoginError("");
+    setPendingAuthAction("register");
     try {
       const payload = await apiRequest<AppStatePayload>("/api/auth/register", {
         method: "POST",
@@ -1435,6 +1453,8 @@ export function PrismaReviewApp() {
         switchAuthMode("signIn");
         setLoginEmail(email);
       }
+    } finally {
+      setPendingAuthAction(null);
     }
   }
 
@@ -1560,6 +1580,11 @@ export function PrismaReviewApp() {
       return;
     }
 
+    if (!selectedProject.ownerIds.includes(currentUser.id) && selectedProject.ownerId !== currentUser.id) {
+      setTeamMessage("Only project owners can remove members.");
+      return;
+    }
+
     if (selectedProject.ownerIds.includes(userId) && selectedProject.ownerIds.length === 1) {
       setTeamMessage("The last project owner cannot be removed.");
       return;
@@ -1624,6 +1649,11 @@ export function PrismaReviewApp() {
   async function toggleProjectOwner(userId: string) {
     const user = users.find((candidate) => candidate.id === userId);
     if (!user) {
+      return;
+    }
+
+    if (!selectedProject.ownerIds.includes(currentUser.id) && selectedProject.ownerId !== currentUser.id) {
+      setTeamMessage("Only project owners can change project roles.");
       return;
     }
 
@@ -1988,10 +2018,11 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       const importedBatchId = payload.imports.find((batch) => batch.projectId === selectedProject.id)?.id ?? "";
+      const successMessage = payload.message || `${file.name} imported and stored on the server.`;
       setSelectedImportId(importedBatchId);
       setIsImportEditorOpen(Boolean(importedBatchId));
-      setImportDetailMessage(`${file.name} imported and stored on the server.`);
-      setImportMessage(`${file.name} imported and stored on the server.`);
+      setImportDetailMessage(successMessage);
+      setImportMessage(successMessage);
     } catch (error) {
       setImportMessage(getErrorMessage(error));
     }
@@ -2398,7 +2429,7 @@ export function PrismaReviewApp() {
         dashboardMessage={dashboardMessage}
         getProjectPhaseProgress={(project) => {
           const projectStudies = project.id === "demo-review" ? screeningStudies : studies.filter((study) => study.projectId === project.id);
-          const projectReports = project.id === "demo-review" ? reportQueue : reports.filter((report) => report.projectId === project.id);
+          const projectReports = project.id === "demo-review" ? reportQueue : getWorkflowReportsForProject(project, projectStudies, reports);
           return getProjectPhaseProgress(
             project,
             getCountsForProject(project, projectStudies, projectReports, decisions, extractionResponses, extractionTemplates),
@@ -2841,6 +2872,8 @@ export function PrismaReviewApp() {
         showLoginPassword={showLoginPassword}
         showRegisterPassword={showRegisterPassword}
         loginError={loginError}
+        isLoginPending={pendingAuthAction === "login"}
+        isRegistrationPending={pendingAuthAction === "register"}
         registerForm={registerForm}
         captchaQuestion={captchaChallenge?.question}
         brandName={BRAND_NAME}
@@ -2961,6 +2994,15 @@ export function PrismaReviewApp() {
       {renderActiveView()}
     </AppShell>
   );
+}
+
+function getWorkflowReportsForProject(project: ReviewProject, projectStudies: Study[], reports: Report[]) {
+  const activeStudyIds = new Set(
+    projectStudies
+      .filter((study) => study.projectId === project.id && (study.stage === "full_text" || study.stage === "extraction"))
+      .map((study) => study.id)
+  );
+  return reports.filter((report) => report.projectId === project.id && activeStudyIds.has(report.studyId));
 }
 
 function getCountsForProject(

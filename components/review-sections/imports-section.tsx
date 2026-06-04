@@ -73,6 +73,7 @@ export function ImportsSection({
                     <th>Source</th>
                     <th>Format</th>
                     <th>Records</th>
+                    <th>PDFs</th>
                     <th>Warnings</th>
                     <th>Status</th>
                     <th>Action</th>
@@ -87,6 +88,9 @@ export function ImportsSection({
                       </td>
                       <td>{batch.format.toUpperCase()}</td>
                       <td>{batch.records}</td>
+                      <td>
+                        {(batch.pdfLinks ?? 0) > 0 ? `${batch.pdfsRetrieved ?? 0}/${batch.pdfLinks ?? 0}` : "None"}
+                      </td>
                       <td>{batch.parserWarnings}</td>
                       <td>
                         <Badge label={batch.status.replace("_", " ")} tone={batch.status === "needs_review" ? "warning" : "success"} />

@@ -1,4 +1,4 @@
-import type { ChangeEvent, RefObject } from "react";
+import { useEffect, useState, type ChangeEvent, type RefObject } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -48,7 +48,7 @@ type FullTextSectionProps = {
   studies: Study[];
 };
 
-
+type PdfLoadState = "idle" | "loading" | "ready" | "error";
 
 export function FullTextSection({
   hasProjectSeedData,
@@ -73,6 +73,21 @@ export function FullTextSection({
   exclusionReasons,
   studies
 }: FullTextSectionProps) {
+  const pdfViewerUrl = activeReport.fileName
+    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}`
+    : "";
+  const pdfFrameKey = [
+    selectedProject.id,
+    activeReport.id,
+    activeReport.checksum ?? "",
+    activeReport.fileName ?? ""
+  ].join(":");
+  const [pdfLoadState, setPdfLoadState] = useState<PdfLoadState>(pdfViewerUrl ? "loading" : "idle");
+
+  useEffect(() => {
+    setPdfLoadState(pdfViewerUrl ? "loading" : "idle");
+  }, [pdfFrameKey, pdfViewerUrl]);
+
   if (projectReportQueue.length === 0) {
     return (
       <div className="viewStack">
@@ -137,13 +152,18 @@ export function FullTextSection({
     : messageIsError
       ? "validationItem blocked"
       : "validationItem muted";
-  const pdfViewerUrl = activeReport.fileName
-    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}`
-    : "";
   const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
   const canGoPreviousReport = activeReportIndex > 0;
   const canGoNextReport = activeReportIndex >= 0 && activeReportIndex < projectReportQueue.length - 1;
   const isFullTextActionPending = pendingFullTextAction !== null;
+  const isPdfLoading = pdfLoadState === "loading";
+  const hasPdfLoadError = pdfLoadState === "error";
+
+  function selectReport(reportId: string) {
+    setPdfLoadState("loading");
+    setActiveReportId(reportId);
+    setFullTextMessage("");
+  }
 
   return (
     <div className="viewStack">
@@ -179,10 +199,7 @@ export function FullTextSection({
           <select
             id="full-text-report-picker"
             value={activeReport.id}
-            onChange={(event) => {
-              setActiveReportId(event.target.value);
-              setFullTextMessage("");
-            }}
+            onChange={(event) => selectReport(event.target.value)}
           >
             {projectReportQueue.map((report) => (
               <option key={report.id} value={report.id}>
@@ -200,8 +217,7 @@ export function FullTextSection({
                 if (!canGoPreviousReport) {
                   return;
                 }
-                setActiveReportId(projectReportQueue[activeReportIndex - 1].id);
-                setFullTextMessage("");
+                selectReport(projectReportQueue[activeReportIndex - 1].id);
               }}
             >
               <ArrowLeft size={17} />
@@ -218,8 +234,7 @@ export function FullTextSection({
                 if (!canGoNextReport) {
                   return;
                 }
-                setActiveReportId(projectReportQueue[activeReportIndex + 1].id);
-                setFullTextMessage("");
+                selectReport(projectReportQueue[activeReportIndex + 1].id);
               }}
             >
               <ArrowRight size={17} />
@@ -257,7 +272,24 @@ export function FullTextSection({
           </div>
           <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
             {pdfViewerUrl ? (
-              <iframe className="pdfViewer" src={pdfViewerUrl} title={`${activeReport.title} PDF`} />
+              <div className="pdfFrameWrap" aria-busy={isPdfLoading}>
+                {isPdfLoading || hasPdfLoadError ? (
+                  <div className={hasPdfLoadError ? "pdfLoadingOverlay pdfLoadingOverlayError" : "pdfLoadingOverlay"} role="status" aria-live="polite">
+                    <div className="pdfLoadingStatus">
+                      {hasPdfLoadError ? <AlertTriangle size={18} /> : <span className="inlineSpinner" aria-hidden="true" />}
+                      <span className="pdfLoadingText">{hasPdfLoadError ? "PDF failed to load." : "Loading PDF..."}</span>
+                    </div>
+                  </div>
+                ) : null}
+                <iframe
+                  key={pdfFrameKey}
+                  className={isPdfLoading ? "pdfViewer pdfViewerLoading" : "pdfViewer"}
+                  src={pdfViewerUrl}
+                  title={`${activeReport.title} PDF`}
+                  onLoad={() => setPdfLoadState("ready")}
+                  onError={() => setPdfLoadState("error")}
+                />
+              </div>
             ) : (
               <div className="paperPage emptyPdfPage">
                 <p className="paperEyebrow">{pdfStatus}</p>

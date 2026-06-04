@@ -76,6 +76,9 @@ export type ImportBatch = {
   records: number;
   parserWarnings: number;
   parserWarningMessages?: string[];
+  pdfLinks?: number;
+  pdfsRetrieved?: number;
+  pdfRetrievalFailures?: number;
   uploadedBy: string;
   uploadedAt: string;
 };
@@ -94,6 +97,7 @@ export type Study = {
   source: string;
   stage: "title_abstract" | "full_text" | "extraction";
   keywords: string[];
+  pdfUrl?: string;
   rawCitation?: string;
   parserWarnings?: string[];
 };
@@ -111,6 +115,7 @@ export type Report = {
   size?: number;
   checksum?: string;
   storagePath?: string;
+  sourcePdfUrl?: string;
   uploadedByUserId?: string;
   uploadedByUserName?: string;
   fullTextStatus?: string;

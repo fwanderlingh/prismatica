@@ -8,7 +8,7 @@ export async function POST(request: Request, context: { params: Promise<{ projec
     const { projectId } = await context.params;
     const body = await readJsonBody(request);
     return jsonOk(
-      createImportBatchForUser(userId, projectId, {
+      await createImportBatchForUser(userId, projectId, {
         format: body.format as ImportBatch["format"],
         filename: String(body.filename ?? ""),
         byteSize: typeof body.byteSize === "number" ? body.byteSize : undefined,

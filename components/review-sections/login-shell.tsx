@@ -13,6 +13,8 @@ type LoginShellProps = {
   showLoginPassword: boolean;
   showRegisterPassword: boolean;
   loginError: string;
+  isLoginPending: boolean;
+  isRegistrationPending: boolean;
   registerForm: RegisterForm;
   captchaQuestion?: string;
   brandName: string;
@@ -37,6 +39,8 @@ export function LoginShell({
   showLoginPassword,
   showRegisterPassword,
   loginError,
+  isLoginPending,
+  isRegistrationPending,
   registerForm,
   captchaQuestion,
   brandName,
@@ -52,6 +56,8 @@ export function LoginShell({
   onRegisterFormChange,
   onRefreshCaptcha
 }: LoginShellProps) {
+  const isAuthPending = isLoginPending || isRegistrationPending;
+
   return (
     <main className="loginShell">
       {!registrationEnabled ? (
@@ -76,18 +82,18 @@ export function LoginShell({
         </div>
 
         <div className={registrationEnabled ? "segmented authTabs" : "segmented authTabs singleAuthTab"}>
-          <button className={authMode === "signIn" ? "active" : ""} type="button" onClick={() => onSwitchAuthMode("signIn")}>
+          <button className={authMode === "signIn" ? "active" : ""} type="button" disabled={isAuthPending} onClick={() => onSwitchAuthMode("signIn")}>
             Sign In
           </button>
           {registrationEnabled ? (
-            <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => onSwitchAuthMode("register")}>
+            <button className={authMode === "register" ? "active" : ""} type="button" disabled={isAuthPending} onClick={() => onSwitchAuthMode("register")}>
               Register
             </button>
           ) : null}
         </div>
 
         {authMode === "signIn" ? (
-          <form className="loginForm" onSubmit={onLoginSubmit}>
+          <form className="loginForm" aria-busy={isLoginPending} onSubmit={onLoginSubmit}>
             <div>
               <p className="eyebrow">Sign in</p>
               <h1>Continue to your review dashboard</h1>
@@ -95,16 +101,23 @@ export function LoginShell({
             </div>
             <label>
               <span>Email</span>
-              <input value={loginEmail} onChange={(event) => onLoginEmailChange(event.target.value)} />
+              <input value={loginEmail} autoComplete="email" disabled={isLoginPending} onChange={(event) => onLoginEmailChange(event.target.value)} />
             </label>
             <label>
               <span>Password</span>
               <div className="passwordField">
-                <input type={showLoginPassword ? "text" : "password"} value={loginPassword} onChange={(event) => onLoginPasswordChange(event.target.value)} />
+                <input
+                  type={showLoginPassword ? "text" : "password"}
+                  value={loginPassword}
+                  autoComplete="current-password"
+                  disabled={isLoginPending}
+                  onChange={(event) => onLoginPasswordChange(event.target.value)}
+                />
                 <button
                   type="button"
                   title={showLoginPassword ? "Hide password" : "Show password"}
                   aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                  disabled={isLoginPending}
                   onClick={onToggleLoginPassword}
                 >
                   {showLoginPassword ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -117,13 +130,13 @@ export function LoginShell({
                 <span>{loginError}</span>
               </div>
             ) : null}
-            <button className="primaryButton" type="submit">
-              <LogIn size={17} />
-              Sign In
+            <button className="primaryButton" type="submit" disabled={isLoginPending}>
+              {isLoginPending ? <span className="inlineSpinner" aria-hidden="true" /> : <LogIn size={17} />}
+              {isLoginPending ? "Signing in..." : "Sign In"}
             </button>
           </form>
         ) : (
-          <form className="loginForm" onSubmit={onRegisterSubmit}>
+          <form className="loginForm" aria-busy={isRegistrationPending} onSubmit={onRegisterSubmit}>
             <div>
               <p className="eyebrow">Register</p>
               <h1>Create a reviewer account</h1>
@@ -131,19 +144,19 @@ export function LoginShell({
             </div>
             <label>
               <span>Name</span>
-              <input value={registerForm.name} onChange={(event) => onRegisterFormChange("name", event.target.value)} />
+              <input value={registerForm.name} autoComplete="name" disabled={isRegistrationPending} onChange={(event) => onRegisterFormChange("name", event.target.value)} />
             </label>
             <label>
               <span>Email</span>
-              <input value={registerForm.email} onChange={(event) => onRegisterFormChange("email", event.target.value)} />
+              <input value={registerForm.email} autoComplete="email" disabled={isRegistrationPending} onChange={(event) => onRegisterFormChange("email", event.target.value)} />
             </label>
             <label>
               <span>Organization</span>
-              <input value={registerForm.organization} onChange={(event) => onRegisterFormChange("organization", event.target.value)} />
+              <input value={registerForm.organization} autoComplete="organization" disabled={isRegistrationPending} onChange={(event) => onRegisterFormChange("organization", event.target.value)} />
             </label>
             <label>
               <span>Role title</span>
-              <input value={registerForm.title} onChange={(event) => onRegisterFormChange("title", event.target.value)} />
+              <input value={registerForm.title} disabled={isRegistrationPending} onChange={(event) => onRegisterFormChange("title", event.target.value)} />
             </label>
             <label>
               <span>Password</span>
@@ -151,12 +164,15 @@ export function LoginShell({
                 <input
                   type={showRegisterPassword ? "text" : "password"}
                   value={registerForm.password}
+                  autoComplete="new-password"
+                  disabled={isRegistrationPending}
                   onChange={(event) => onRegisterFormChange("password", event.target.value)}
                 />
                 <button
                   type="button"
                   title={showRegisterPassword ? "Hide password" : "Show password"}
                   aria-label={showRegisterPassword ? "Hide password" : "Show password"}
+                  disabled={isRegistrationPending}
                   onClick={onToggleRegisterPassword}
                 >
                   {showRegisterPassword ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -167,21 +183,26 @@ export function LoginShell({
               <span>Captcha</span>
               <div className="captchaField">
                 <strong>{captchaQuestion ?? "Loading..."}</strong>
-                <input inputMode="numeric" value={registerForm.captchaAnswer} onChange={(event) => onRegisterFormChange("captchaAnswer", event.target.value)} />
-                <button type="button" onClick={onRefreshCaptcha}>
+                <input inputMode="numeric" value={registerForm.captchaAnswer} disabled={isRegistrationPending} onChange={(event) => onRegisterFormChange("captchaAnswer", event.target.value)} />
+                <button type="button" disabled={isRegistrationPending} onClick={onRefreshCaptcha}>
                   Refresh
                 </button>
               </div>
             </label>
-            {loginError ? (
+            {isRegistrationPending ? (
+              <div className="validationItem muted" role="status" aria-live="polite">
+                <span className="inlineSpinner" aria-hidden="true" />
+                <span>Creating account...</span>
+              </div>
+            ) : loginError ? (
               <div className="validationItem blocked">
                 <AlertTriangle size={17} />
                 <span>{loginError}</span>
               </div>
             ) : null}
-            <button className="primaryButton" type="submit">
-              <PenLine size={17} />
-              Register
+            <button className="primaryButton" type="submit" disabled={isRegistrationPending}>
+              {isRegistrationPending ? <span className="inlineSpinner" aria-hidden="true" /> : <PenLine size={17} />}
+              {isRegistrationPending ? "Creating account..." : "Register"}
             </button>
           </form>
         )}

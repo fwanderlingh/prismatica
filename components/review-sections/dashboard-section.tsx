@@ -1,4 +1,5 @@
-import { Building2, CalendarClock, ChevronRight, FileSearch, FolderPlus, User } from "lucide-react";
+import { BookOpen, Building2, CalendarClock, ChevronRight, ClipboardCheck, FileSearch, FolderPlus, GitMerge, Import as ImportIcon, User } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
 import { Badge, EmptyState } from "@/components/prisma-review-ui";
 
@@ -18,6 +19,28 @@ type ProjectPhaseProgress = {
   percent: number;
   label: string;
 };
+
+type ProjectActivePhaseAction = {
+  view: ViewKey;
+  label: string;
+  Icon: LucideIcon;
+};
+
+function getProjectActivePhaseAction(stage: ReviewProject["stage"]): ProjectActivePhaseAction {
+  if (stage === "setup" || stage === "import") {
+    return { view: "imports", label: "Import", Icon: ImportIcon };
+  }
+  if (stage === "full_text") {
+    return { view: "fullText", label: "Full Text", Icon: BookOpen };
+  }
+  if (stage === "extraction") {
+    return { view: "extraction", label: "Extract", Icon: ClipboardCheck };
+  }
+  if (stage === "complete") {
+    return { view: "consensus", label: "Consensus", Icon: GitMerge };
+  }
+  return { view: "screening", label: "Screen", Icon: FileSearch };
+}
 
 export function DashboardSection({
   currentUser,
@@ -57,6 +80,8 @@ export function DashboardSection({
             .map((ownerId) => users.find((user) => user.id === ownerId)?.name)
             .filter((name): name is string => Boolean(name));
           const progress = getProjectPhaseProgress(project);
+          const phaseAction = getProjectActivePhaseAction(project.stage);
+          const ActivePhaseIcon = phaseAction.Icon;
           return (
             <article className="panel projectCard" key={project.id}>
               <div className="projectCardHeader">
@@ -95,9 +120,9 @@ export function DashboardSection({
                 <button className="primaryButton" type="button" onClick={() => openProject(project.id, "projectDashboard")}>
                   Open
                 </button>
-                <button className="ghostButton" type="button" onClick={() => openProject(project.id, "screening")}>
-                  <FileSearch size={17} />
-                  Screen
+                <button className="ghostButton" type="button" onClick={() => openProject(project.id, phaseAction.view)}>
+                  <ActivePhaseIcon size={17} />
+                  {phaseAction.label}
                 </button>
               </div>
             </article>

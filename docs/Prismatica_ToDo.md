@@ -1,11 +1,10 @@
-PRISMATICA
+ùPRISMATICA
 ==========
 
 ## To DO:
 
-1. The screening  navigation  is a bit chunky, when progressing in the files, the "pdfPane" remains for a couple of secs of the old pdf (even in the  title changes, the inside frame does not) and then  it loads. Even if pdf load can understably take time, the old one should be staying there, and a "loading pdf" should inform the user.
 
-2. Add a flow diagram generator: https://github.com/prisma-flowdiagram/PRISMA2020ok
+1. Add a flow diagram generator: https://github.com/prisma-flowdiagram/PRISMA2020ok
 
 
 ### Optional Prisma ORM Track

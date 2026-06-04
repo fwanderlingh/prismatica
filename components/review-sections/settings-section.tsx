@@ -145,12 +145,10 @@ export function SettingsSection({
       </section>
 
       {projectSettingsMessage ? (
-        <section className="panel">
-          <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {settingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-            <span>{projectSettingsMessage}</span>
-          </div>
-        </section>
+        <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+          {settingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <span>{projectSettingsMessage}</span>
+        </div>
       ) : null}
 
       <form className="projectForm" id="project-settings-form" onSubmit={updateProjectSettings}>
@@ -301,9 +299,23 @@ export function SettingsSection({
           <SectionTitle icon={Users} title="Project Team" action={`${projectMembers.length} members`} />
           <div className="teamList">
             {projectMembers.map((member) => {
+              const isProjectOwner = selectedProject.ownerIds.includes(member.id);
+              const isLastProjectOwner = isProjectOwner && selectedProject.ownerIds.length === 1;
               const isRoleActionPending = teamRolePendingUserId === member.id;
               const isRemoveActionPending = teamRemovePendingUserId === member.id;
               const isAnyActionPending = isRoleActionPending || isRemoveActionPending;
+              const ownerActionTitle = !canManageProject
+                ? "Only project owners can change roles"
+                : isLastProjectOwner
+                  ? "At least one owner is required"
+                  : isProjectOwner
+                    ? "Change role to reviewer"
+                    : "Change role to owner";
+              const removeActionTitle = !canManageProject
+                ? "Only project owners can remove members"
+                : isLastProjectOwner
+                  ? "Last owner cannot be removed"
+                  : "Remove member";
 
               return (
                 <article className="teamMember" key={member.id}>
@@ -314,13 +326,13 @@ export function SettingsSection({
                   <strong>{member.name}</strong>
                   <span>{member.title} · {member.email}</span>
                 </div>
-                <Badge label={selectedProject.ownerIds.includes(member.id) ? "owner" : "reviewer"} tone={selectedProject.ownerIds.includes(member.id) ? "info" : "neutral"} />
+                <Badge label={isProjectOwner ? "owner" : "reviewer"} tone={isProjectOwner ? "info" : "neutral"} />
                 <div className="teamMemberActions">
                   <button
                     className="ghostButton"
                     type="button"
-                    title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "At least one owner is required" : selectedProject.ownerIds.includes(member.id) ? "Change role to reviewer" : "Change role to owner"}
-                    disabled={(selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1) || isAnyActionPending}
+                    title={ownerActionTitle}
+                    disabled={!canManageProject || isLastProjectOwner || isAnyActionPending}
                     onClick={() => toggleProjectOwner(member.id)}
                   >
                     {isRoleActionPending ? (
@@ -328,13 +340,13 @@ export function SettingsSection({
                         <span className="inlineSpinner" aria-hidden="true" />
                         Saving...
                       </>
-                    ) : selectedProject.ownerIds.includes(member.id) ? "Make reviewer" : "Make owner"}
+                    ) : isProjectOwner ? "Make reviewer" : "Make owner"}
                   </button>
                   <button
                     className="dangerButton"
                     type="button"
-                    title={selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1 ? "Last owner cannot be removed" : "Remove member"}
-                    disabled={(selectedProject.ownerIds.includes(member.id) && selectedProject.ownerIds.length === 1) || isAnyActionPending}
+                    title={removeActionTitle}
+                    disabled={!canManageProject || isLastProjectOwner || isAnyActionPending}
                     onClick={() => removeUserFromProject(member.id)}
                   >
                     {isRemoveActionPending ? (
@@ -357,12 +369,17 @@ export function SettingsSection({
         </div>
 
         <div className="panel">
-          <SectionTitle icon={UserRoundCheck} title="Add People" action="Existing or invite" />
+          <SectionTitle icon={UserRoundCheck} title="Add People" action={canManageProject ? "Existing or invite" : "Owner only"} />
           <div className="addMemberSearch">
             <div className="addMemberBox addMemberBoxSearch">
               <label>
                 <span>Search users</span>
-                <input value={teamUserSearch} onChange={(event) => setTeamUserSearch(event.target.value)} placeholder="Name or email" />
+                <input
+                  value={teamUserSearch}
+                  disabled={!canManageProject || Boolean(teamAddPendingUserId) || isInvitingProjectUser}
+                  onChange={(event) => setTeamUserSearch(event.target.value)}
+                  placeholder="Name or email"
+                />
               </label>
             </div>
 
@@ -401,17 +418,17 @@ export function SettingsSection({
           <form className="inviteForm" onSubmit={inviteUserToProject}>
             <label>
               <span>Invite name</span>
-              <input value={inviteForm.name} onChange={(event) => onInviteNameChange(event.target.value)} disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
+              <input value={inviteForm.name} onChange={(event) => onInviteNameChange(event.target.value)} disabled={!canManageProject || isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
             </label>
             <label>
               <span>Invite email</span>
-              <input value={inviteForm.email} onChange={(event) => onInviteEmailChange(event.target.value)} disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
+              <input value={inviteForm.email} onChange={(event) => onInviteEmailChange(event.target.value)} disabled={!canManageProject || isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
             </label>
             <label>
               <span>Role title</span>
-              <input value={inviteForm.title} onChange={(event) => onInviteTitleChange(event.target.value)} disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
+              <input value={inviteForm.title} onChange={(event) => onInviteTitleChange(event.target.value)} disabled={!canManageProject || isInvitingProjectUser || Boolean(teamAddPendingUserId)} />
             </label>
-            <button className="ghostButton" type="submit" disabled={isInvitingProjectUser || Boolean(teamAddPendingUserId)}>
+            <button className="ghostButton" type="submit" disabled={!canManageProject || isInvitingProjectUser || Boolean(teamAddPendingUserId)}>
               {isInvitingProjectUser ? <span className="inlineSpinner" aria-hidden="true" /> : <UserRoundCheck size={17} />}
               {isInvitingProjectUser ? "Inviting..." : "Invite"}
             </button>

@@ -104,6 +104,7 @@ type ParsedCitation = {
   year: number;
   doi: string;
   keywords: string[];
+  pdfUrl: string;
   rawCitation: string;
   warnings: string[];
 };
@@ -111,6 +112,9 @@ type ParsedCitation = {
 const demoUserIds = new Set(["user-rivera", "user-chen", "user-patel", "user-okafor"]);
 const adminUserId = "admin-root";
 const captchaTtlMs = 10 * 60 * 1000;
+const maxPdfSize = 25 * 1024 * 1024;
+const pdfRetrievalTimeoutMs = 15_000;
+const pdfRetrievalConcurrency = 3;
 
 export class ApiError extends Error {
   status: number;
@@ -333,7 +337,13 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
               ? batch.parserWarningMessages
               : batch.parserWarnings > 0
                 ? [`${batch.parserWarnings} parser warnings were recorded for this legacy import, but detailed parser messages are unavailable.`]
-                : []
+                : [],
+          pdfLinks: typeof batch.pdfLinks === "number" && Number.isFinite(batch.pdfLinks) ? batch.pdfLinks : 0,
+          pdfsRetrieved: typeof batch.pdfsRetrieved === "number" && Number.isFinite(batch.pdfsRetrieved) ? batch.pdfsRetrieved : 0,
+          pdfRetrievalFailures:
+            typeof batch.pdfRetrievalFailures === "number" && Number.isFinite(batch.pdfRetrievalFailures)
+              ? batch.pdfRetrievalFailures
+              : 0
         }))
     : [];
   const importedStudies = Array.isArray(state.studies)
@@ -612,6 +622,15 @@ function accessibleProjects(state: PersistedState, userId: string) {
   return state.projects.filter((project) => isProjectMember(project, userId));
 }
 
+function getWorkflowReportsForProject(state: PersistedState, projectId: string) {
+  const activeStudyIds = new Set(
+    state.studies
+      .filter((study) => study.projectId === projectId && (study.stage === "full_text" || study.stage === "extraction"))
+      .map((study) => study.id)
+  );
+  return state.reports.filter((report) => report.projectId === projectId && activeStudyIds.has(report.studyId));
+}
+
 function buildPayload(state: PersistedState, userId: string): AppStatePayload {
   const currentUser = getUser(state, userId);
   if (!currentUser) {
@@ -700,8 +719,7 @@ function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
     ];
   });
 
-  const fullTextConflicts = state.reports
-    .filter((report) => report.projectId === project.id)
+  const fullTextConflicts = getWorkflowReportsForProject(state, project.id)
     .flatMap((report): ProjectWorkflowConflict[] => {
       const currentDecisions = state.decisions.filter(
         (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
@@ -1514,7 +1532,7 @@ export function saveExtractionConsensusForUser(userId: string, projectId: string
   return buildPayload(state, userId);
 }
 
-export function createImportBatchForUser(
+export async function createImportBatchForUser(
   userId: string,
   projectId: string,
   input: {
@@ -1523,7 +1541,7 @@ export function createImportBatchForUser(
     byteSize?: number;
     content?: string;
   }
-): AppMutationPayload {
+): Promise<AppMutationPayload> {
   const state = readState();
   const currentUser = getUser(state, userId);
   const project = requireProjectMember(state, projectId, userId);
@@ -1548,6 +1566,7 @@ export function createImportBatchForUser(
   const parserWarnings = parserWarningMessages.length;
   const sourceName = input.format === "bib" ? "BibTeX upload" : "RIS upload";
   const now = new Date();
+  const pdfLinks = parsedCitations.filter((citation) => citation.pdfUrl).length;
   const batch: ImportBatch = {
     id: createId("imp"),
     projectId,
@@ -1558,30 +1577,41 @@ export function createImportBatchForUser(
     records,
     parserWarnings,
     parserWarningMessages,
+    pdfLinks,
+    pdfsRetrieved: 0,
+    pdfRetrievalFailures: 0,
     uploadedBy: currentUser.name,
     uploadedAt: now.toISOString().slice(0, 16).replace("T", " ")
   };
   const nextImportItemId = getNextImportItemId(state, projectId);
-    const importedStudies: Study[] = parsedCitations.map((citation, index) => ({
-      id: createId("study"),
+  const importedStudies: Study[] = parsedCitations.map((citation, index) => ({
+    id: createId("study"),
     importItemId: nextImportItemId + index,
-      projectId,
-      importBatchId: batch.id,
-      title: citation.title,
-      abstract: citation.abstract,
-      authors: citation.authors,
-      journal: citation.journal,
-      year: citation.year,
-      doi: citation.doi,
-      source: sourceName,
-      stage: "title_abstract",
-      keywords: citation.keywords,
-      rawCitation: citation.rawCitation,
-      parserWarnings: citation.warnings
-    }));
+    projectId,
+    importBatchId: batch.id,
+    title: citation.title,
+    abstract: citation.abstract,
+    authors: citation.authors,
+    journal: citation.journal,
+    year: citation.year,
+    doi: citation.doi,
+    source: sourceName,
+    stage: "title_abstract",
+    keywords: citation.keywords,
+    pdfUrl: citation.pdfUrl || undefined,
+    rawCitation: citation.rawCitation,
+    parserWarnings: citation.warnings
+  }));
+  const importedReports = importedStudies
+    .filter((study) => study.pdfUrl)
+    .map((study) => createReportForStudy(projectId, study, study.pdfUrl));
 
   state.imports.unshift(batch);
   state.studies.unshift(...importedStudies);
+  state.reports.unshift(...importedReports);
+  if (importedReports.length > 0) {
+    await retrieveImportedPdfReports(state, projectId, batch.id, importedReports, currentUser);
+  }
   state.projects = state.projects.map((candidate) =>
     candidate.id === projectId
       ? {
@@ -1594,10 +1624,21 @@ export function createImportBatchForUser(
         }
       : candidate
   );
-  appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}`, project.id);
+  const refreshedBatch = state.imports.find((candidate) => candidate.id === batch.id);
+  const pdfSummary =
+    refreshedBatch && (refreshedBatch.pdfLinks ?? 0) > 0
+      ? `; retrieved ${refreshedBatch.pdfsRetrieved ?? 0} of ${refreshedBatch.pdfLinks ?? 0} linked PDFs`
+      : "";
+  appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}${pdfSummary}`, project.id);
   writeState(state);
 
-  return buildPayload(state, userId);
+  return {
+    ...buildPayload(state, userId),
+    message:
+      refreshedBatch && (refreshedBatch.pdfLinks ?? 0) > 0
+        ? `${filename} imported with ${refreshedBatch.pdfsRetrieved ?? 0} of ${refreshedBatch.pdfLinks ?? 0} linked PDFs retrieved.`
+        : `${filename} imported and stored on the server.`
+  };
 }
 
 export function markImportBatchReviewedForUser(userId: string, projectId: string, importId: string): AppMutationPayload {
@@ -1741,12 +1782,13 @@ export function updateImportStudyForUser(
   }
 
   let found = false;
+  let updatedStudy: Study | undefined;
   state.studies = state.studies.map((study) => {
     if (study.id !== studyId || study.projectId !== projectId || study.importBatchId !== importId) {
       return study;
     }
     found = true;
-    return {
+    updatedStudy = {
       ...study,
       title,
       abstract,
@@ -1757,10 +1799,23 @@ export function updateImportStudyForUser(
       keywords: normalizeListInput(input.keywords, true),
       parserWarnings: collectCitationWarnings(title, year)
     };
+    return updatedStudy;
   });
 
   if (!found) {
     throw new ApiError("Citation entry not found.", 404);
+  }
+  const studyForReport = updatedStudy;
+  if (studyForReport) {
+    state.reports = state.reports.map((report) =>
+      report.studyId === studyId && report.projectId === projectId
+        ? {
+            ...report,
+            title: studyForReport.title,
+            citation: formatStudyCitation(studyForReport)
+          }
+        : report
+    );
   }
 
   syncImportBatchAfterStudyChange(state, projectId, importId, true);
@@ -2069,32 +2124,15 @@ export async function uploadReportPdfForUser(
   }
 
   const buffer = Buffer.from(input.contentBase64 ?? "", "base64");
-  validatePdfBuffer(buffer, input.size);
-  const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
-  const storagePath = pdfStorage.buildStoragePath({ projectId, reportId, checksum, fileName });
-  await pdfStorage.writePdf(storagePath, buffer, { checksum, fileName, projectId, reportId });
-
-  const duplicate = findDuplicateReportChecksum(state, projectId, reportId, checksum);
-  state.reports = state.reports.map((candidate) =>
-    candidate.id === reportId && candidate.projectId === projectId
-      ? {
-          ...candidate,
-          retrievalStatus: "retrieved",
-          pdfName: fileName,
-          fileName,
-          mimeType,
-          size: buffer.length,
-          checksum,
-          storagePath,
-          uploadedByUserId: currentUser.id,
-          uploadedByUserName: currentUser.name,
-          isPdfValidated: true,
-          validationNotes: duplicate
-            ? [`Duplicate PDF checksum also appears on ${duplicate.title}.`]
-            : ["PDF uploaded."]
-        }
-      : candidate
-  );
+  await storeReportPdfBuffer(state, projectId, reportId, {
+    buffer,
+    declaredSize: input.size,
+    fileName,
+    mimeType,
+    uploadedByUserId: currentUser.id,
+    uploadedByUserName: currentUser.name,
+    successNote: "PDF uploaded."
+  });
 
   appendEvent(state, currentUser.name, `Uploaded PDF ${fileName}`, reportId);
   syncProjectWorkflowCounts(state, projectId);
@@ -2284,7 +2322,10 @@ function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: Rev
       ? state.decisions.some((decision) => decision.reportId === existingReport.id && decision.stage === "full_text")
       : false;
     if (existingReport && !hasFullTextWork) {
-      state.reports = state.reports.filter((report) => report.id !== existingReport.id);
+      const shouldKeepImportedPdf = Boolean(existingReport.sourcePdfUrl || existingReport.fileName);
+      if (!shouldKeepImportedPdf) {
+        state.reports = state.reports.filter((report) => report.id !== existingReport.id);
+      }
       state.studies = state.studies.map((study) =>
         study.id === studyId && study.projectId === project.id && study.stage === "full_text" ? { ...study, stage: "title_abstract" } : study
       );
@@ -2532,36 +2573,172 @@ function syncStudyAfterFullTextDecision(state: PersistedState, project: ReviewPr
   );
 }
 
-function upsertReportForStudy(state: PersistedState, projectId: string, study: Study, actor: string) {
-  const existing = state.reports.find((report) => report.projectId === projectId && report.studyId === study.id);
-  if (existing) {
-    return existing;
-  }
-
-  const report: Report = {
+function createReportForStudy(projectId: string, study: Study, sourcePdfUrl?: string): Report {
+  const pdfUrl = sourcePdfUrl?.trim() || "";
+  const inferredPdfName = pdfUrl ? inferPdfFileName(pdfUrl, "", study.title) : "No PDF uploaded";
+  return {
     id: createId("report"),
     projectId,
     studyId: study.id,
     title: study.title,
     citation: formatStudyCitation(study),
-    retrievalStatus: "not_sought",
-    pdfName: "No PDF uploaded",
+    retrievalStatus: pdfUrl ? "sought" : "not_sought",
+    pdfName: inferredPdfName,
     fileName: "",
     mimeType: "",
     size: 0,
     checksum: "",
     storagePath: "",
+    sourcePdfUrl: pdfUrl || undefined,
     isPdfValidated: false,
-    validationNotes: ["PDF has not been uploaded."],
+    validationNotes: pdfUrl ? ["PDF link found in imported citation; retrieval is pending."] : ["PDF has not been uploaded."],
     notes: 0
   };
+}
+
+function upsertReportForStudy(state: PersistedState, projectId: string, study: Study, actor: string) {
+  const existing = state.reports.find((report) => report.projectId === projectId && report.studyId === study.id);
+  if (existing) {
+    if (study.pdfUrl && !existing.sourcePdfUrl) {
+      state.reports = state.reports.map((report) =>
+        report.id === existing.id && report.projectId === projectId ? { ...report, sourcePdfUrl: study.pdfUrl } : report
+      );
+      return { ...existing, sourcePdfUrl: study.pdfUrl };
+    }
+    return existing;
+  }
+
+  const report = createReportForStudy(projectId, study, study.pdfUrl);
   state.reports.unshift(report);
   appendEvent(state, actor, "Created full-text report", report.id);
   return report;
 }
 
+async function retrieveImportedPdfReports(
+  state: PersistedState,
+  projectId: string,
+  importId: string,
+  reports: Report[],
+  user: Pick<AppUser, "id" | "name">
+) {
+  const results = await mapWithConcurrency(
+    reports.filter((report) => report.sourcePdfUrl),
+    pdfRetrievalConcurrency,
+    (report) => retrievePdfForReportFromUrl(state, projectId, report.id, report.sourcePdfUrl ?? "", user)
+  );
+  const retrieved = results.filter(Boolean).length;
+  const failed = results.length - retrieved;
+
+  state.imports = state.imports.map((batch) =>
+    batch.id === importId && batch.projectId === projectId
+      ? {
+          ...batch,
+          pdfsRetrieved: retrieved,
+          pdfRetrievalFailures: failed
+        }
+      : batch
+  );
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, task: (item: T) => Promise<R>) {
+  const results: R[] = [];
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await task(items[currentIndex]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function retrievePdfForReportFromUrl(
+  state: PersistedState,
+  projectId: string,
+  reportId: string,
+  pdfUrl: string,
+  user: Pick<AppUser, "id" | "name">
+) {
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) {
+    return false;
+  }
+
+  try {
+    const remotePdf = await fetchRemotePdf(pdfUrl, report.title);
+    await storeReportPdfBuffer(state, projectId, reportId, {
+      buffer: remotePdf.buffer,
+      fileName: remotePdf.fileName,
+      mimeType: remotePdf.mimeType,
+      uploadedByUserId: user.id,
+      uploadedByUserName: user.name,
+      successNote: "PDF retrieved from imported citation link."
+    });
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "PDF retrieval failed.";
+    state.reports = state.reports.map((candidate) =>
+      candidate.id === reportId && candidate.projectId === projectId
+        ? {
+            ...candidate,
+            retrievalStatus: "sought",
+            sourcePdfUrl: pdfUrl,
+            isPdfValidated: false,
+            validationNotes: [`PDF retrieval failed: ${errorMessage}`, `Source: ${pdfUrl}`]
+          }
+        : candidate
+    );
+    return false;
+  }
+}
+
+async function storeReportPdfBuffer(
+  state: PersistedState,
+  projectId: string,
+  reportId: string,
+  input: {
+    buffer: Buffer;
+    declaredSize?: number;
+    fileName: string;
+    mimeType: string;
+    uploadedByUserId: string;
+    uploadedByUserName: string;
+    successNote: string;
+  }
+) {
+  const fileName = sanitizePdfFileName(input.fileName);
+  const mimeType = input.mimeType || "application/pdf";
+  validatePdfBuffer(input.buffer, input.declaredSize);
+  const checksum = crypto.createHash("sha256").update(input.buffer).digest("hex");
+  const storagePath = pdfStorage.buildStoragePath({ projectId, reportId, checksum, fileName });
+  await pdfStorage.writePdf(storagePath, input.buffer, { checksum, fileName, projectId, reportId });
+
+  const duplicate = findDuplicateReportChecksum(state, projectId, reportId, checksum);
+  state.reports = state.reports.map((candidate) =>
+    candidate.id === reportId && candidate.projectId === projectId
+      ? {
+          ...candidate,
+          retrievalStatus: "retrieved",
+          pdfName: fileName,
+          fileName,
+          mimeType,
+          size: input.buffer.length,
+          checksum,
+          storagePath,
+          uploadedByUserId: input.uploadedByUserId,
+          uploadedByUserName: input.uploadedByUserName,
+          isPdfValidated: true,
+          validationNotes: duplicate ? [`Duplicate PDF checksum also appears on ${duplicate.title}.`] : [input.successNote]
+        }
+      : candidate
+  );
+}
+
 function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
-  const reports = state.reports.filter((report) => report.projectId === projectId);
+  const reports = getWorkflowReportsForProject(state, projectId);
   const screenedStudyIds = new Set(
     state.decisions
       .filter((decision) => decision.projectId === projectId && decision.stage === "title_abstract" && decision.isCurrent)
@@ -2674,7 +2851,7 @@ function countProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
     return evaluation.state === "conflict" || evaluation.state === "needs_third_vote";
   }).length;
 
-  const fullTextConflicts = state.reports.filter((report) => {
+  const fullTextConflicts = getWorkflowReportsForProject(state, project.id).filter((report) => {
     if (report.projectId !== project.id) {
       return false;
     }
@@ -2704,11 +2881,18 @@ function syncImportBatchAfterStudyChange(state: PersistedState, projectId: strin
       ? batchStudies.flatMap((study, index) => (study.parserWarnings ?? []).map((warning) => `Record ${index + 1}: ${warning}`))
       : batch.parserWarningMessages ?? [];
     const parserWarnings = parserWarningMessages.length;
+    const batchStudyIds = new Set(batchStudies.map((study) => study.id));
+    const linkedReports = state.reports.filter((report) => report.projectId === projectId && batchStudyIds.has(report.studyId) && report.sourcePdfUrl);
+    const pdfLinks = batchStudies.filter((study) => study.pdfUrl).length;
+    const pdfsRetrieved = linkedReports.filter((report) => report.fileName && report.checksum).length;
     return {
       ...batch,
       records: batchStudies.length,
       parserWarnings,
       parserWarningMessages,
+      pdfLinks,
+      pdfsRetrieved,
+      pdfRetrievalFailures: Math.max(pdfLinks - pdfsRetrieved, 0),
       status: parserWarnings > 0 ? "needs_review" : "parsed"
     };
   });
@@ -2840,6 +3024,7 @@ function normalizeReport(report: Partial<Report>): Report {
     size: typeof report.size === "number" && Number.isFinite(report.size) ? report.size : 0,
     checksum: report.checksum ?? "",
     storagePath: report.storagePath ?? "",
+    sourcePdfUrl: report.sourcePdfUrl ?? "",
     uploadedByUserId: report.uploadedByUserId ?? "",
     uploadedByUserName: report.uploadedByUserName ?? "",
     isPdfValidated: Boolean(report.isPdfValidated),
@@ -2955,7 +3140,6 @@ function formatStudyCitation(study: Study) {
 }
 
 function validatePdfBuffer(buffer: Buffer, declaredSize?: number) {
-  const maxPdfSize = 25 * 1024 * 1024;
   if (buffer.length === 0) {
     throw new ApiError("PDF file is empty.");
   }
@@ -2968,6 +3152,88 @@ function validatePdfBuffer(buffer: Buffer, declaredSize?: number) {
   if (buffer.subarray(0, 5).toString("utf8") !== "%PDF-") {
     throw new ApiError("PDF header is not readable.");
   }
+}
+
+async function fetchRemotePdf(pdfUrl: string, fallbackTitle: string) {
+  const url = normalizeRemoteUrl(pdfUrl);
+  if (!url) {
+    throw new ApiError("PDF link must be an HTTP or HTTPS URL.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), pdfRetrievalTimeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/pdf,*/*" },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new ApiError(`PDF link returned HTTP ${response.status}.`);
+    }
+
+    const contentLength = Number(response.headers.get("content-length") ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > maxPdfSize) {
+      throw new ApiError("PDF file must be 25 MB or smaller.");
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    validatePdfBuffer(buffer);
+    return {
+      buffer,
+      fileName: inferPdfFileName(url, response.headers.get("content-disposition") ?? "", fallbackTitle),
+      mimeType: "application/pdf"
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new ApiError("PDF retrieval timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function inferPdfFileName(pdfUrl: string, contentDisposition: string, fallbackTitle: string) {
+  const dispositionFileName = extractContentDispositionFileName(contentDisposition);
+  if (dispositionFileName) {
+    return sanitizePdfFileName(dispositionFileName);
+  }
+
+  try {
+    const url = new URL(pdfUrl);
+    const pathSegment = decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() ?? "");
+    if (pathSegment) {
+      return sanitizePdfFileName(pathSegment);
+    }
+  } catch {
+    // Fall back to the title-derived filename below.
+  }
+
+  return sanitizePdfFileName(`${slugify(fallbackTitle) || "imported-report"}.pdf`);
+}
+
+function extractContentDispositionFileName(contentDisposition: string) {
+  const utf8Match = /filename\*=UTF-8''([^;\r\n]+)/i.exec(contentDisposition);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      return utf8Match[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+
+  const basicMatch = /filename="?([^";\r\n]+)"?/i.exec(contentDisposition);
+  return basicMatch?.[1]?.trim() ?? "";
+}
+
+function sanitizePdfFileName(fileName: string) {
+  const normalized = fileName
+    .trim()
+    .replace(/[\\/]+/g, "-")
+    .replace(/["'\r\n]+/g, "")
+    .replace(/\s+/g, " ");
+  const safeName = normalized || "report.pdf";
+  return /\.pdf$/i.test(safeName) ? safeName : `${safeName}.pdf`;
 }
 
 function sanitizeExtractionTemplateFields(inputFields: ExtractionTemplateInput["fields"]): ExtractionTemplateField[] {
@@ -3085,7 +3351,12 @@ function parseRisCitations(content: string): ParsedCitation[] {
 
     const title = firstField(fields, ["TI", "T1", "CT"]) || `Imported RIS record ${index + 1}`;
     const year = parseYear(firstField(fields, ["PY", "Y1", "DA"]));
+    const l1Values = fields.get("L1") ?? [];
+    const pdfUrl = firstRemoteUrl(l1Values, false);
     const warnings = collectCitationWarnings(title, year);
+    if (l1Values.length > 0 && !pdfUrl) {
+      warnings.push("L1 field did not contain a retrievable HTTP(S) PDF URL.");
+    }
     return {
       title,
       abstract: firstField(fields, ["AB", "N2"]) || "No abstract was provided by the imported record.",
@@ -3094,6 +3365,7 @@ function parseRisCitations(content: string): ParsedCitation[] {
       year,
       doi: normalizeDoi(firstField(fields, ["DO"]) || ""),
       keywords: fields.get("KW") ?? [],
+      pdfUrl,
       rawCitation: chunk,
       warnings
     };
@@ -3107,9 +3379,13 @@ function parseBibtexCitations(content: string): ParsedCitation[] {
     const title = cleanBibValue(extractBibField(chunk, "title")) || `Imported BibTeX record ${index + 1}`;
     const authorValue = cleanBibValue(extractBibField(chunk, "author"));
     const year = parseYear(cleanBibValue(extractBibField(chunk, "year")));
+    const bibtexPdf = extractBibtexPdfUrl(chunk);
     const warnings = collectCitationWarnings(title, year);
     if (hasNestedBibtexBraces(chunk)) {
       warnings.push("Nested braces were detected; review parsed fields.");
+    }
+    if (bibtexPdf.hasPdfField && !bibtexPdf.url) {
+      warnings.push("BibTeX PDF field did not contain a retrievable HTTP(S) PDF URL.");
     }
 
     return {
@@ -3123,6 +3399,7 @@ function parseBibtexCitations(content: string): ParsedCitation[] {
         .split(/[,;]/)
         .map((keyword) => keyword.trim())
         .filter(Boolean),
+      pdfUrl: bibtexPdf.url,
       rawCitation: chunk,
       warnings
     };
@@ -3251,6 +3528,65 @@ function cleanBibValue(value: string) {
     .replace(/[{}]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function extractBibtexPdfUrl(entry: string) {
+  const pdfFieldValues = ["pdf", "file"]
+    .map((field) => cleanBibValue(extractBibField(entry, field)))
+    .filter(Boolean);
+  const directPdfUrl = firstRemoteUrl(pdfFieldValues, false);
+  if (directPdfUrl) {
+    return { url: directPdfUrl, hasPdfField: true };
+  }
+
+  const linkFieldValues = ["url", "link", "eprint"]
+    .map((field) => cleanBibValue(extractBibField(entry, field)))
+    .filter(Boolean);
+  const hintedUrl = firstRemoteUrl(linkFieldValues, true) || firstRemoteUrl([entry], true);
+  return { url: hintedUrl, hasPdfField: pdfFieldValues.length > 0 };
+}
+
+function firstRemoteUrl(values: string[], requirePdfHint: boolean) {
+  for (const value of values) {
+    const searchableValue = value.replace(/\\([:/?&=_.#%-])/g, "$1");
+    const matches = searchableValue.match(/https?:\/\/[^\s<>"'{}\\]+/gi) ?? [];
+    for (const match of matches) {
+      const normalized = normalizeRemoteUrl(match);
+      if (normalized && (!requirePdfHint || hasPdfUrlHint(normalized))) {
+        return normalized;
+      }
+    }
+  }
+  return "";
+}
+
+function normalizeRemoteUrl(value: string) {
+  const trimmed = value.trim().replace(/[)\].,;]+$/g, "");
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "";
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function hasPdfUrlHint(value: string) {
+  try {
+    const url = new URL(value);
+    const pathname = decodeURIComponent(url.pathname).toLowerCase();
+    const search = decodeURIComponent(url.search).toLowerCase();
+    return (
+      /\.pdf$/i.test(pathname) ||
+      /\.pdf[?#/]/i.test(`${pathname}${search}`) ||
+      /(^|\/)pdf($|[/?#])/i.test(pathname) ||
+      /[?&](format|type|download|file)=pdf($|&)/i.test(search)
+    );
+  } catch {
+    return /\.pdf(?:$|[?#/])/i.test(value);
+  }
 }
 
 function hasNestedBibtexBraces(entry: string) {

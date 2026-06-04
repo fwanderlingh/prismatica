@@ -237,6 +237,12 @@ export function ImportEditorSection({
                         </div>
                       </div>
                       <p className="importAbstract">{study.abstract}</p>
+                      {study.pdfUrl ? (
+                        <p className="importPdfLink">
+                          <FileText size={15} />
+                          <a href={study.pdfUrl} target="_blank" rel="noreferrer">Linked PDF</a>
+                        </p>
+                      ) : null}
                       {study.parserWarnings && study.parserWarnings.length > 0 ? (
                         <ul className="plainList compactList">
                           {study.parserWarnings.map((warning) => (
