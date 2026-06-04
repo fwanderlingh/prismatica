@@ -361,6 +361,7 @@ h3 {
 
 .userMenuItem {
   display: flex;
+  gap: calc(9px * var(--ui-scale));
   align-items: center;
   width: 100%;
   min-height: calc(38px * var(--ui-scale));

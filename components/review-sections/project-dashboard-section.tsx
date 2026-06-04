@@ -85,6 +85,7 @@ export function ProjectDashboardSection({
               className="ghostButton"
               type="button"
               title={alertCount > 0 ? "Open the first unresolved workflow conflict" : "No unresolved workflow conflicts"}
+              disabled={alertCount === 0}
               onClick={() => {
                 if (alertCount > 0) {
                   openConflict(workflowConflicts[0]);

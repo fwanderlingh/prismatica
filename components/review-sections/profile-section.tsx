@@ -6,6 +6,8 @@ type FormSubmitEvent = {
   preventDefault: () => void;
 };
 
+export type ProfileSaveAction = "account" | "preferences";
+
 type AccountFormShape = {
   organization: string;
   title: string;
@@ -17,7 +19,7 @@ type AccountFormShape = {
 type ProfileSectionProps = {
   currentUser: AppUser;
   handleLogout: () => void;
-  updateAccount: (event: FormSubmitEvent) => void;
+  updateAccount: (event: FormSubmitEvent, action: ProfileSaveAction) => void;
   accountForm: AccountFormShape;
   onAccountOrganizationChange: (value: string) => void;
   onAccountTitleChange: (value: string) => void;
@@ -25,6 +27,8 @@ type ProfileSectionProps = {
   onAccountNewPasswordChange: (value: string) => void;
   onAccountThemeChange: (value: WebsiteTheme) => void;
   accountMessage: string;
+  accountMessageTarget: ProfileSaveAction;
+  pendingAccountAction: ProfileSaveAction | null;
 };
 
 export function ProfileSection({
@@ -37,8 +41,15 @@ export function ProfileSection({
   onAccountCurrentPasswordChange,
   onAccountNewPasswordChange,
   onAccountThemeChange,
-  accountMessage
+  accountMessage,
+  accountMessageTarget,
+  pendingAccountAction
 }: ProfileSectionProps) {
+  const isSavingAccount = pendingAccountAction === "account";
+  const isSavingPreferences = pendingAccountAction === "preferences";
+  const isSavingProfile = pendingAccountAction !== null;
+  const accountMessageIsSuccess = accountMessage === "Account details saved." || accountMessage === "Preferences saved.";
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -63,11 +74,12 @@ export function ProfileSection({
       <div className="profileSplit">
         <section className="panel">
           <SectionTitle icon={UserCircle} title="Account" action="Server session" />
-          <form className="accountForm" onSubmit={updateAccount}>
+          <form className="accountForm" aria-busy={isSavingAccount} onSubmit={(event) => updateAccount(event, "account")}>
             <label>
               <span>Organization</span>
               <input
                 value={accountForm.organization}
+                disabled={isSavingProfile}
                 onChange={(event) => onAccountOrganizationChange(event.target.value)}
               />
             </label>
@@ -75,6 +87,7 @@ export function ProfileSection({
               <span>Role title</span>
               <input
                 value={accountForm.title}
+                disabled={isSavingProfile}
                 onChange={(event) => onAccountTitleChange(event.target.value)}
               />
             </label>
@@ -83,6 +96,7 @@ export function ProfileSection({
               <input
                 type="password"
                 value={accountForm.currentPassword}
+                disabled={isSavingProfile}
                 onChange={(event) => onAccountCurrentPasswordChange(event.target.value)}
               />
             </label>
@@ -91,32 +105,34 @@ export function ProfileSection({
               <input
                 type="password"
                 value={accountForm.newPassword}
+                disabled={isSavingProfile}
                 onChange={(event) => onAccountNewPasswordChange(event.target.value)}
               />
             </label>
             <div className="profileRows">
               <StatusRow label="Timezone" value={currentUser.timezone} tone="secure" />
             </div>
-            {accountMessage ? (
-              <div className={accountMessage === "Account updated." ? "validationItem ok" : "validationItem blocked"}>
-                {accountMessage === "Account updated." ? <Check size={17} /> : <AlertTriangle size={17} />}
+            {accountMessage && accountMessageTarget === "account" ? (
+              <div className={accountMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+                {accountMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
                 <span>{accountMessage}</span>
               </div>
             ) : null}
-            <button className="primaryButton" type="submit">
-              <Check size={17} />
-              Save Account
+            <button className="primaryButton" type="submit" disabled={isSavingProfile}>
+              {isSavingAccount ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+              {isSavingAccount ? "Saving..." : "Save Account"}
             </button>
           </form>
         </section>
 
         <section className="panel">
           <SectionTitle icon={Settings} title="Profile Preferences" action="Interface" />
-          <form className="accountForm" onSubmit={updateAccount}>
+          <form className="accountForm" aria-busy={isSavingPreferences} onSubmit={(event) => updateAccount(event, "preferences")}>
             <label>
               <span>Website theme</span>
               <select
                 value={accountForm.websiteTheme}
+                disabled={isSavingProfile}
                 onChange={(event) => onAccountThemeChange(event.target.value as WebsiteTheme)}
               >
                 <option value="light">Light</option>
@@ -124,9 +140,15 @@ export function ProfileSection({
                 <option value="system">System</option>
               </select>
             </label>
-            <button className="primaryButton" type="submit">
-              <Check size={17} />
-              Save Preferences
+            {accountMessage && accountMessageTarget === "preferences" ? (
+              <div className={accountMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+                {accountMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{accountMessage}</span>
+              </div>
+            ) : null}
+            <button className="primaryButton" type="submit" disabled={isSavingProfile}>
+              {isSavingPreferences ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+              {isSavingPreferences ? "Saving..." : "Save Preferences"}
             </button>
           </form>
         </section>

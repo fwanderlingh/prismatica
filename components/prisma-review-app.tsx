@@ -116,7 +116,7 @@ import { LoginShell } from "./review-sections/login-shell";
 import { AppSidebar } from "./review-sections/app-sidebar";
 import { AppShell } from "./review-sections/app-shell";
 import { SettingsSection } from "./review-sections/settings-section";
-import { ProfileSection } from "./review-sections/profile-section";
+import { ProfileSection, type ProfileSaveAction } from "./review-sections/profile-section";
 import { NewProjectSection, type NewProjectInviteDraft } from "./review-sections/new-project-section";
 import { useNewProjectState, type NewProjectForm } from "./use-new-project-state";
 import { useAuthState } from "./use-auth-state";
@@ -568,6 +568,8 @@ export function PrismaReviewApp() {
   const [studyEditId, setStudyEditId] = useState("");
   const [studyEditForm, setStudyEditForm] = useState<StudyEditForm>(emptyStudyEditForm);
   const [accountMessage, setAccountMessage] = useState("");
+  const [accountMessageTarget, setAccountMessageTarget] = useState<ProfileSaveAction>("account");
+  const [pendingAccountAction, setPendingAccountAction] = useState<ProfileSaveAction | null>(null);
   const [adminDirectoryMessage, setAdminDirectoryMessage] = useState("");
   const [isCreatingAdminUser, setIsCreatingAdminUser] = useState(false);
   const [pendingAdminUserAction, setPendingAdminUserAction] = useState<{ userId: string; action: "reset" | "delete" } | null>(null);
@@ -2157,9 +2159,15 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function updateAccount(event: FormSubmitEvent) {
+  async function updateAccount(event: FormSubmitEvent, action: ProfileSaveAction) {
     event.preventDefault();
+    if (pendingAccountAction) {
+      return;
+    }
+
     setAccountMessage("");
+    setAccountMessageTarget(action);
+    setPendingAccountAction(action);
     try {
       const payload = await apiRequest<AppStatePayload>("/api/me", {
         method: "PATCH",
@@ -2171,9 +2179,11 @@ export function PrismaReviewApp() {
         currentPassword: "",
         newPassword: ""
       }));
-      setAccountMessage("Account updated.");
+      setAccountMessage(action === "preferences" ? "Preferences saved." : "Account details saved.");
     } catch (error) {
       setAccountMessage(getErrorMessage(error));
+    } finally {
+      setPendingAccountAction(null);
     }
   }
 
@@ -2858,6 +2868,8 @@ export function PrismaReviewApp() {
           }))
         }
         accountMessage={accountMessage}
+        accountMessageTarget={accountMessageTarget}
+        pendingAccountAction={pendingAccountAction}
       />
     );
   }

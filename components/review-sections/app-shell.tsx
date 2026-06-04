@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, PanelRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, PanelRight, UserCircle } from "lucide-react";
 
 type BreadcrumbItem = {
   label: string;
@@ -129,9 +129,11 @@ export function AppShell({
             {isUserMenuOpen ? (
               <div className="userMenuPopover" role="menu" aria-label="User menu">
                 <button className="userMenuItem" type="button" role="menuitem" onClick={handleProfileClick}>
+                  <UserCircle size={17} />
                   Profile
                 </button>
                 <button className="userMenuItem" type="button" role="menuitem" onClick={handleAboutClick}>
+                  <Info size={17} />
                   About
                 </button>
               </div>
