@@ -100,6 +100,8 @@ export type Study = {
   titleAbstractStatusLabel?: string;
   titleAbstractVoteCount?: number;
   titleAbstractRequiredVotes?: number;
+  titleAbstractActiveViewerCount?: number;
+  titleAbstractCheckedOutByCurrentUser?: boolean;
   keywords: string[];
   pdfUrl?: string;
   rawCitation?: string;
@@ -126,6 +128,13 @@ export type Report = {
   fullTextStatusLabel?: string;
   fullTextVoteCount?: number;
   fullTextRequiredVotes?: number;
+  fullTextActiveViewerCount?: number;
+  fullTextCheckedOutByCurrentUser?: boolean;
+  extractionTemplateId?: string;
+  extractionVoteCount?: number;
+  extractionRequiredVotes?: number;
+  extractionActiveViewerCount?: number;
+  extractionCheckedOutByCurrentUser?: boolean;
   isPdfValidated: boolean;
   validationNotes: string[];
   notes: number;

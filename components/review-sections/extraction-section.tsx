@@ -46,6 +46,7 @@ type ExtractionSectionProps = {
   addExtractionTemplateField: (type: ExtractionFieldType) => void;
   activeExtractionReport?: Report;
   projectExtractionReports: Report[];
+  totalExtractionReportCount: number;
   setActiveView: (view: ViewKey) => void;
   setActiveExtractionReportId: (reportId: string) => void;
   setActiveReportId: (reportId: string) => void;
@@ -76,6 +77,7 @@ export function ExtractionSection({
   addExtractionTemplateField,
   activeExtractionReport,
   projectExtractionReports,
+  totalExtractionReportCount,
   setActiveView,
   setActiveExtractionReportId,
   setActiveReportId,
@@ -252,6 +254,37 @@ export function ExtractionSection({
     );
   }
 
+  if (projectExtractionReports.length === 0) {
+    return (
+      <div className="viewStack">
+        <section className="overviewBand compactBand">
+          <div>
+            <p className="eyebrow">Data extraction</p>
+            <h1>Dual Independent Extraction</h1>
+            <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
+          </div>
+          {totalExtractionReportCount > 0 ? (
+            <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
+              <GitMerge size={16} />
+              Resolve Conflicts
+            </button>
+          ) : null}
+        </section>
+        <section className="panel">
+          <EmptyState
+            icon={ClipboardCheck}
+            title={totalExtractionReportCount > 0 ? "No active extraction reports" : "No reports in extraction"}
+            description={
+              totalExtractionReportCount > 0
+                ? "All included reports have enough submitted extractions or are currently checked out by other reviewers."
+                : "Included reports appear here after full-text screening advances them to extraction."
+            }
+          />
+        </section>
+      </div>
+    );
+  }
+
   const activeReportForExtraction = activeExtractionReport ?? projectExtractionReports[0];
   const activeStudyForExtraction = activeReportForExtraction
     ? projectScreeningStudies.find((study) => study.id === activeReportForExtraction.studyId)
@@ -270,6 +303,8 @@ export function ExtractionSection({
     : [];
   const requiredExtractionVotes = selectedProject.extractionRequiredVotes;
   const hasMyExtraction = Boolean(activeExtractionResponse?.isSubmitted);
+  const hasExtractionCheckout = Boolean(activeReportForExtraction?.extractionCheckedOutByCurrentUser);
+  const canSubmitExtraction = Boolean(activeReportForExtraction && (hasExtractionCheckout || hasMyExtraction));
 
   return (
     <div className="viewStack">
@@ -282,7 +317,9 @@ export function ExtractionSection({
         <div className="reportPicker">
           <div>
             <p className="eyebrow">Included reports</p>
-            <strong>{projectExtractionReports.length} report{projectExtractionReports.length === 1 ? "" : "s"}</strong>
+            <strong>
+              {projectExtractionReports.length} active of {totalExtractionReportCount} report{totalExtractionReportCount === 1 ? "" : "s"}
+            </strong>
             <p className="subtle">At least {requiredExtractionVotes} submitted extraction vote{requiredExtractionVotes === 1 ? "" : "s"} required.</p>
           </div>
           <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
@@ -374,6 +411,11 @@ export function ExtractionSection({
               tone={submittedResponsesForActiveReport.length >= requiredExtractionVotes ? "secure" : "warning"}
             />
             <StatusRow label="My extraction" value={hasMyExtraction ? "Submitted" : "Open"} tone={hasMyExtraction ? "secure" : "warning"} />
+            <StatusRow
+              label="Reviewer slot"
+              value={hasExtractionCheckout || hasMyExtraction ? "Checked out" : "Waiting"}
+              tone={hasExtractionCheckout || hasMyExtraction ? "secure" : "warning"}
+            />
           </div>
 
           <form className="extractionForm" onSubmit={submitExtractionResponse}>
@@ -384,7 +426,7 @@ export function ExtractionSection({
                   <legend>{field.title}</legend>
                   {field.type === "multiline_text" ? (
                     <textarea
-                      disabled={isSubmittingExtractionResponse}
+                      disabled={!canSubmitExtraction || isSubmittingExtractionResponse}
                       value={typeof value === "string" ? value : ""}
                       onChange={(event) => updateExtractionValue(field.id, event.target.value)}
                     />
@@ -396,7 +438,7 @@ export function ExtractionSection({
                           <input
                             type="radio"
                             name={field.id}
-                            disabled={isSubmittingExtractionResponse}
+                            disabled={!canSubmitExtraction || isSubmittingExtractionResponse}
                             checked={value === option}
                             onChange={() => updateExtractionValue(field.id, option)}
                           />
@@ -413,7 +455,7 @@ export function ExtractionSection({
                           <label key={option}>
                             <input
                               type="checkbox"
-                                disabled={isSubmittingExtractionResponse}
+                              disabled={!canSubmitExtraction || isSubmittingExtractionResponse}
                               checked={checked}
                               onChange={(event) => toggleExtractionChoice(field.id, option, event.target.checked)}
                             />
@@ -427,7 +469,14 @@ export function ExtractionSection({
               );
             })}
 
-            <button className="primaryButton" type="submit" disabled={!activeReportForExtraction || isSubmittingExtractionResponse}>
+            {!canSubmitExtraction ? (
+              <div className="validationBox">
+                <AlertTriangle size={17} />
+                <span>Waiting for an active reviewer slot before submitting extraction data.</span>
+              </div>
+            ) : null}
+
+            <button className="primaryButton" type="submit" disabled={!canSubmitExtraction || isSubmittingExtractionResponse}>
               {isSubmittingExtractionResponse ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
               {isSubmittingExtractionResponse ? "Submitting..." : "Submit Extraction"}
             </button>

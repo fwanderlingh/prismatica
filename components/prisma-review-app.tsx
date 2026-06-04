@@ -678,13 +678,30 @@ export function PrismaReviewApp() {
       }
       return left.title.localeCompare(right.title);
     });
+  const activeFullTextReports = useMemo(
+    () => getActiveFullTextReports(selectedProject, projectReportQueue, decisions, currentUser.id),
+    [currentUser.id, decisions, projectReportQueue, selectedProject]
+  );
   const projectExtractionStudyIds = new Set(projectScreeningStudies.filter((study) => study.stage === "extraction").map((study) => study.id));
   const projectExtractionReports = projectReportQueue.filter((report) => projectExtractionStudyIds.has(report.studyId));
   const projectExtractionReportKey = projectExtractionReports.map((report) => report.id).join("|");
-  const activeExtractionReport = projectExtractionReports.find((report) => report.id === activeExtractionReportId) ?? projectExtractionReports[0];
   const activeExtractionTemplate =
     extractionTemplates.find((template) => template.projectId === selectedProject.id && template.isActive) ??
     extractionTemplates.find((template) => template.projectId === selectedProject.id);
+  const activeExtractionReports = useMemo(
+    () =>
+      activeExtractionTemplate
+        ? getActiveExtractionReports(selectedProject, projectExtractionReports, extractionResponses, activeExtractionTemplate.id, currentUser.id)
+        : projectExtractionReports,
+    [activeExtractionTemplate, currentUser.id, extractionResponses, projectExtractionReports, selectedProject]
+  );
+  const activeExtractionReport =
+    activeView === "extraction"
+      ? activeExtractionReports.find((report) => report.id === activeExtractionReportId) ?? activeExtractionReports[0]
+      : projectExtractionReports.find((report) => report.id === activeExtractionReportId) ?? projectExtractionReports[0];
+  const isActiveExtractionReportInActiveQueue = Boolean(
+    activeExtractionTemplate && activeExtractionReport && activeExtractionReports.some((report) => report.id === activeExtractionReport.id)
+  );
   const activeExtractionResponse = activeExtractionReport && activeExtractionTemplate
     ? extractionResponses.find(
         (response) =>
@@ -702,7 +719,8 @@ export function PrismaReviewApp() {
           consensus.templateId === activeExtractionTemplate.id
       )
     : undefined;
-  const activeReport = projectReportQueue.find((report) => report.id === activeReportId) ?? projectReportQueue[0] ?? reportQueue[0];
+  const activeReport = activeFullTextReports.find((report) => report.id === activeReportId) ?? activeFullTextReports[0] ?? projectReportQueue[0] ?? reportQueue[0];
+  const isActiveReportInActiveFullTextQueue = activeFullTextReports.some((report) => report.id === activeReport.id);
   const activeCounts = useMemo(
     () => getCountsForProject(selectedProject, projectScreeningStudies, projectReportQueue, decisions, extractionResponses, extractionTemplates),
     [decisions, extractionResponses, extractionTemplates, projectReportQueue, projectScreeningStudies, selectedProject]
@@ -758,8 +776,8 @@ export function PrismaReviewApp() {
     return evaluations;
   }, [titleAbstractEvaluations, workflowConflicts]);
   const activeScreeningStudies = useMemo(
-    () => getActiveTitleAbstractStudies(selectedProject, projectScreeningStudies, decisions),
-    [decisions, projectScreeningStudies, selectedProject]
+    () => getActiveTitleAbstractStudies(selectedProject, projectScreeningStudies, decisions, currentUser.id),
+    [currentUser.id, decisions, projectScreeningStudies, selectedProject]
   );
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
   const projectStudyIds = new Set(projectScreeningStudies.map((study) => study.id));
@@ -773,6 +791,7 @@ export function PrismaReviewApp() {
   const pagedProjectEvents = projectEvents.slice((currentAuditPage - 1) * AUDIT_PAGE_SIZE, currentAuditPage * AUDIT_PAGE_SIZE);
   const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, extractionResponses, projectEvents);
   const currentStudy = activeScreeningStudies[studyIndex] ?? activeScreeningStudies[0] ?? projectScreeningStudies[0] ?? screeningStudies[0];
+  const isCurrentStudyInActiveScreeningQueue = activeScreeningStudies.some((study) => study.id === currentStudy.id);
   const currentUserDecision = useMemo(
     () =>
       decisions.find(
@@ -1149,6 +1168,147 @@ export function PrismaReviewApp() {
   }, [activeScreeningStudies.length]);
 
   useEffect(() => {
+    if (!isAuthenticated || !isAuthResolved || activeView !== "screening" || !isCurrentStudyInActiveScreeningQueue) {
+      return;
+    }
+
+    let isCancelled = false;
+    const requestBody = {
+      projectId: selectedProject.id,
+      studyId: currentStudy.id
+    };
+
+    async function acquireCheckout() {
+      try {
+        const payload = await apiRequest<AppMutationPayload>("/api/screening-checkouts", {
+          method: "POST",
+          body: JSON.stringify({ ...requestBody, action: "acquire" })
+        });
+        if (!isCancelled) {
+          applyAppState(payload);
+        }
+      } catch {
+        // Checkout refresh failures should not interrupt an in-progress reading session.
+      }
+    }
+
+    acquireCheckout();
+    const intervalId = window.setInterval(acquireCheckout, 45_000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+      fetch("/api/screening-checkouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...requestBody, action: "release" }),
+        keepalive: true
+      }).catch(() => undefined);
+    };
+  }, [activeView, currentStudy.id, isAuthResolved, isAuthenticated, isCurrentStudyInActiveScreeningQueue, selectedProject.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isAuthResolved || activeView !== "fullText" || !isActiveReportInActiveFullTextQueue) {
+      return;
+    }
+
+    let isCancelled = false;
+    const requestBody = {
+      projectId: selectedProject.id,
+      studyId: activeReport.studyId,
+      reportId: activeReport.id,
+      stage: "full_text"
+    };
+
+    async function acquireCheckout() {
+      try {
+        const payload = await apiRequest<AppMutationPayload>("/api/screening-checkouts", {
+          method: "POST",
+          body: JSON.stringify({ ...requestBody, action: "acquire" })
+        });
+        if (!isCancelled) {
+          applyAppState(payload);
+        }
+      } catch {
+        // Checkout refresh failures should not interrupt an in-progress full-text reading session.
+      }
+    }
+
+    acquireCheckout();
+    const intervalId = window.setInterval(acquireCheckout, 45_000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+      fetch("/api/screening-checkouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...requestBody, action: "release" }),
+        keepalive: true
+      }).catch(() => undefined);
+    };
+  }, [activeReport.id, activeReport.studyId, activeView, isActiveReportInActiveFullTextQueue, isAuthResolved, isAuthenticated, selectedProject.id]);
+
+  useEffect(() => {
+    if (
+      !isAuthenticated ||
+      !isAuthResolved ||
+      activeView !== "extraction" ||
+      !isActiveExtractionReportInActiveQueue ||
+      !activeExtractionTemplate ||
+      !activeExtractionReport
+    ) {
+      return;
+    }
+
+    let isCancelled = false;
+    const requestBody = {
+      projectId: selectedProject.id,
+      studyId: activeExtractionReport.studyId,
+      reportId: activeExtractionReport.id,
+      templateId: activeExtractionTemplate.id,
+      stage: "extraction"
+    };
+
+    async function acquireCheckout() {
+      try {
+        const payload = await apiRequest<AppMutationPayload>("/api/screening-checkouts", {
+          method: "POST",
+          body: JSON.stringify({ ...requestBody, action: "acquire" })
+        });
+        if (!isCancelled) {
+          applyAppState(payload);
+        }
+      } catch {
+        // Extraction checkout refresh failures should not interrupt an in-progress extraction session.
+      }
+    }
+
+    acquireCheckout();
+    const intervalId = window.setInterval(acquireCheckout, 5 * 60_000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+      fetch("/api/screening-checkouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...requestBody, action: "release" }),
+        keepalive: true
+      }).catch(() => undefined);
+    };
+  }, [
+    activeExtractionReport?.id,
+    activeExtractionReport?.studyId,
+    activeExtractionTemplate?.id,
+    activeView,
+    isActiveExtractionReportInActiveQueue,
+    isAuthResolved,
+    isAuthenticated,
+    selectedProject.id
+  ]);
+
+  useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
       if (activeView !== "screening") {
         return;
@@ -1265,15 +1425,31 @@ export function PrismaReviewApp() {
   }, [auditPage, auditPageCount]);
 
   useEffect(() => {
-    if (projectReportQueue.length === 0) {
+    if (activeFullTextReports.length === 0) {
+      if (projectReportQueue.length === 0 && activeReportId) {
+        setActiveReportId("");
+      }
       return;
     }
-    if (!projectReportQueue.some((report) => report.id === activeReportId)) {
-      setActiveReportId(projectReportQueue[0].id);
+    if (!activeFullTextReports.some((report) => report.id === activeReportId)) {
+      setActiveReportId(activeFullTextReports[0].id);
     }
-  }, [activeReportId, projectReportQueue]);
+  }, [activeFullTextReports, activeReportId, projectReportQueue.length]);
 
   useEffect(() => {
+    if (activeView === "extraction") {
+      if (activeExtractionReports.length === 0) {
+        if (projectExtractionReports.length === 0 && activeExtractionReportId) {
+          setActiveExtractionReportId("");
+        }
+        return;
+      }
+      if (!activeExtractionReports.some((report) => report.id === activeExtractionReportId)) {
+        setActiveExtractionReportId(activeExtractionReports[0].id);
+      }
+      return;
+    }
+
     if (projectExtractionReports.length === 0) {
       setActiveExtractionReportId("");
       return;
@@ -1281,7 +1457,7 @@ export function PrismaReviewApp() {
     if (!projectExtractionReports.some((report) => report.id === activeExtractionReportId)) {
       setActiveExtractionReportId(projectExtractionReports[0].id);
     }
-  }, [activeExtractionReportId, projectExtractionReportKey, projectExtractionReports]);
+  }, [activeExtractionReportId, activeExtractionReports, activeView, projectExtractionReportKey, projectExtractionReports]);
 
   useEffect(() => {
     setExtractionFormValues(activeExtractionResponse?.values ?? {});
@@ -2296,7 +2472,7 @@ export function PrismaReviewApp() {
       setScreeningNote("");
       const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
       const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
-      const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions);
+      const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const currentStudyNextIndex = nextActiveStudies.findIndex((study) => study.id === currentStudy.id);
       const nextStudyIndex =
         currentStudyNextIndex >= 0
@@ -2330,7 +2506,7 @@ export function PrismaReviewApp() {
       setDecisionActions((previous) => previous.slice(0, -1));
       const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
       const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
-      const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions);
+      const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const restoredStudyIndex = nextActiveStudies.findIndex((study) => study.id === lastAction.studyId);
       setStudyIndex(restoredStudyIndex >= 0 ? restoredStudyIndex : 0);
     } catch (error) {
@@ -2615,7 +2791,9 @@ export function PrismaReviewApp() {
       <FullTextSection
         hasProjectSeedData={hasProjectSeedData}
         phaseProgress={getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber)}
-        projectReportQueue={projectReportQueue}
+        projectReportQueue={activeFullTextReports}
+        totalFullTextReportCount={projectReportQueue.length}
+        uploadedPdfCount={projectReportQueue.filter((report) => report.fileName).length}
         activeReport={activeReport}
         decisions={decisions}
         selectedProject={selectedProject}
@@ -2658,7 +2836,8 @@ export function PrismaReviewApp() {
         updateExtractionTemplateField={updateExtractionTemplateField}
         addExtractionTemplateField={addExtractionTemplateField}
         activeExtractionReport={activeExtractionReport}
-        projectExtractionReports={projectExtractionReports}
+        projectExtractionReports={activeExtractionReports}
+        totalExtractionReportCount={projectExtractionReports.length}
         setActiveView={navigateToProjectView}
         setActiveExtractionReportId={setActiveExtractionReportId}
         setActiveReportId={setActiveReportId}
@@ -3247,13 +3426,16 @@ function isTitleAbstractEvaluationComplete(evaluation: StageEvaluation | undefin
   return evaluation?.state === "advance_full_text" || evaluation?.state === "excluded_abstract";
 }
 
-function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[]) {
+function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {
   return studies.filter((study) => {
     const currentDecisions = decisions.filter(
       (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
     );
+    const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
     const voteCount = study.titleAbstractVoteCount ?? currentDecisions.length;
     const requiredVotes = study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes;
+    const activeViewerCount = study.titleAbstractActiveViewerCount ?? 0;
+    const checkedOutByCurrentUser = Boolean(study.titleAbstractCheckedOutByCurrentUser);
     const evaluationState =
       study.titleAbstractStatus ??
       evaluateStage(
@@ -3263,7 +3445,78 @@ function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[],
         project.maybePolicy
       ).state;
 
-    return evaluationState === "conflict" || evaluationState === "needs_third_vote" || voteCount < requiredVotes;
+    if (evaluationState === "conflict" || evaluationState === "needs_third_vote") {
+      return checkedOutByCurrentUser || activeViewerCount < 1;
+    }
+    if (currentUserHasVoted || voteCount >= requiredVotes) {
+      return false;
+    }
+    return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
+  });
+}
+
+function getActiveFullTextReports(project: ReviewProject, reports: Report[], decisions: Decision[], currentUserId: string) {
+  return reports.filter((report) => {
+    const currentDecisions = decisions.filter(
+      (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
+    );
+    const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
+    const voteCount = report.fullTextVoteCount ?? currentDecisions.length;
+    const requiredVotes = report.fullTextRequiredVotes ?? project.fullTextRequiredVotes;
+    const activeViewerCount = report.fullTextActiveViewerCount ?? 0;
+    const checkedOutByCurrentUser = Boolean(report.fullTextCheckedOutByCurrentUser);
+    const evaluationState =
+      report.fullTextStatus ??
+      evaluateStage(
+        "full_text",
+        currentDecisions.map((decision) => decision.decisionValue),
+        requiredVotes,
+        project.maybePolicy
+      ).state;
+
+    if (evaluationState === "conflict" || evaluationState === "needs_third_vote") {
+      return checkedOutByCurrentUser || activeViewerCount < 1;
+    }
+    if (
+      currentUserHasVoted ||
+      voteCount >= requiredVotes ||
+      evaluationState === "advance_extraction" ||
+      evaluationState === "excluded_full_text" ||
+      evaluationState === "report_not_retrieved" ||
+      evaluationState === "manual_review"
+    ) {
+      return false;
+    }
+    return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
+  });
+}
+
+function getActiveExtractionReports(
+  project: ReviewProject,
+  reports: Report[],
+  extractionResponses: ExtractionResponse[],
+  templateId: string,
+  currentUserId: string
+) {
+  return reports.filter((report) => {
+    const submittedResponses = extractionResponses.filter(
+      (response) =>
+        response.projectId === project.id &&
+        response.reportId === report.id &&
+        response.templateId === templateId &&
+        response.isSubmitted
+    );
+    const currentUserHasSubmitted = submittedResponses.some((response) => response.userId === currentUserId);
+    const metadataMatchesTemplate = report.extractionTemplateId === templateId;
+    const submittedCount = metadataMatchesTemplate ? report.extractionVoteCount ?? submittedResponses.length : submittedResponses.length;
+    const requiredVotes = report.extractionRequiredVotes ?? project.extractionRequiredVotes;
+    const activeViewerCount = metadataMatchesTemplate ? report.extractionActiveViewerCount ?? 0 : 0;
+    const checkedOutByCurrentUser = metadataMatchesTemplate ? Boolean(report.extractionCheckedOutByCurrentUser) : false;
+
+    if (currentUserHasSubmitted || submittedCount >= requiredVotes) {
+      return false;
+    }
+    return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - submittedCount, 1);
   });
 }
 

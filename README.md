@@ -54,11 +54,11 @@ This uses Next.js experimental local HTTPS support.
 - Team membership management with owner safeguards
 - RIS and BibTeX import with provenance and review flow
 - Dedup candidate review with side-by-side comparisons
-- Title/abstract screening with append-only decisions and undo route support
-- Full-text review with PDF upload, validation, streaming, and DOI linking
+- Title/abstract screening with append-only decisions, undo route support, and temporary checkout-based queue control
+- Full-text review with PDF upload, validation, streaming, DOI linking, and temporary checkout-based queue control
 - Conflict handling in full-text and extraction phases
 - Extraction templates (text, single-choice, multi-choice)
-- Extraction submissions, consensus routes, and configurable extraction voting
+- Extraction submissions with temporary checkout-based queue control, consensus routes, and configurable extraction voting
 - Export and report validation endpoints
 - Theme preferences (light, dark, system)
 - Path-based routing and refined UI components

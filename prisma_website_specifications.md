@@ -608,6 +608,19 @@ Allow undo by inserting a new decision row that supersedes the prior one.
 Do not reveal other users’ votes in blind mode.
 ```
 
+Dynamic queue checkouts:
+
+```text
+Title/abstract, full-text screening, and open-queue data extraction should use temporary server-side checkouts rather than static shared lists.
+When a reviewer opens an active citation, report, or extraction task, the server records a checkout for the user/study, user/report, or user/report/template pair.
+The active queues exclude work whose current submission/vote count plus unexpired checkouts already fills the required reviewer slots.
+Completed non-conflict citations, full-text reports, and extraction tasks leave their active queues automatically once the required independent votes/submissions are reached.
+Conflict or third-vote citations/reports remain available, but only one additional reviewer should be checked out at a time.
+Extraction tasks use longer-lived checkouts because form completion takes longer than screening.
+Checkout records expire automatically when the reviewer abandons the page, and are released immediately after a vote or navigation away.
+Blind mode must expose only aggregate checkout/vote counts, never the identities or decisions of other reviewers.
+```
+
 Keyword highlighting should be implemented as project-level rules:
 
 ```sql
@@ -1136,4 +1149,3 @@ The core product is not “a citation manager.” It is a **decision provenance 
 [6]: https://help.rayyan.ai/hc/en-us/articles/25316026225041-How-to-Resolve-Screening-Conflicts-in-Rayyan "How to Resolve Screening Conflicts in Rayyan – Rayyan Help Center"
 [7]: https://methods.cochrane.org/bias/resources/rob-2-revised-cochrane-risk-bias-tool-randomized-trials?utm_source=chatgpt.com "RoB 2: A revised Cochrane risk-of-bias tool for randomized trials"
 [8]: https://methods.cochrane.org/bias/risk-bias-non-randomized-studies-interventions?utm_source=chatgpt.com "ROBINS-I | Cochrane Bias"
-

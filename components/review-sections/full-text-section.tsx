@@ -28,6 +28,8 @@ type FullTextSectionProps = {
   hasProjectSeedData: boolean;
   phaseProgress: ProjectPhaseProgress;
   projectReportQueue: Report[];
+  totalFullTextReportCount: number;
+  uploadedPdfCount: number;
   activeReport: Report;
   decisions: Decision[];
   selectedProject: ReviewProject;
@@ -54,6 +56,8 @@ export function FullTextSection({
   hasProjectSeedData,
   phaseProgress,
   projectReportQueue,
+  totalFullTextReportCount,
+  uploadedPdfCount,
   activeReport,
   decisions,
   selectedProject,
@@ -101,8 +105,12 @@ export function FullTextSection({
         <section className="panel">
           <EmptyState
             icon={BookOpen}
-            title="No full-text reports"
-            description="No reports have been sought or uploaded for this review yet."
+            title={totalFullTextReportCount > 0 ? "No active full-text reports" : "No full-text reports"}
+            description={
+              totalFullTextReportCount > 0
+                ? "All available reports have enough votes, are waiting on checked-out reviewers, or need owner resolution."
+                : "No reports have been sought or uploaded for this review yet."
+            }
           />
         </section>
       </div>
@@ -135,11 +143,11 @@ export function FullTextSection({
   const canExclude = selectedDecision === "exclude";
   const pdfDisplayName = activeReport.fileName || activeReport.pdfName || "No PDF uploaded";
   const hasUploadedPdf = Boolean(activeReport.fileName);
-  const uploadedPdfCount = projectReportQueue.filter((report) => report.fileName).length;
-  const uploadedPdfPercent = projectReportQueue.length > 0 ? Math.round((uploadedPdfCount / projectReportQueue.length) * 100) : 0;
+  const uploadedPdfPercent = totalFullTextReportCount > 0 ? Math.round((uploadedPdfCount / totalFullTextReportCount) * 100) : 0;
   const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
   const canInclude = activeReport.retrievalStatus === "retrieved" && hasUploadedPdf;
-  const canRecordFullTextDecision = hasUploadedPdf;
+  const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
+  const canRecordFullTextDecision = hasUploadedPdf && (hasFullTextCheckout || Boolean(activeFullTextDecision));
   const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
   const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
   const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
@@ -181,7 +189,7 @@ export function FullTextSection({
             </div>
           </div>
           <div className="progressBlock">
-            <span>{uploadedPdfPercent}% PDFs uploaded · {uploadedPdfCount} of {projectReportQueue.length} reports</span>
+            <span>{uploadedPdfPercent}% PDFs uploaded · {uploadedPdfCount} of {totalFullTextReportCount} reports</span>
             <div className="progressTrack">
               <i style={{ width: `${uploadedPdfPercent}%` }} />
             </div>
@@ -190,7 +198,9 @@ export function FullTextSection({
         <div className="reportPicker">
           <div>
             <p className="eyebrow">Report queue</p>
-            <strong>{projectReportQueue.length} report{projectReportQueue.length === 1 ? "" : "s"}</strong>
+            <strong>
+              {projectReportQueue.length} active of {totalFullTextReportCount} report{totalFullTextReportCount === 1 ? "" : "s"}
+            </strong>
             <p className="subtle">Active report: #{currentReportStudy.importItemId ?? activeReportIndex + 1} · {activeReport.title}</p>
           </div>
           <label className="fieldLabel" htmlFor="full-text-report-picker">
@@ -333,6 +343,11 @@ export function FullTextSection({
               }
             />
             <StatusRow label="Full-text votes" value={`${fullTextVoteCount}/${fullTextRequiredVotes}`} tone={fullTextVoteCount >= fullTextRequiredVotes ? "secure" : "warning"} />
+            <StatusRow
+              label="Reviewer slot"
+              value={hasFullTextCheckout || activeFullTextDecision ? "Checked out" : "Waiting"}
+              tone={hasFullTextCheckout || activeFullTextDecision ? "secure" : "warning"}
+            />
             <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
           </div>
 
@@ -374,7 +389,7 @@ export function FullTextSection({
             <button
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
               type="button"
-              disabled={!canInclude || isFullTextActionPending}
+              disabled={!canInclude || !canRecordFullTextDecision || isFullTextActionPending}
               onClick={() => updateFullTextReport({ retrievalStatus: "retrieved", decisionValue: "include" })}
             >
               {pendingFullTextAction === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
@@ -402,11 +417,13 @@ export function FullTextSection({
             ))}
           </select>
 
-          <div className={canInclude && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
-            {canInclude && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <div className={canInclude && canRecordFullTextDecision && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
+            {canInclude && canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
               {!hasUploadedPdf
                 ? "Upload the PDF before recording a full-text vote or exclusion reason."
+                : !canRecordFullTextDecision
+                ? "Waiting for an active reviewer slot before recording a full-text vote."
                 : hasFullTextConflict
                 ? "This report is in resolve-conflict state and cannot advance to extraction until the votes are reconciled."
                 : canInclude
