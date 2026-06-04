@@ -22,6 +22,8 @@ type StoredUserRecord = {
 type StoredState = {
   authSettings?: {
     registrationEnabled?: boolean;
+    screeningCheckoutWindowMinutes?: number;
+    extractionCheckoutWindowMinutes?: number;
   };
   users?: StoredUserRecord[];
 };
@@ -128,17 +130,27 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
   );
 }
 
-async function upsertAuthSettings(client: Pool, registrationEnabled: boolean) {
+async function upsertAuthSettings(
+  client: Pool,
+  registrationEnabled: boolean,
+  screeningCheckoutWindowMinutes: number,
+  extractionCheckoutWindowMinutes: number
+) {
   await client.query(
     `
-      INSERT INTO auth_settings (id, registration_enabled, updated_at)
-      VALUES (1, $1, NOW())
+      INSERT INTO auth_settings (
+        id, registration_enabled, screening_checkout_window_minutes,
+        extraction_checkout_window_minutes, updated_at
+      )
+      VALUES (1, $1, $2, $3, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         registration_enabled = EXCLUDED.registration_enabled,
+        screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
+        extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
         updated_at = NOW()
     `,
-    [registrationEnabled]
+    [registrationEnabled, screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes]
   );
 }
 
@@ -166,10 +178,12 @@ export async function syncAuthSettingsToPostgres() {
 
   const state = readState();
   const registrationEnabled = state.authSettings?.registrationEnabled ?? true;
+  const screeningCheckoutWindowMinutes = state.authSettings?.screeningCheckoutWindowMinutes ?? 2;
+  const extractionCheckoutWindowMinutes = state.authSettings?.extractionCheckoutWindowMinutes ?? 15;
 
   const client = getPool();
   await ensureSchema(client);
-  await upsertAuthSettings(client, registrationEnabled);
+  await upsertAuthSettings(client, registrationEnabled, screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes);
 }
 
 export async function deleteUserByIdFromPostgres(userId: string) {

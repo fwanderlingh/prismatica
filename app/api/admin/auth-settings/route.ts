@@ -6,9 +6,16 @@ export async function PATCH(request: Request) {
   try {
     const adminUserId = await requireSessionUserId();
     const body = await readJsonBody(request);
-    const payload = updateAuthSettingsForUser(adminUserId, {
-      registrationEnabled: Boolean(body.registrationEnabled)
-    });
+    const settings = {
+      registrationEnabled: Boolean(body.registrationEnabled),
+      ...(Object.prototype.hasOwnProperty.call(body, "screeningCheckoutWindowMinutes")
+        ? { screeningCheckoutWindowMinutes: Number(body.screeningCheckoutWindowMinutes) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(body, "extractionCheckoutWindowMinutes")
+        ? { extractionCheckoutWindowMinutes: Number(body.extractionCheckoutWindowMinutes) }
+        : {})
+    };
+    const payload = updateAuthSettingsForUser(adminUserId, settings);
     await syncAuthSettingsToPostgres();
     return jsonOk(payload);
   } catch (error) {

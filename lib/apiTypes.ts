@@ -37,6 +37,8 @@ export type AppStatePayload = {
 
 export type AppAuthSettings = {
   registrationEnabled: boolean;
+  screeningCheckoutWindowMinutes: number;
+  extractionCheckoutWindowMinutes: number;
 };
 
 export type PublicAuthConfigPayload = {

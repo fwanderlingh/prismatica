@@ -147,7 +147,9 @@ const BRAND_NAME = "PRISMATICA";
 const BRAND_TAGLINE = "Open source PRISMA review platform";
 const BRAND_LOGO_ALT = `${BRAND_NAME} logo`;
 const defaultAuthSettings: AppAuthSettings = {
-  registrationEnabled: true
+  registrationEnabled: true,
+  screeningCheckoutWindowMinutes: 2,
+  extractionCheckoutWindowMinutes: 15
 };
 
 const globalNavItems: NavItem[] = [
@@ -496,6 +498,10 @@ export function PrismaReviewApp() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
   const [authSettingsMessage, setAuthSettingsMessage] = useState("");
+  const [authSettingsForm, setAuthSettingsForm] = useState({
+    screeningCheckoutWindowMinutes: defaultAuthSettings.screeningCheckoutWindowMinutes,
+    extractionCheckoutWindowMinutes: defaultAuthSettings.extractionCheckoutWindowMinutes
+  });
   const [captchaChallenge, setCaptchaChallenge] = useState<PublicAuthConfigPayload["captcha"] | null>(null);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
   const [imports, setImports] = useState<ImportBatch[]>([]);
@@ -1193,7 +1199,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, 45_000);
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(authSettings.screeningCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1205,7 +1211,15 @@ export function PrismaReviewApp() {
         keepalive: true
       }).catch(() => undefined);
     };
-  }, [activeView, currentStudy.id, isAuthResolved, isAuthenticated, isCurrentStudyInActiveScreeningQueue, selectedProject.id]);
+  }, [
+    activeView,
+    authSettings.screeningCheckoutWindowMinutes,
+    currentStudy.id,
+    isAuthResolved,
+    isAuthenticated,
+    isCurrentStudyInActiveScreeningQueue,
+    selectedProject.id
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated || !isAuthResolved || activeView !== "fullText" || !isActiveReportInActiveFullTextQueue) {
@@ -1235,7 +1249,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, 45_000);
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(authSettings.screeningCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1247,7 +1261,16 @@ export function PrismaReviewApp() {
         keepalive: true
       }).catch(() => undefined);
     };
-  }, [activeReport.id, activeReport.studyId, activeView, isActiveReportInActiveFullTextQueue, isAuthResolved, isAuthenticated, selectedProject.id]);
+  }, [
+    activeReport.id,
+    activeReport.studyId,
+    activeView,
+    authSettings.screeningCheckoutWindowMinutes,
+    isActiveReportInActiveFullTextQueue,
+    isAuthResolved,
+    isAuthenticated,
+    selectedProject.id
+  ]);
 
   useEffect(() => {
     if (
@@ -1285,7 +1308,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, 5 * 60_000);
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(authSettings.extractionCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1302,6 +1325,7 @@ export function PrismaReviewApp() {
     activeExtractionReport?.studyId,
     activeExtractionTemplate?.id,
     activeView,
+    authSettings.extractionCheckoutWindowMinutes,
     isActiveExtractionReportInActiveQueue,
     isAuthResolved,
     isAuthenticated,
@@ -1361,6 +1385,13 @@ export function PrismaReviewApp() {
     }));
     setAccountMessage("");
   }, [currentUser.id, currentUser.organization, currentUser.title, currentUser.websiteTheme]);
+
+  useEffect(() => {
+    setAuthSettingsForm({
+      screeningCheckoutWindowMinutes: authSettings.screeningCheckoutWindowMinutes,
+      extractionCheckoutWindowMinutes: authSettings.extractionCheckoutWindowMinutes
+    });
+  }, [authSettings.extractionCheckoutWindowMinutes, authSettings.screeningCheckoutWindowMinutes]);
 
   useEffect(() => {
     const theme = currentUser.websiteTheme ?? "system";
@@ -2449,6 +2480,28 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function updateCheckoutWindowSettings(event: FormSubmitEvent) {
+    event.preventDefault();
+    setAuthSettingsMessage("");
+    setIsUpdatingRegistrationSetting(true);
+    try {
+      const payload = await apiRequest<AppMutationPayload>("/api/admin/auth-settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          registrationEnabled: authSettings.registrationEnabled,
+          screeningCheckoutWindowMinutes: authSettingsForm.screeningCheckoutWindowMinutes,
+          extractionCheckoutWindowMinutes: authSettingsForm.extractionCheckoutWindowMinutes
+        })
+      });
+      applyAppState(payload);
+      setAuthSettingsMessage(payload.message ?? "Checkout windows saved.");
+    } catch (error) {
+      setAuthSettingsMessage(getErrorMessage(error));
+    } finally {
+      setIsUpdatingRegistrationSetting(false);
+    }
+  }
+
   async function addScreeningDecision(decisionValue: Exclude<DecisionValue, "not_retrieved">) {
     if (activeScreeningStudies.length === 0) {
       return;
@@ -3033,6 +3086,7 @@ export function PrismaReviewApp() {
         currentUser={currentUser}
         adminDirectoryMessage={adminDirectoryMessage}
         authSettings={authSettings}
+        authSettingsForm={authSettingsForm}
         authSettingsMessage={authSettingsMessage}
         adminResetUserPassword={adminResetUserPassword}
         adminDeleteUser={adminDeleteUser}
@@ -3046,6 +3100,13 @@ export function PrismaReviewApp() {
         pendingUserAction={pendingAdminUserAction}
         isUpdatingRegistrationSetting={isUpdatingRegistrationSetting}
         updateRegistrationSetting={updateRegistrationSetting}
+        onScreeningCheckoutWindowChange={(value) =>
+          setAuthSettingsForm((previous) => ({ ...previous, screeningCheckoutWindowMinutes: value }))
+        }
+        onExtractionCheckoutWindowChange={(value) =>
+          setAuthSettingsForm((previous) => ({ ...previous, extractionCheckoutWindowMinutes: value }))
+        }
+        updateCheckoutWindowSettings={updateCheckoutWindowSettings}
       />
     );
   }
@@ -3351,6 +3412,11 @@ function getProgressPercent(value: number, total: number) {
     return 0;
   }
   return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
+}
+
+function getCheckoutRefreshIntervalMs(windowMinutes: number) {
+  const ttlMs = Math.max(1, Math.min(120, Math.round(windowMinutes))) * 60_000;
+  return Math.max(30_000, Math.min(Math.floor(ttlMs / 2), ttlMs - 5_000));
 }
 
 function isFullTextReportComplete(report: Report, project: ReviewProject) {

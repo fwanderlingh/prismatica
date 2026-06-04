@@ -49,7 +49,7 @@ This uses Next.js experimental local HTTPS support.
 
 - Dashboard with PRISMA counts, audit trail, and progress indicators
 - Sign-in, optional captcha-protected registration, and server-managed sessions
-- Admin controls for password reset, account deletion, and registration policy
+- Admin controls for password reset, account deletion, registration policy, and checkout windows
 - Multi-project workspace with per-project navigation
 - Team membership management with owner safeguards
 - RIS and BibTeX import with provenance and review flow
@@ -233,6 +233,8 @@ If you are rebuilding review data from scratch, you can migrate only accounts an
 What this migrates:
 
 - `authSettings.registrationEnabled`
+- `authSettings.screeningCheckoutWindowMinutes`
+- `authSettings.extractionCheckoutWindowMinutes`
 - `users` (profile fields, password hash/salt, admin flag, theme)
 
 What this does not migrate:

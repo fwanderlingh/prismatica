@@ -617,6 +617,7 @@ The active queues exclude work whose current submission/vote count plus unexpire
 Completed non-conflict citations, full-text reports, and extraction tasks leave their active queues automatically once the required independent votes/submissions are reached.
 Conflict or third-vote citations/reports remain available, but only one additional reviewer should be checked out at a time.
 Extraction tasks use longer-lived checkouts because form completion takes longer than screening.
+Administrators should be able to configure the screening/full-text and extraction checkout windows globally.
 Checkout records expire automatically when the reviewer abandons the page, and are released immediately after a vote or navigation away.
 Blind mode must expose only aggregate checkout/vote counts, never the identities or decisions of other reviewers.
 ```

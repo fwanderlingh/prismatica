@@ -66,8 +66,8 @@ type CaptchaPayload = {
 
 type WebsiteTheme = "light" | "dark" | "system";
 
-const screeningCheckoutTtlMs = 2 * 60 * 1000;
-const extractionCheckoutTtlMs = 15 * 60 * 1000;
+const defaultScreeningCheckoutWindowMinutes = 2;
+const defaultExtractionCheckoutWindowMinutes = 15;
 
 type NewProjectInput = {
   title?: string;
@@ -176,15 +176,40 @@ const pdfStorage = createPdfStorageAdapter({ dataFilePath });
 
 function defaultAuthSettings(): AppAuthSettings {
   return {
-    registrationEnabled: process.env.PRISMATICA_REGISTRATION_ENABLED?.toLowerCase() === "false" ? false : true
+    registrationEnabled: process.env.PRISMATICA_REGISTRATION_ENABLED?.toLowerCase() === "false" ? false : true,
+    screeningCheckoutWindowMinutes: clampCheckoutWindowMinutes(
+      process.env.PRISMATICA_SCREENING_CHECKOUT_WINDOW_MINUTES,
+      defaultScreeningCheckoutWindowMinutes
+    ),
+    extractionCheckoutWindowMinutes: clampCheckoutWindowMinutes(
+      process.env.PRISMATICA_EXTRACTION_CHECKOUT_WINDOW_MINUTES,
+      defaultExtractionCheckoutWindowMinutes
+    )
   };
 }
 
 function normalizeAuthSettings(settings: Partial<AppAuthSettings> | undefined): AppAuthSettings {
+  const defaults = defaultAuthSettings();
   return {
-    ...defaultAuthSettings(),
-    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaultAuthSettings().registrationEnabled
+    ...defaults,
+    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaults.registrationEnabled,
+    screeningCheckoutWindowMinutes: clampCheckoutWindowMinutes(
+      settings?.screeningCheckoutWindowMinutes,
+      defaults.screeningCheckoutWindowMinutes
+    ),
+    extractionCheckoutWindowMinutes: clampCheckoutWindowMinutes(
+      settings?.extractionCheckoutWindowMinutes,
+      defaults.extractionCheckoutWindowMinutes
+    )
   };
+}
+
+function clampCheckoutWindowMinutes(value: unknown, fallback: number) {
+  const numericValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(120, Math.round(numericValue)));
 }
 
 function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
@@ -788,8 +813,9 @@ function getExtractionCheckoutCapacity(
   return Math.max(project.extractionRequiredVotes - submittedResponses.length, 0);
 }
 
-function getCheckoutTtlMs(stage: ScreeningCheckout["stage"]) {
-  return stage === "extraction" ? extractionCheckoutTtlMs : screeningCheckoutTtlMs;
+function getCheckoutTtlMs(stage: ScreeningCheckout["stage"], settings: AppAuthSettings) {
+  const minutes = stage === "extraction" ? settings.extractionCheckoutWindowMinutes : settings.screeningCheckoutWindowMinutes;
+  return clampCheckoutWindowMinutes(minutes, stage === "extraction" ? defaultExtractionCheckoutWindowMinutes : defaultScreeningCheckoutWindowMinutes) * 60 * 1000;
 }
 
 function getUser(state: PersistedState, userId: string) {
@@ -1054,15 +1080,31 @@ export function getPublicAuthConfig(): PublicAuthConfigPayload {
 export function updateAuthSettingsForUser(adminUserIdInput: string, settings: Partial<AppAuthSettings>): AppMutationPayload {
   const state = readState();
   const adminUser = requireAdminUser(state, adminUserIdInput);
-  state.authSettings = {
+  const previousSettings = state.authSettings;
+  state.authSettings = normalizeAuthSettings({
     ...state.authSettings,
-    registrationEnabled: Boolean(settings.registrationEnabled)
-  };
-  appendEvent(state, adminUser.name, state.authSettings.registrationEnabled ? "Enabled public registration" : "Disabled public registration", adminUser.id);
+    ...settings
+  });
+  const registrationChanged = previousSettings.registrationEnabled !== state.authSettings.registrationEnabled;
+  const checkoutWindowChanged =
+    previousSettings.screeningCheckoutWindowMinutes !== state.authSettings.screeningCheckoutWindowMinutes ||
+    previousSettings.extractionCheckoutWindowMinutes !== state.authSettings.extractionCheckoutWindowMinutes;
+  const eventMessage = checkoutWindowChanged
+    ? "Updated checkout windows"
+    : state.authSettings.registrationEnabled
+      ? "Enabled public registration"
+      : "Disabled public registration";
+  appendEvent(state, adminUser.name, eventMessage, adminUser.id);
   writeState(state);
   return {
     ...buildPayload(state, adminUser.id),
-    message: state.authSettings.registrationEnabled ? "Public registration enabled." : "Public registration disabled."
+    message: checkoutWindowChanged
+      ? "Checkout windows saved."
+      : registrationChanged
+        ? state.authSettings.registrationEnabled
+          ? "Public registration enabled."
+          : "Public registration disabled."
+        : "Admin settings saved."
   };
 }
 
@@ -2320,7 +2362,7 @@ export function updateScreeningCheckoutForUser(
       templateId: template.id,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("extraction")).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.authSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2391,7 +2433,7 @@ export function updateScreeningCheckoutForUser(
       reportId,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("full_text")).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.authSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2459,7 +2501,7 @@ export function updateScreeningCheckoutForUser(
     studyId,
     userId,
     checkedOutAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract")).toISOString()
+    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.authSettings)).toISOString()
   });
   writeState(state);
   return buildPayload(state, userId);

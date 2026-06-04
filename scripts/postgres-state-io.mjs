@@ -92,8 +92,16 @@ async function ensureSchema(client) {
     CREATE TABLE IF NOT EXISTS auth_settings (
       id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
       registration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 2,
+      extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 15,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE auth_settings
+      ADD COLUMN IF NOT EXISTS screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 2;
+
+    ALTER TABLE auth_settings
+      ADD COLUMN IF NOT EXISTS extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 15;
 
     CREATE TABLE IF NOT EXISTS app_users (
       id TEXT PRIMARY KEY,
@@ -327,11 +335,21 @@ function normalizeTimestamp(value) {
   return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
 }
 
+function clampCheckoutWindowMinutes(value, fallback) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(120, Math.round(numericValue)));
+}
+
 function defaultState() {
   return {
     version: stateVersion,
     authSettings: {
-      registrationEnabled: true
+      registrationEnabled: true,
+      screeningCheckoutWindowMinutes: 2,
+      extractionCheckoutWindowMinutes: 15
     },
     users: [],
     projects: [],
@@ -503,7 +521,16 @@ async function readRelationalState(client) {
       ORDER BY created_at ASC, id ASC
     `
   );
-  const authSettingsResult = await client.query(`SELECT registration_enabled FROM auth_settings WHERE id = 1`);
+  const authSettingsResult = await client.query(
+    `
+      SELECT
+        registration_enabled,
+        screening_checkout_window_minutes,
+        extraction_checkout_window_minutes
+      FROM auth_settings
+      WHERE id = 1
+    `
+  );
 
   const projects = await readProjects(client);
   const imports = await readRows(client, "import_batches");
@@ -537,7 +564,9 @@ async function readRelationalState(client) {
   return {
     version: stateVersion,
     authSettings: {
-      registrationEnabled: authSettingsResult.rows[0]?.registration_enabled ?? true
+      registrationEnabled: authSettingsResult.rows[0]?.registration_enabled ?? true,
+      screeningCheckoutWindowMinutes: authSettingsResult.rows[0]?.screening_checkout_window_minutes ?? 2,
+      extractionCheckoutWindowMinutes: authSettingsResult.rows[0]?.extraction_checkout_window_minutes ?? 15
     },
     users: usersResult.rows.map((row) => ({
       id: row.id,
@@ -625,12 +654,23 @@ async function writeUsers(client, state) {
 async function writeAuthSettings(client, state) {
   await client.query(
     `
-      INSERT INTO auth_settings (id, registration_enabled, updated_at)
-      VALUES (1, $1, NOW())
+      INSERT INTO auth_settings (
+        id, registration_enabled, screening_checkout_window_minutes,
+        extraction_checkout_window_minutes, updated_at
+      )
+      VALUES (1, $1, $2, $3, NOW())
       ON CONFLICT (id)
-      DO UPDATE SET registration_enabled = EXCLUDED.registration_enabled, updated_at = NOW()
+      DO UPDATE SET
+        registration_enabled = EXCLUDED.registration_enabled,
+        screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
+        extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
+        updated_at = NOW()
     `,
-    [Boolean(state.authSettings?.registrationEnabled ?? true)]
+    [
+      Boolean(state.authSettings?.registrationEnabled ?? true),
+      clampCheckoutWindowMinutes(state.authSettings?.screeningCheckoutWindowMinutes, 2),
+      clampCheckoutWindowMinutes(state.authSettings?.extractionCheckoutWindowMinutes, 15)
+    ]
   );
 }
 

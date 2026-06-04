@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, Check, Clock, ShieldCheck, UserPlus, Users } from "lucide-react";
 import type { AppAuthSettings } from "@/lib/apiTypes";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle, StatusRow } from "@/components/prisma-review-ui";
@@ -14,11 +14,17 @@ type AdminCreateUserForm = {
   title: string;
 };
 
+type AuthSettingsForm = {
+  screeningCheckoutWindowMinutes: number;
+  extractionCheckoutWindowMinutes: number;
+};
+
 type RegisteredUsersSectionProps = {
   users: AppUser[];
   currentUser: AppUser;
   adminDirectoryMessage: string;
   authSettings: AppAuthSettings;
+  authSettingsForm: AuthSettingsForm;
   authSettingsMessage: string;
   adminResetUserPassword: (user: AppUser) => void;
   adminDeleteUser: (user: AppUser) => void;
@@ -32,6 +38,9 @@ type RegisteredUsersSectionProps = {
   pendingUserAction: { userId: string; action: "reset" | "delete" } | null;
   isUpdatingRegistrationSetting: boolean;
   updateRegistrationSetting: (enabled: boolean) => void;
+  onScreeningCheckoutWindowChange: (value: number) => void;
+  onExtractionCheckoutWindowChange: (value: number) => void;
+  updateCheckoutWindowSettings: (event: FormSubmitEvent) => void;
 };
 
 export function RegisteredUsersSection({
@@ -39,6 +48,7 @@ export function RegisteredUsersSection({
   currentUser,
   adminDirectoryMessage,
   authSettings,
+  authSettingsForm,
   authSettingsMessage,
   adminResetUserPassword,
   adminDeleteUser,
@@ -51,9 +61,13 @@ export function RegisteredUsersSection({
   isCreatingUser,
   pendingUserAction,
   isUpdatingRegistrationSetting,
-  updateRegistrationSetting
+  updateRegistrationSetting,
+  onScreeningCheckoutWindowChange,
+  onExtractionCheckoutWindowChange,
+  updateCheckoutWindowSettings
 }: RegisteredUsersSectionProps) {
   const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
+  const authSettingsMessageIsSuccess = /saved|disabled|enabled/i.test(authSettingsMessage);
 
   return (
     <div className="viewStack">
@@ -164,18 +178,63 @@ export function RegisteredUsersSection({
               onChange={(event) => updateRegistrationSetting(event.target.checked)}
             />
             <span />
-            <strong>{isUpdatingRegistrationSetting ? "Updating registration..." : "Allow public registration"}</strong>
+            <strong>{isUpdatingRegistrationSetting ? "Updating settings..." : "Allow public registration"}</strong>
           </label>
           <div className="stateRows">
             <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
             <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
           </div>
           {authSettingsMessage ? (
-            <div className={authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? "validationItem ok" : "validationItem blocked"}>
-              {authSettingsMessage.includes("disabled") || authSettingsMessage.includes("enabled") ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <div className={authSettingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+              {authSettingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
               <span>{authSettingsMessage}</span>
             </div>
           ) : null}
+        </div>
+
+        <div className="panel">
+          <SectionTitle icon={Clock} title="Queue Checkout Windows" action="Global" />
+          <form className="inviteForm" onSubmit={updateCheckoutWindowSettings}>
+            <label>
+              <span>Screening/full-text minutes</span>
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={authSettingsForm.screeningCheckoutWindowMinutes}
+                disabled={isUpdatingRegistrationSetting}
+                onChange={(event) => onScreeningCheckoutWindowChange(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              <span>Extraction minutes</span>
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={authSettingsForm.extractionCheckoutWindowMinutes}
+                disabled={isUpdatingRegistrationSetting}
+                onChange={(event) => onExtractionCheckoutWindowChange(Number(event.target.value))}
+              />
+            </label>
+            <button className="ghostButton" type="submit" disabled={isUpdatingRegistrationSetting}>
+              {isUpdatingRegistrationSetting ? (
+                <>
+                  <span className="inlineSpinner" aria-hidden="true" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check size={17} />
+                  Save windows
+                </>
+              )}
+            </button>
+          </form>
+          <div className="stateRows">
+            <StatusRow label="Screening/full text" value={`${authSettings.screeningCheckoutWindowMinutes} min`} tone="info" />
+            <StatusRow label="Extraction" value={`${authSettings.extractionCheckoutWindowMinutes} min`} tone="info" />
+          </div>
         </div>
       </section>
     </div>

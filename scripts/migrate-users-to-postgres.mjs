@@ -69,16 +69,27 @@ async function ensureSchema(client) {
 
 async function migrateAuthSettings(client, authSettings) {
   const registrationEnabled = typeof authSettings.registrationEnabled === "boolean" ? authSettings.registrationEnabled : true;
+  const screeningCheckoutWindowMinutes = Number.isFinite(Number(authSettings.screeningCheckoutWindowMinutes))
+    ? Math.max(1, Math.min(120, Math.round(Number(authSettings.screeningCheckoutWindowMinutes))))
+    : 2;
+  const extractionCheckoutWindowMinutes = Number.isFinite(Number(authSettings.extractionCheckoutWindowMinutes))
+    ? Math.max(1, Math.min(120, Math.round(Number(authSettings.extractionCheckoutWindowMinutes))))
+    : 15;
   await client.query(
     `
-      INSERT INTO auth_settings (id, registration_enabled, updated_at)
-      VALUES (1, $1, NOW())
+      INSERT INTO auth_settings (
+        id, registration_enabled, screening_checkout_window_minutes,
+        extraction_checkout_window_minutes, updated_at
+      )
+      VALUES (1, $1, $2, $3, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         registration_enabled = EXCLUDED.registration_enabled,
+        screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
+        extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
         updated_at = NOW()
     `,
-    [registrationEnabled]
+    [registrationEnabled, screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes]
   );
 }
 
