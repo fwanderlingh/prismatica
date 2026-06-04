@@ -10,6 +10,7 @@ type StageEvaluation = {
 
 type ScreeningSectionProps = {
   projectScreeningStudies: Study[];
+  totalScreeningStudyCount: number;
   screeningProgress: number;
   screenedByMe: number;
   decisions: Decision[];
@@ -37,6 +38,7 @@ type ScreeningSectionProps = {
 
 export function ScreeningSection({
   projectScreeningStudies,
+  totalScreeningStudyCount,
   screeningProgress,
   screenedByMe,
   decisions,
@@ -65,6 +67,7 @@ export function ScreeningSection({
   const activeDecisionValue = currentUserDecision?.decisionValue;
 
   if (projectScreeningStudies.length === 0) {
+    const hasCompletedScreeningQueue = totalScreeningStudyCount > 0;
     return (
       <div className="viewStack">
         <section className="overviewBand compactBand">
@@ -77,8 +80,12 @@ export function ScreeningSection({
         <section className="panel">
           <EmptyState
             icon={FileSearch}
-            title="No citations ready for screening"
-            description="Import RIS or BibTeX records to populate the title and abstract screening queue."
+            title={hasCompletedScreeningQueue ? "No active citations left" : "No citations ready for screening"}
+            description={
+              hasCompletedScreeningQueue
+                ? "Every title/abstract record has reached the required independent vote count or moved out of the active screening queue."
+                : "Import RIS or BibTeX records to populate the title and abstract screening queue."
+            }
           />
         </section>
       </div>
@@ -103,7 +110,7 @@ export function ScreeningSection({
 
       <section className="screeningLayout">
         <aside className="panel queuePanel">
-          <SectionTitle icon={ListChecks} title="Queue" action={`${screenedByMe}/${projectScreeningStudies.length}`} />
+          <SectionTitle icon={ListChecks} title="Queue" action={`${projectScreeningStudies.length} active`} />
           <div className="queueList">
             {projectScreeningStudies.map((study, index) => {
               const decision = decisions.find(

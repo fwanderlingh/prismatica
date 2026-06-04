@@ -570,6 +570,29 @@ function withReportWorkflowState(report: Report, project: ReviewProject | undefi
   };
 }
 
+function withStudyWorkflowState(study: Study, project: ReviewProject | undefined, decisions: Decision[]): Study {
+  if (!project) {
+    return study;
+  }
+
+  const currentDecisions = decisions.filter(
+    (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
+  );
+  const evaluation = evaluateStage(
+    "title_abstract",
+    currentDecisions.map((decision) => decision.decisionValue),
+    project.abstractRequiredVotes,
+    project.maybePolicy
+  );
+  return {
+    ...study,
+    titleAbstractStatus: evaluation.state,
+    titleAbstractStatusLabel: evaluation.label,
+    titleAbstractVoteCount: currentDecisions.length,
+    titleAbstractRequiredVotes: project.abstractRequiredVotes
+  };
+}
+
 function getUser(state: PersistedState, userId: string) {
   return state.users.find((user) => user.id === userId);
 }
@@ -654,7 +677,9 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
     users: state.users.filter((user) => currentUser.isAdmin || !user.isAdmin).map(publicUser),
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
-    studies: state.studies.filter((study) => study.projectId && projectIds.has(study.projectId)),
+    studies: state.studies
+      .filter((study) => study.projectId && projectIds.has(study.projectId))
+      .map((study) => withStudyWorkflowState(study, study.projectId ? projectById.get(study.projectId) : undefined, state.decisions)),
     reports: state.reports
       .filter((report) => projectIds.has(report.projectId))
       .map((report) => withReportWorkflowState(report, projectById.get(report.projectId), state.decisions)),
@@ -1882,6 +1907,20 @@ export function addScreeningDecisionForUser(
       decision.stage === "title_abstract" &&
       decision.isCurrent
   );
+  const currentDecisions = state.decisions.filter(
+    (decision) => decision.projectId === projectId && decision.studyId === studyId && decision.stage === "title_abstract" && decision.isCurrent
+  );
+  const currentEvaluation = evaluateStage(
+    "title_abstract",
+    currentDecisions.map((decision) => decision.decisionValue),
+    project.abstractRequiredVotes,
+    project.maybePolicy
+  );
+  const canAcceptAdditionalVote = currentEvaluation.state === "conflict" || currentEvaluation.state === "needs_third_vote";
+  if (!previousDecision && currentDecisions.length >= project.abstractRequiredVotes && !canAcceptAdditionalVote) {
+    throw new ApiError("This citation already has the required independent votes.");
+  }
+
   const nextDecision: Decision = {
     id: createId("dec"),
     projectId,

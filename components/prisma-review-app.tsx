@@ -757,6 +757,10 @@ export function PrismaReviewApp() {
     }
     return evaluations;
   }, [titleAbstractEvaluations, workflowConflicts]);
+  const activeScreeningStudies = useMemo(
+    () => getActiveTitleAbstractStudies(selectedProject, projectScreeningStudies, decisions),
+    [decisions, projectScreeningStudies, selectedProject]
+  );
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
   const projectStudyIds = new Set(projectScreeningStudies.map((study) => study.id));
   const projectReportIds = new Set(projectReportQueue.map((report) => report.id));
@@ -768,7 +772,7 @@ export function PrismaReviewApp() {
   const currentAuditPage = Math.min(auditPage, auditPageCount);
   const pagedProjectEvents = projectEvents.slice((currentAuditPage - 1) * AUDIT_PAGE_SIZE, currentAuditPage * AUDIT_PAGE_SIZE);
   const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, extractionResponses, projectEvents);
-  const currentStudy = projectScreeningStudies[studyIndex] ?? screeningStudies[0];
+  const currentStudy = activeScreeningStudies[studyIndex] ?? activeScreeningStudies[0] ?? projectScreeningStudies[0] ?? screeningStudies[0];
   const currentUserDecision = useMemo(
     () =>
       decisions.find(
@@ -1141,6 +1145,10 @@ export function PrismaReviewApp() {
   }, [activeView, isAuthenticated, isAuthResolved, selectedProject.requireSequentialPhases, sequentialPhaseAccess]);
 
   useEffect(() => {
+    setStudyIndex((index) => Math.min(index, Math.max(activeScreeningStudies.length - 1, 0)));
+  }, [activeScreeningStudies.length]);
+
+  useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
       if (activeView !== "screening") {
         return;
@@ -1170,7 +1178,7 @@ export function PrismaReviewApp() {
       }
       if (key === "j" || key === "arrowright") {
         event.preventDefault();
-        setStudyIndex((index) => Math.min(index + 1, Math.max(projectScreeningStudies.length - 1, 0)));
+        setStudyIndex((index) => Math.min(index + 1, Math.max(activeScreeningStudies.length - 1, 0)));
       }
       if (key === "k" || key === "arrowleft") {
         event.preventDefault();
@@ -1180,7 +1188,7 @@ export function PrismaReviewApp() {
 
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, [activeView, currentStudy.id, currentUserDecision, decisions, projectScreeningStudies.length, selectedProject.id]);
+  }, [activeScreeningStudies.length, activeView, currentStudy.id, currentUserDecision, decisions, selectedProject.id]);
 
   useEffect(() => {
     setAccountForm((previous) => ({
@@ -1486,7 +1494,10 @@ export function PrismaReviewApp() {
       navigateToProjectView("fullText");
       return;
     }
-    setStudyIndex(Math.max(conflict.studyIndex ?? 0, 0));
+    const activeConflictIndex = conflict.studyId
+      ? activeScreeningStudies.findIndex((study) => study.id === conflict.studyId)
+      : -1;
+    setStudyIndex(Math.max(activeConflictIndex >= 0 ? activeConflictIndex : conflict.studyIndex ?? 0, 0));
     navigateToProjectView("screening");
   }
 
@@ -2263,7 +2274,7 @@ export function PrismaReviewApp() {
   }
 
   async function addScreeningDecision(decisionValue: Exclude<DecisionValue, "not_retrieved">) {
-    if (projectScreeningStudies.length === 0) {
+    if (activeScreeningStudies.length === 0) {
       return;
     }
 
@@ -2283,7 +2294,15 @@ export function PrismaReviewApp() {
         setDecisionActions((previous) => [...previous, payload.decisionAction as DecisionAction]);
       }
       setScreeningNote("");
-      setStudyIndex((index) => Math.min(index + 1, Math.max(projectScreeningStudies.length - 1, 0)));
+      const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
+      const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
+      const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions);
+      const currentStudyNextIndex = nextActiveStudies.findIndex((study) => study.id === currentStudy.id);
+      const nextStudyIndex =
+        currentStudyNextIndex >= 0
+          ? Math.min(currentStudyNextIndex + 1, Math.max(nextActiveStudies.length - 1, 0))
+          : Math.min(studyIndex, Math.max(nextActiveStudies.length - 1, 0));
+      setStudyIndex(nextStudyIndex);
     } catch (error) {
       setLoginError(getErrorMessage(error));
     } finally {
@@ -2297,7 +2316,6 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const study = projectScreeningStudies.find((candidateStudy) => candidateStudy.id === lastAction.studyId);
     setIsUndoingScreeningDecision(true);
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/decisions/undo", {
@@ -2310,9 +2328,11 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setDecisionActions((previous) => previous.slice(0, -1));
-      if (study) {
-        setStudyIndex(projectScreeningStudies.findIndex((candidateStudy) => candidateStudy.id === study.id));
-      }
+      const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
+      const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
+      const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions);
+      const restoredStudyIndex = nextActiveStudies.findIndex((study) => study.id === lastAction.studyId);
+      setStudyIndex(restoredStudyIndex >= 0 ? restoredStudyIndex : 0);
     } catch (error) {
       setLoginError(getErrorMessage(error));
     } finally {
@@ -2561,7 +2581,8 @@ export function PrismaReviewApp() {
   function renderScreening() {
     return (
       <ScreeningSection
-        projectScreeningStudies={projectScreeningStudies}
+        projectScreeningStudies={activeScreeningStudies}
+        totalScreeningStudyCount={projectScreeningStudies.length}
         screeningProgress={screeningProgress}
         screenedByMe={screenedByMe}
         decisions={decisions}
@@ -3224,6 +3245,26 @@ function formatMaybePolicy(value: "advance_to_full_text" | "conflict" | "third_v
 
 function isTitleAbstractEvaluationComplete(evaluation: StageEvaluation | undefined) {
   return evaluation?.state === "advance_full_text" || evaluation?.state === "excluded_abstract";
+}
+
+function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[]) {
+  return studies.filter((study) => {
+    const currentDecisions = decisions.filter(
+      (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
+    );
+    const voteCount = study.titleAbstractVoteCount ?? currentDecisions.length;
+    const requiredVotes = study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes;
+    const evaluationState =
+      study.titleAbstractStatus ??
+      evaluateStage(
+        "title_abstract",
+        currentDecisions.map((decision) => decision.decisionValue),
+        requiredVotes,
+        project.maybePolicy
+      ).state;
+
+    return evaluationState === "conflict" || evaluationState === "needs_third_vote" || voteCount < requiredVotes;
+  });
 }
 
 function isFullTextEvaluationComplete(evaluation: StageEvaluation | undefined) {

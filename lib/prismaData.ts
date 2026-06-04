@@ -96,6 +96,10 @@ export type Study = {
   doi: string;
   source: string;
   stage: "title_abstract" | "full_text" | "extraction";
+  titleAbstractStatus?: string;
+  titleAbstractStatusLabel?: string;
+  titleAbstractVoteCount?: number;
+  titleAbstractRequiredVotes?: number;
   keywords: string[];
   pdfUrl?: string;
   rawCitation?: string;
