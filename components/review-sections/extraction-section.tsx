@@ -60,6 +60,8 @@ type ExtractionSectionProps = {
   toggleExtractionChoice: (fieldId: string, option: string, checked: boolean) => void;
 };
 
+const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
+
 export function ExtractionSection({
   activeCounts,
   projectReportQueue,
@@ -290,7 +292,7 @@ export function ExtractionSection({
     ? projectScreeningStudies.find((study) => study.id === activeReportForExtraction.studyId)
     : undefined;
   const extractionPdfUrl = activeReportForExtraction?.fileName
-    ? `/api/projects/${selectedProject.id}/reports/${activeReportForExtraction.id}?pdf=1&checksum=${encodeURIComponent(activeReportForExtraction.checksum ?? "")}`
+    ? `/api/projects/${selectedProject.id}/reports/${activeReportForExtraction.id}?pdf=1&checksum=${encodeURIComponent(activeReportForExtraction.checksum ?? "")}${pdfViewerPreferences}`
     : "";
   const submittedResponsesForActiveReport = activeReportForExtraction
     ? extractionResponses.filter(

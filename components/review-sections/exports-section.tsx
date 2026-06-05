@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, Check, CircleEllipsis, CheckCircle2, FileText, X } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, CircleEllipsis, FileText, X } from "lucide-react";
 import type { PrismaCounts } from "@/lib/prismaData";
 import { PrismaFlow, SectionTitle } from "@/components/prisma-review-ui";
 
@@ -48,6 +48,14 @@ export function ExportsSection({
   formatNumber
 }: ExportsSectionProps) {
   const exportMessageIsSuccess = /downloaded|generated|exported/i.test(exportMessage);
+  const failedConsistencyCopy = canExportExtractionCsv
+    ? "Consensus CSV export is available, but verify these PRISMA consistency issues before final reporting."
+    : "Consensus CSV export is blocked until the review is complete and exportable consensus data are available.";
+  const exportReadinessCopy = canExportExtractionCsv
+    ? exportConsistency.failedCount > 0
+      ? "Export can be downloaded now, but PRISMA consistency checks still need review before final reporting."
+      : "Export is available for the current finalized consensus dataset."
+    : "Export is disabled until the review is complete with an active extraction template, included studies, and current finalized consensus data.";
   const isZeroDataProject =
     recordsIdentified === 0 &&
     exportConsistency.screenedAndPreScreenRemovedTotal === 0 &&
@@ -112,7 +120,7 @@ export function ExportsSection({
         <div className="validationItem warning">
           <AlertTriangle size={17} />
           <span>
-            {exportConsistency.failedCount} consistency check{exportConsistency.failedCount === 1 ? "" : "s"} need review. Export is allowed, but verify these issues before final reporting.
+            {exportConsistency.failedCount} consistency check{exportConsistency.failedCount === 1 ? "" : "s"} need review. {failedConsistencyCopy}
           </span>
         </div>
       ) : null}
@@ -131,11 +139,15 @@ export function ExportsSection({
             <p className="subtle">
               Export the finalized consensus dataset used for downstream analysis. The CSV includes one row per included study with consensus-approved fields only.
             </p>
+            <div className={canExportExtractionCsv && exportConsistency.failedCount === 0 ? "validationItem ok" : "validationItem muted"}>
+              {canExportExtractionCsv && exportConsistency.failedCount === 0 ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>{exportReadinessCopy}</span>
+            </div>
             <div className="buttonRow exportPrimaryAction">
               <button
                 className="primaryButton"
                 type="button"
-                title="Download consensus extraction CSV"
+                title={canExportExtractionCsv ? "Download consensus extraction CSV" : "Complete review and finalize consensus data before exporting"}
                 onClick={downloadConsensusExtractionCsv}
                 disabled={!canExportExtractionCsv || isExportingConsensusCsv}
               >

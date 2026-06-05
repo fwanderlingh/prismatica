@@ -84,7 +84,7 @@ import {
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
-import type { ApiErrorPayload, AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
+import type { ApiErrorPayload, AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
 import {
   Badge,
@@ -106,7 +106,7 @@ import { ExportsSection } from "./review-sections/exports-section";
 import { AuditTrailSection } from "./review-sections/audit-trail-section";
 import { AboutSection } from "./review-sections/about-section";
 import { AdminReviewsSection } from "./review-sections/admin-reviews-section";
-import { RegisteredUsersSection } from "./review-sections/registered-users-section";
+import { CheckoutWindowSettingsForm, RegisteredUsersSection } from "./review-sections/registered-users-section";
 import { ImportEditorSection } from "./review-sections/import-editor-section";
 import { ImportsSection } from "./review-sections/imports-section";
 import { DedupSection } from "./review-sections/dedup-section";
@@ -148,8 +148,11 @@ const BRAND_TAGLINE = "Open source PRISMA review platform";
 const BRAND_LOGO_ALT = `${BRAND_NAME} logo`;
 const defaultAuthSettings: AppAuthSettings = {
   registrationEnabled: true,
-  screeningCheckoutWindowMinutes: 2,
-  extractionCheckoutWindowMinutes: 15
+};
+
+const defaultCheckoutWindowSettings = {
+  screeningCheckoutWindowMinutes: 60,
+  extractionCheckoutWindowMinutes: 120
 };
 
 const globalNavItems: NavItem[] = [
@@ -498,9 +501,11 @@ export function PrismaReviewApp() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
   const [authSettingsMessage, setAuthSettingsMessage] = useState("");
-  const [authSettingsForm, setAuthSettingsForm] = useState({
-    screeningCheckoutWindowMinutes: defaultAuthSettings.screeningCheckoutWindowMinutes,
-    extractionCheckoutWindowMinutes: defaultAuthSettings.extractionCheckoutWindowMinutes
+  const [checkoutWindowSettings, setCheckoutWindowSettings] = useState(defaultCheckoutWindowSettings);
+  const [checkoutWindowSettingsMessage, setCheckoutWindowSettingsMessage] = useState("");
+  const [checkoutWindowSettingsForm, setCheckoutWindowSettingsForm] = useState({
+    screeningCheckoutWindowMinutes: defaultCheckoutWindowSettings.screeningCheckoutWindowMinutes,
+    extractionCheckoutWindowMinutes: defaultCheckoutWindowSettings.extractionCheckoutWindowMinutes
   });
   const [captchaChallenge, setCaptchaChallenge] = useState<PublicAuthConfigPayload["captcha"] | null>(null);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
@@ -580,6 +585,7 @@ export function PrismaReviewApp() {
   const [isCreatingAdminUser, setIsCreatingAdminUser] = useState(false);
   const [pendingAdminUserAction, setPendingAdminUserAction] = useState<{ userId: string; action: "reset" | "delete" } | null>(null);
   const [isUpdatingRegistrationSetting, setIsUpdatingRegistrationSetting] = useState(false);
+  const [isUpdatingCheckoutWindowSettings, setIsUpdatingCheckoutWindowSettings] = useState(false);
   const [adminCreateUserForm, setAdminCreateUserForm] = useState({
     name: "",
     email: "",
@@ -587,6 +593,7 @@ export function PrismaReviewApp() {
     title: "Reviewer"
   });
   const [accountForm, setAccountForm] = useState({
+    name: "",
     organization: "",
     title: "",
     currentPassword: "",
@@ -1006,6 +1013,16 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function loadCheckoutWindowSettings() {
+    const payload = await apiRequest<CheckoutWindowSettingsForm>("/api/checkout-window-settings");
+
+    setCheckoutWindowSettings(payload);
+    setCheckoutWindowSettingsForm({
+      screeningCheckoutWindowMinutes: payload.screeningCheckoutWindowMinutes,
+      extractionCheckoutWindowMinutes: payload.extractionCheckoutWindowMinutes
+    });
+  }
+
   function applyPostAuthRedirect() {
     const params = new URLSearchParams(window.location.search);
     const target = sanitizeRedirectTarget(params.get("redirect"));
@@ -1199,7 +1216,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(authSettings.screeningCheckoutWindowMinutes));
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowSettings.screeningCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1213,7 +1230,7 @@ export function PrismaReviewApp() {
     };
   }, [
     activeView,
-    authSettings.screeningCheckoutWindowMinutes,
+    checkoutWindowSettings.screeningCheckoutWindowMinutes,
     currentStudy.id,
     isAuthResolved,
     isAuthenticated,
@@ -1249,7 +1266,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(authSettings.screeningCheckoutWindowMinutes));
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowSettings.screeningCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1265,7 +1282,7 @@ export function PrismaReviewApp() {
     activeReport.id,
     activeReport.studyId,
     activeView,
-    authSettings.screeningCheckoutWindowMinutes,
+    checkoutWindowSettings.screeningCheckoutWindowMinutes,
     isActiveReportInActiveFullTextQueue,
     isAuthResolved,
     isAuthenticated,
@@ -1308,7 +1325,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(authSettings.extractionCheckoutWindowMinutes));
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowSettings.extractionCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1325,7 +1342,7 @@ export function PrismaReviewApp() {
     activeExtractionReport?.studyId,
     activeExtractionTemplate?.id,
     activeView,
-    authSettings.extractionCheckoutWindowMinutes,
+    checkoutWindowSettings.extractionCheckoutWindowMinutes,
     isActiveExtractionReportInActiveQueue,
     isAuthResolved,
     isAuthenticated,
@@ -1377,6 +1394,7 @@ export function PrismaReviewApp() {
   useEffect(() => {
     setAccountForm((previous) => ({
       ...previous,
+      name: currentUser.name,
       organization: currentUser.organization,
       title: currentUser.title,
       currentPassword: "",
@@ -1384,14 +1402,17 @@ export function PrismaReviewApp() {
       websiteTheme: currentUser.websiteTheme ?? "system"
     }));
     setAccountMessage("");
-  }, [currentUser.id, currentUser.organization, currentUser.title, currentUser.websiteTheme]);
+  }, [currentUser.id, currentUser.name, currentUser.organization, currentUser.title, currentUser.websiteTheme]);
 
   useEffect(() => {
-    setAuthSettingsForm({
-      screeningCheckoutWindowMinutes: authSettings.screeningCheckoutWindowMinutes,
-      extractionCheckoutWindowMinutes: authSettings.extractionCheckoutWindowMinutes
+    setCheckoutWindowSettingsForm({
+      screeningCheckoutWindowMinutes: checkoutWindowSettings.screeningCheckoutWindowMinutes,
+      extractionCheckoutWindowMinutes: checkoutWindowSettings.extractionCheckoutWindowMinutes
     });
-  }, [authSettings.extractionCheckoutWindowMinutes, authSettings.screeningCheckoutWindowMinutes]);
+  }, [
+    checkoutWindowSettings.extractionCheckoutWindowMinutes,
+    checkoutWindowSettings.screeningCheckoutWindowMinutes
+  ]);
 
   useEffect(() => {
     const theme = currentUser.websiteTheme ?? "system";
@@ -1554,6 +1575,13 @@ export function PrismaReviewApp() {
 
   function applyAppState(payload: AppStatePayload | AppMutationPayload) {
     setAuthSettings(payload.authSettings ?? defaultAuthSettings);
+
+    const nextCheckoutWindowSettings = payload.checkoutWindowSettings ?? defaultCheckoutWindowSettings;
+    setCheckoutWindowSettings(nextCheckoutWindowSettings);
+    setCheckoutWindowSettingsForm({
+      screeningCheckoutWindowMinutes: nextCheckoutWindowSettings.screeningCheckoutWindowMinutes,
+      extractionCheckoutWindowMinutes: nextCheckoutWindowSettings.extractionCheckoutWindowMinutes
+    });
     setUsers(payload.users);
     setProjects(payload.projects);
     setImports(payload.imports);
@@ -2387,9 +2415,21 @@ export function PrismaReviewApp() {
     setAccountMessageTarget(action);
     setPendingAccountAction(action);
     try {
+      const requestBody =
+        action === "preferences"
+          ? {
+              websiteTheme: accountForm.websiteTheme
+            }
+          : {
+              name: accountForm.name,
+              organization: accountForm.organization,
+              title: accountForm.title,
+              currentPassword: accountForm.currentPassword,
+              newPassword: accountForm.newPassword
+            };
       const payload = await apiRequest<AppStatePayload>("/api/me", {
         method: "PATCH",
-        body: JSON.stringify(accountForm)
+        body: JSON.stringify(requestBody)
       });
       applyAppState(payload);
       setAccountForm((previous) => ({
@@ -2482,23 +2522,23 @@ export function PrismaReviewApp() {
 
   async function updateCheckoutWindowSettings(event: FormSubmitEvent) {
     event.preventDefault();
-    setAuthSettingsMessage("");
-    setIsUpdatingRegistrationSetting(true);
+    setCheckoutWindowSettingsMessage("");
+    setIsUpdatingCheckoutWindowSettings(true);
+    
     try {
-      const payload = await apiRequest<AppMutationPayload>("/api/admin/auth-settings", {
+      const payload = await apiRequest<AppMutationPayload>("/api/admin/checkout-window-settings", {
         method: "PATCH",
         body: JSON.stringify({
-          registrationEnabled: authSettings.registrationEnabled,
-          screeningCheckoutWindowMinutes: authSettingsForm.screeningCheckoutWindowMinutes,
-          extractionCheckoutWindowMinutes: authSettingsForm.extractionCheckoutWindowMinutes
+          screeningCheckoutWindowMinutes: checkoutWindowSettingsForm.screeningCheckoutWindowMinutes,
+          extractionCheckoutWindowMinutes: checkoutWindowSettingsForm.extractionCheckoutWindowMinutes
         })
       });
       applyAppState(payload);
-      setAuthSettingsMessage(payload.message ?? "Checkout windows saved.");
+      setCheckoutWindowSettingsMessage(payload.message ?? "Checkout windows saved.");
     } catch (error) {
-      setAuthSettingsMessage(getErrorMessage(error));
+      setCheckoutWindowSettingsMessage(getErrorMessage(error));
     } finally {
-      setIsUpdatingRegistrationSetting(false);
+      setIsUpdatingCheckoutWindowSettings(false);
     }
   }
 
@@ -2938,7 +2978,7 @@ export function PrismaReviewApp() {
   }
 
   function renderExports() {
-    const canExportExtractionCsv = Boolean(activeExtractionTemplate) && activeCounts.studiesIncluded > 0;
+    const canExportExtractionCsv = selectedProject.stage === "complete" && Boolean(activeExtractionTemplate) && activeCounts.studiesIncluded > 0;
 
     return (
       <ExportsSection
@@ -3086,8 +3126,10 @@ export function PrismaReviewApp() {
         currentUser={currentUser}
         adminDirectoryMessage={adminDirectoryMessage}
         authSettings={authSettings}
-        authSettingsForm={authSettingsForm}
+        checkoutWindowSettings={checkoutWindowSettings}
+        checkoutWindowSettingsForm={checkoutWindowSettingsForm}
         authSettingsMessage={authSettingsMessage}
+        checkoutWindowSettingsMessage={checkoutWindowSettingsMessage}
         adminResetUserPassword={adminResetUserPassword}
         adminDeleteUser={adminDeleteUser}
         createUserForm={adminCreateUserForm}
@@ -3099,12 +3141,19 @@ export function PrismaReviewApp() {
         isCreatingUser={isCreatingAdminUser}
         pendingUserAction={pendingAdminUserAction}
         isUpdatingRegistrationSetting={isUpdatingRegistrationSetting}
+        isUpdatingCheckoutWindowSettings={isUpdatingCheckoutWindowSettings}
         updateRegistrationSetting={updateRegistrationSetting}
         onScreeningCheckoutWindowChange={(value) =>
-          setAuthSettingsForm((previous) => ({ ...previous, screeningCheckoutWindowMinutes: value }))
+          setCheckoutWindowSettingsForm((previous) => ({
+            ...previous,
+            screeningCheckoutWindowMinutes: value
+          }))
         }
         onExtractionCheckoutWindowChange={(value) =>
-          setAuthSettingsForm((previous) => ({ ...previous, extractionCheckoutWindowMinutes: value }))
+          setCheckoutWindowSettingsForm((previous) => ({
+            ...previous,
+            extractionCheckoutWindowMinutes: value
+          }))
         }
         updateCheckoutWindowSettings={updateCheckoutWindowSettings}
       />
@@ -3118,6 +3167,7 @@ export function PrismaReviewApp() {
         handleLogout={handleLogout}
         updateAccount={updateAccount}
         accountForm={accountForm}
+        onAccountNameChange={(value) => setAccountForm((previous) => ({ ...previous, name: value }))}
         onAccountOrganizationChange={(value) => setAccountForm((previous) => ({ ...previous, organization: value }))}
         onAccountTitleChange={(value) => setAccountForm((previous) => ({ ...previous, title: value }))}
         onAccountCurrentPasswordChange={(value) => setAccountForm((previous) => ({ ...previous, currentPassword: value }))}

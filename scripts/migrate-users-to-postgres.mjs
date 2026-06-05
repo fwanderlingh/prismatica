@@ -70,10 +70,10 @@ async function ensureSchema(client) {
 async function migrateAuthSettings(client, authSettings) {
   const registrationEnabled = typeof authSettings.registrationEnabled === "boolean" ? authSettings.registrationEnabled : true;
   const screeningCheckoutWindowMinutes = Number.isFinite(Number(authSettings.screeningCheckoutWindowMinutes))
-    ? Math.max(1, Math.min(120, Math.round(Number(authSettings.screeningCheckoutWindowMinutes))))
+    ? Math.max(1, Math.min(600, Math.round(Number(authSettings.screeningCheckoutWindowMinutes))))
     : 2;
   const extractionCheckoutWindowMinutes = Number.isFinite(Number(authSettings.extractionCheckoutWindowMinutes))
-    ? Math.max(1, Math.min(120, Math.round(Number(authSettings.extractionCheckoutWindowMinutes))))
+    ? Math.max(1, Math.min(600, Math.round(Number(authSettings.extractionCheckoutWindowMinutes))))
     : 15;
   await client.query(
     `

@@ -52,6 +52,8 @@ type FullTextSectionProps = {
 
 type PdfLoadState = "idle" | "loading" | "ready" | "error";
 
+const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
+
 export function FullTextSection({
   hasProjectSeedData,
   phaseProgress,
@@ -78,7 +80,7 @@ export function FullTextSection({
   studies
 }: FullTextSectionProps) {
   const pdfViewerUrl = activeReport.fileName
-    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}`
+    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}${pdfViewerPreferences}`
     : "";
   const pdfFrameKey = [
     selectedProject.id,

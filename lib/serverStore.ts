@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
-import type { AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
+import type { AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
 import {
   type AppUser,
@@ -22,6 +22,7 @@ import {
   type WorkflowEvent
 } from "./prismaData";
 import { evaluateStage, type DecisionValue } from "./workflow";
+import { CheckoutWindowSettingsForm } from "@/components/review-sections/registered-users-section";
 
 type StoredUser = AppUser & {
   passwordHash: string;
@@ -33,6 +34,7 @@ type StoredUser = AppUser & {
 type PersistedState = {
   version: 1;
   authSettings: AppAuthSettings;
+  checkoutWindowSettings: AppCheckoutWindowSettings;
   users: StoredUser[];
   projects: ReviewProject[];
   imports: ImportBatch[];
@@ -66,8 +68,8 @@ type CaptchaPayload = {
 
 type WebsiteTheme = "light" | "dark" | "system";
 
-const defaultScreeningCheckoutWindowMinutes = 2;
-const defaultExtractionCheckoutWindowMinutes = 15;
+const defaultScreeningCheckoutWindowMinutes = 60;
+const defaultExtractionCheckoutWindowMinutes = 120;
 
 type NewProjectInput = {
   title?: string;
@@ -177,14 +179,13 @@ const pdfStorage = createPdfStorageAdapter({ dataFilePath });
 function defaultAuthSettings(): AppAuthSettings {
   return {
     registrationEnabled: process.env.PRISMATICA_REGISTRATION_ENABLED?.toLowerCase() === "false" ? false : true,
-    screeningCheckoutWindowMinutes: clampCheckoutWindowMinutes(
-      process.env.PRISMATICA_SCREENING_CHECKOUT_WINDOW_MINUTES,
-      defaultScreeningCheckoutWindowMinutes
-    ),
-    extractionCheckoutWindowMinutes: clampCheckoutWindowMinutes(
-      process.env.PRISMATICA_EXTRACTION_CHECKOUT_WINDOW_MINUTES,
-      defaultExtractionCheckoutWindowMinutes
-    )
+  };
+}
+
+function defaultCheckoutWindowSettings(): AppCheckoutWindowSettings {
+  return {
+    screeningCheckoutWindowMinutes: defaultScreeningCheckoutWindowMinutes,
+    extractionCheckoutWindowMinutes: defaultExtractionCheckoutWindowMinutes
   };
 }
 
@@ -192,7 +193,14 @@ function normalizeAuthSettings(settings: Partial<AppAuthSettings> | undefined): 
   const defaults = defaultAuthSettings();
   return {
     ...defaults,
-    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaults.registrationEnabled,
+    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaults.registrationEnabled
+  };
+}
+
+function normalizeCheckoutWindowSettings(settings: Partial<AppCheckoutWindowSettings> | undefined): AppCheckoutWindowSettings {
+  const defaults = defaultCheckoutWindowSettings();
+  return {
+    ...defaults,
     screeningCheckoutWindowMinutes: clampCheckoutWindowMinutes(
       settings?.screeningCheckoutWindowMinutes,
       defaults.screeningCheckoutWindowMinutes
@@ -209,7 +217,7 @@ function clampCheckoutWindowMinutes(value: unknown, fallback: number) {
   if (!Number.isFinite(numericValue)) {
     return fallback;
   }
-  return Math.max(1, Math.min(120, Math.round(numericValue)));
+  return Math.max(1, Math.min(600, Math.round(numericValue)));
 }
 
 function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
@@ -220,6 +228,7 @@ function createSeedState(): PersistedState {
   return {
     version: 1,
     authSettings: defaultAuthSettings(),
+    checkoutWindowSettings: defaultCheckoutWindowSettings(),
     users: [],
     projects: [],
     imports: [],
@@ -343,6 +352,7 @@ function getNextImportItemId(state: PersistedState, projectId: string) {
 function normalizeState(state: Partial<PersistedState>): PersistedState {
   const now = new Date().toISOString();
   const authSettings = normalizeAuthSettings(state.authSettings);
+  const checkoutWindowSettings = normalizeCheckoutWindowSettings(state.checkoutWindowSettings);
   const persistedUsers = Array.isArray(state.users) ? state.users.filter((user) => !demoUserIds.has(user.id)) : [];
   const users = ensureAdminUser(
     persistedUsers.map((user) => ({
@@ -473,6 +483,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
   const normalizedState: PersistedState = {
     version: 1,
     authSettings,
+    checkoutWindowSettings,
     users: users.map((user) => {
       if (user.passwordHash && user.passwordSalt) {
         return user as StoredUser;
@@ -813,7 +824,7 @@ function getExtractionCheckoutCapacity(
   return Math.max(project.extractionRequiredVotes - submittedResponses.length, 0);
 }
 
-function getCheckoutTtlMs(stage: ScreeningCheckout["stage"], settings: AppAuthSettings) {
+function getCheckoutTtlMs(stage: ScreeningCheckout["stage"], settings: AppCheckoutWindowSettings) {
   const minutes = stage === "extraction" ? settings.extractionCheckoutWindowMinutes : settings.screeningCheckoutWindowMinutes;
   return clampCheckoutWindowMinutes(minutes, stage === "extraction" ? defaultExtractionCheckoutWindowMinutes : defaultScreeningCheckoutWindowMinutes) * 60 * 1000;
 }
@@ -901,6 +912,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
   return {
     currentUser: publicUser(currentUser),
     authSettings: state.authSettings,
+    checkoutWindowSettings: state.checkoutWindowSettings,
     users: state.users.filter((user) => currentUser.isAdmin || !user.isAdmin).map(publicUser),
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
@@ -1086,25 +1098,48 @@ export function updateAuthSettingsForUser(adminUserIdInput: string, settings: Pa
     ...settings
   });
   const registrationChanged = previousSettings.registrationEnabled !== state.authSettings.registrationEnabled;
-  const checkoutWindowChanged =
-    previousSettings.screeningCheckoutWindowMinutes !== state.authSettings.screeningCheckoutWindowMinutes ||
-    previousSettings.extractionCheckoutWindowMinutes !== state.authSettings.extractionCheckoutWindowMinutes;
-  const eventMessage = checkoutWindowChanged
-    ? "Updated checkout windows"
-    : state.authSettings.registrationEnabled
+  const eventMessage = state.authSettings.registrationEnabled
       ? "Enabled public registration"
       : "Disabled public registration";
   appendEvent(state, adminUser.name, eventMessage, adminUser.id);
   writeState(state);
   return {
     ...buildPayload(state, adminUser.id),
-    message: checkoutWindowChanged
-      ? "Checkout windows saved."
-      : registrationChanged
+    message: registrationChanged
         ? state.authSettings.registrationEnabled
           ? "Public registration enabled."
           : "Public registration disabled."
         : "Admin settings saved."
+  };
+}
+
+export function updateCheckoutWindowSettingsForUser(
+  adminUserIdInput: string,
+  settings: Partial<CheckoutWindowSettingsForm>
+): AppMutationPayload {
+  const state = readState();
+  const adminUser = requireAdminUser(state, adminUserIdInput);
+
+  const previousSettings = normalizeCheckoutWindowSettings(state.checkoutWindowSettings);
+
+  state.checkoutWindowSettings = normalizeCheckoutWindowSettings({
+    ...previousSettings,
+    ...settings
+  });
+
+  const checkoutWindowChanged =
+    previousSettings.screeningCheckoutWindowMinutes !== state.checkoutWindowSettings.screeningCheckoutWindowMinutes ||
+    previousSettings.extractionCheckoutWindowMinutes !== state.checkoutWindowSettings.extractionCheckoutWindowMinutes;
+
+  const eventMessage = checkoutWindowChanged ? "Updated checkout windows" : "";
+
+  if (eventMessage) {
+    appendEvent(state, adminUser.name, eventMessage, adminUser.id);
+  }
+  writeState(state);
+  return {
+    ...buildPayload(state, adminUser.id),
+    message: checkoutWindowChanged ? "Checkout windows saved." : ""
   };
 }
 
@@ -1178,6 +1213,7 @@ export function registerUser(input: {
 export function updateCurrentUserForUser(
   userId: string,
   input: {
+    name?: string;
     organization?: string;
     title?: string;
     currentPassword?: string;
@@ -1191,13 +1227,14 @@ export function updateCurrentUserForUser(
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
   }
 
+  const name = input.name?.trim() ?? user.name;
   const organization = input.organization?.trim() ?? user.organization;
   const title = input.title?.trim() ?? user.title;
   const newPassword = input.newPassword?.trim() ?? "";
-  const websiteTheme = normalizeWebsiteTheme(input.websiteTheme);
+  const websiteTheme = input.websiteTheme === undefined ? normalizeWebsiteTheme(user.websiteTheme) : normalizeWebsiteTheme(input.websiteTheme);
 
-  if (!organization || !title) {
-    throw new ApiError("Organization and role title are required.");
+  if (!name || !organization || !title) {
+    throw new ApiError("Name, organization, and role title are required.");
   }
 
   let passwordUpdate: Pick<StoredUser, "passwordHash" | "passwordSalt"> | undefined;
@@ -1216,6 +1253,8 @@ export function updateCurrentUserForUser(
     candidate.id === userId
       ? {
           ...candidate,
+          name,
+          initials: getInitials(name),
           organization,
           title,
           websiteTheme,
@@ -2362,7 +2401,7 @@ export function updateScreeningCheckoutForUser(
       templateId: template.id,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.authSettings)).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.checkoutWindowSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2433,7 +2472,7 @@ export function updateScreeningCheckoutForUser(
       reportId,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.authSettings)).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.checkoutWindowSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2501,7 +2540,7 @@ export function updateScreeningCheckoutForUser(
     studyId,
     userId,
     checkedOutAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.authSettings)).toISOString()
+    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.checkoutWindowSettings)).toISOString()
   });
   writeState(state);
   return buildPayload(state, userId);

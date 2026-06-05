@@ -22,6 +22,8 @@ type StoredUserRecord = {
 type StoredState = {
   authSettings?: {
     registrationEnabled?: boolean;
+  };
+  checkoutWindowSettings?: {
     screeningCheckoutWindowMinutes?: number;
     extractionCheckoutWindowMinutes?: number;
   };
@@ -32,9 +34,9 @@ let pool: Pool | null = null;
 
 function dataFilePath() {
   if (process.env.PRISMATICA_DATA_FILE) {
-    return path.resolve(process.env.PRISMATICA_DATA_FILE);
+    return path.resolve(/*turbopackIgnore: true*/ process.env.PRISMATICA_DATA_FILE);
   }
-  return path.join(process.cwd(), "data", "prismatica-state.json");
+  return path.join(/*turbopackIgnore: true*/ process.cwd(), "data", "prismatica-state.json");
 }
 
 function usersSyncEnabled() {
@@ -57,10 +59,10 @@ function getPool() {
 
 function readState(): StoredState {
   const filePath = dataFilePath();
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ filePath)) {
     throw new Error(`State file not found: ${filePath}`);
   }
-  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as StoredState;
+  const parsed = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ filePath, "utf8")) as StoredState;
   return parsed;
 }
 
@@ -77,8 +79,8 @@ function parseIsoOrNow(value: string | undefined) {
 }
 
 async function ensureSchema(client: Pool) {
-  const sqlFile = path.join(process.cwd(), "db", "users_preferences.sql");
-  const sql = fs.readFileSync(sqlFile, "utf8");
+  const sqlFile = path.join(/*turbopackIgnore: true*/ process.cwd(), "db", "users_preferences.sql");
+  const sql = fs.readFileSync(/*turbopackIgnore: true*/ sqlFile, "utf8");
   await client.query(sql);
 }
 
@@ -133,26 +135,44 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
 async function upsertAuthSettings(
   client: Pool,
   registrationEnabled: boolean,
+) {
+  await client.query(
+    `
+      INSERT INTO auth_settings (
+        id, registration_enabled, updated_at
+      )
+      VALUES (1, $1, NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET
+        registration_enabled = EXCLUDED.registration_enabled,
+        updated_at = NOW()
+    `,
+    [registrationEnabled]
+  );
+}
+
+async function upsertCheckoutWindowSettings(
+  client: Pool,
   screeningCheckoutWindowMinutes: number,
   extractionCheckoutWindowMinutes: number
 ) {
   await client.query(
     `
-      INSERT INTO auth_settings (
-        id, registration_enabled, screening_checkout_window_minutes,
+      INSERT INTO checkout_window_settings (
+        id, screening_checkout_window_minutes,
         extraction_checkout_window_minutes, updated_at
       )
-      VALUES (1, $1, $2, $3, NOW())
+      VALUES (1, $1, $2, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
-        registration_enabled = EXCLUDED.registration_enabled,
         screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
         extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
         updated_at = NOW()
     `,
-    [registrationEnabled, screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes]
+    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes]
   );
 }
+
 
 export async function syncUserByIdToPostgres(userId: string) {
   if (!usersSyncEnabled()) {
@@ -178,12 +198,30 @@ export async function syncAuthSettingsToPostgres() {
 
   const state = readState();
   const registrationEnabled = state.authSettings?.registrationEnabled ?? true;
-  const screeningCheckoutWindowMinutes = state.authSettings?.screeningCheckoutWindowMinutes ?? 2;
-  const extractionCheckoutWindowMinutes = state.authSettings?.extractionCheckoutWindowMinutes ?? 15;
 
   const client = getPool();
   await ensureSchema(client);
-  await upsertAuthSettings(client, registrationEnabled, screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes);
+  await upsertAuthSettings(client, registrationEnabled);
+}
+
+export async function syncCheckoutWindowSettingsToPostgres() {
+  if (!usersSyncEnabled()) {
+    return;
+  }
+
+  const state = readState();
+  const screeningCheckoutWindowMinutes =
+    state.checkoutWindowSettings?.screeningCheckoutWindowMinutes ?? 60;
+  const extractionCheckoutWindowMinutes =
+    state.checkoutWindowSettings?.extractionCheckoutWindowMinutes ?? 120;
+
+  const client = getPool();
+  await ensureSchema(client);
+  await upsertCheckoutWindowSettings(
+    client,
+    screeningCheckoutWindowMinutes,
+    extractionCheckoutWindowMinutes
+  );
 }
 
 export async function deleteUserByIdFromPostgres(userId: string) {
