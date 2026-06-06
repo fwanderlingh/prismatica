@@ -3,16 +3,16 @@
 CREATE TABLE IF NOT EXISTS auth_settings (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   registration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-  screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 2,
-  extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 15,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE auth_settings
-  ADD COLUMN IF NOT EXISTS screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 2;
+CREATE TABLE IF NOT EXISTS checkout_window_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 60,
+  extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 120,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-ALTER TABLE auth_settings
-  ADD COLUMN IF NOT EXISTS extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 15;
 
 CREATE TABLE IF NOT EXISTS app_users (
   id TEXT PRIMARY KEY,

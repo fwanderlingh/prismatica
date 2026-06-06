@@ -9,6 +9,7 @@ type FormSubmitEvent = {
 export type ProfileSaveAction = "account" | "preferences";
 
 type AccountFormShape = {
+  name: string;
   organization: string;
   title: string;
   currentPassword: string;
@@ -21,6 +22,7 @@ type ProfileSectionProps = {
   handleLogout: () => void;
   updateAccount: (event: FormSubmitEvent, action: ProfileSaveAction) => void;
   accountForm: AccountFormShape;
+  onAccountNameChange: (value: string) => void;
   onAccountOrganizationChange: (value: string) => void;
   onAccountTitleChange: (value: string) => void;
   onAccountCurrentPasswordChange: (value: string) => void;
@@ -36,6 +38,7 @@ export function ProfileSection({
   handleLogout,
   updateAccount,
   accountForm,
+  onAccountNameChange,
   onAccountOrganizationChange,
   onAccountTitleChange,
   onAccountCurrentPasswordChange,
@@ -76,8 +79,22 @@ export function ProfileSection({
           <SectionTitle icon={UserCircle} title="Account" action="Server session" />
           <form className="accountForm" aria-busy={isSavingAccount} onSubmit={(event) => updateAccount(event, "account")}>
             <label>
+              <span>Display name</span>
+              <input
+                autoComplete="name"
+                value={accountForm.name}
+                disabled={isSavingProfile}
+                onChange={(event) => onAccountNameChange(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Email</span>
+              <input type="email" value={currentUser.email} disabled readOnly />
+            </label>
+            <label>
               <span>Organization</span>
               <input
+                autoComplete="organization"
                 value={accountForm.organization}
                 disabled={isSavingProfile}
                 onChange={(event) => onAccountOrganizationChange(event.target.value)}
@@ -86,6 +103,7 @@ export function ProfileSection({
             <label>
               <span>Role title</span>
               <input
+                autoComplete="organization-title"
                 value={accountForm.title}
                 disabled={isSavingProfile}
                 onChange={(event) => onAccountTitleChange(event.target.value)}

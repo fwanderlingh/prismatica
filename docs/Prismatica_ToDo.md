@@ -6,7 +6,6 @@ PRISMATICA
 
 1. Add a flow diagram generator: https://github.com/prisma-flowdiagram/PRISMA2020ok
 
-2. For exclusion reasons, use project-customizable controlled values -> Check
 
 
 

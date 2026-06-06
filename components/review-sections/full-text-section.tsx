@@ -52,6 +52,8 @@ type FullTextSectionProps = {
 
 type PdfLoadState = "idle" | "loading" | "ready" | "error";
 
+const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
+
 export function FullTextSection({
   hasProjectSeedData,
   phaseProgress,
@@ -78,7 +80,7 @@ export function FullTextSection({
   studies
 }: FullTextSectionProps) {
   const pdfViewerUrl = activeReport.fileName
-    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}`
+    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}${pdfViewerPreferences}`
     : "";
   const pdfFrameKey = [
     selectedProject.id,
@@ -146,6 +148,7 @@ export function FullTextSection({
   const uploadedPdfPercent = totalFullTextReportCount > 0 ? Math.round((uploadedPdfCount / totalFullTextReportCount) * 100) : 0;
   const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
   const canInclude = activeReport.retrievalStatus === "retrieved" && hasUploadedPdf;
+  const hasConfiguredExclusionReasons = exclusionReasons.length > 0;
   const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
   const canRecordFullTextDecision = hasUploadedPdf && (hasFullTextCheckout || Boolean(activeFullTextDecision));
   const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
@@ -398,7 +401,7 @@ export function FullTextSection({
             <button
               className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
               type="button"
-              disabled={!canRecordFullTextDecision || isFullTextActionPending}
+              disabled={!canRecordFullTextDecision || !hasConfiguredExclusionReasons || isFullTextActionPending}
               onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
             >
               {pendingFullTextAction === "exclude" ? <span className="inlineSpinner" aria-hidden="true" /> : <XCircle size={18} />}
@@ -409,19 +412,27 @@ export function FullTextSection({
           <label className="fieldLabel" htmlFor="exclusion-reason">
             Exclusion reason
           </label>
-          <select id="exclusion-reason" value={fullTextReason} disabled={!canRecordFullTextDecision || isFullTextActionPending} onChange={(event) => setFullTextReason(event.target.value)}>
+          <select
+            id="exclusion-reason"
+            value={fullTextReason}
+            disabled={!canRecordFullTextDecision || !hasConfiguredExclusionReasons || isFullTextActionPending}
+            onChange={(event) => setFullTextReason(event.target.value)}
+          >
             {exclusionReasons.map((reason) => (
               <option value={reason} key={reason}>
                 {reason}
               </option>
             ))}
           </select>
+          {!hasConfiguredExclusionReasons ? <p className="subtle">No reasons set.</p> : null}
 
           <div className={canInclude && canRecordFullTextDecision && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
             {canInclude && canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
               {!hasUploadedPdf
                 ? "Upload the PDF before recording a full-text vote or exclusion reason."
+                : !hasConfiguredExclusionReasons
+                ? "Set project exclusion reasons before recording an exclusion."
                 : !canRecordFullTextDecision
                 ? "Waiting for an active reviewer slot before recording a full-text vote."
                 : hasFullTextConflict

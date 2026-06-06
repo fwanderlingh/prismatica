@@ -1544,7 +1544,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 .settingList {
   display: grid;
   gap: calc(8px * var(--ui-scale));
-  margin-top: calc(16px * var(--ui-scale));
+  margin: calc(16px * var(--ui-scale)) 0;
 }
 
 .statusRow,
@@ -2884,8 +2884,11 @@ input[type="checkbox"] {
   padding: 0;
 }
 
-select:disabled {
+input:disabled,
+select:disabled,
+textarea:disabled {
   color: #8b989f;
+  /*cursor: not-allowed;*/
   background: var(--surface-tint);
 }
 
@@ -3065,8 +3068,8 @@ select:disabled {
 
 .formActionsProminent {
   position: sticky;
-  top: calc(16px * var(--ui-scale));
-  z-index: 3;
+  top: calc(72px * var(--ui-scale));
+  z-index: 19;
   border-color: color-mix(in srgb, var(--teal) 24%, var(--border));
   background-color: var(--surface);
   background-image: linear-gradient(135deg, color-mix(in srgb, var(--teal-soft) 78%, var(--surface) 22%), var(--surface));
@@ -3414,6 +3417,9 @@ button:disabled {
   gap: calc(12px * var(--ui-scale));
   align-items: center;
   cursor: pointer;
+  border-top: calc(1px * var(--ui-scale)) solid var(--border);
+  padding-top: calc(12px * var(--ui-scale));
+  margin-top: calc(12px * var(--ui-scale));
 }
 
 .toggleRow input {
@@ -3456,7 +3462,7 @@ button:disabled {
 
 .toggleRow input:disabled + span,
 .toggleRow input:disabled ~ strong {
-  cursor: not-allowed;
+  /*cursor: not-allowed;*/
   opacity: 0.55;
 }
 

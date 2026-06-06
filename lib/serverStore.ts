@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
-import type { AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
+import type { AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
 import {
   type AppUser,
@@ -33,6 +33,7 @@ type StoredUser = AppUser & {
 type PersistedState = {
   version: 1;
   authSettings: AppAuthSettings;
+  checkoutWindowSettings: AppCheckoutWindowSettings;
   users: StoredUser[];
   projects: ReviewProject[];
   imports: ImportBatch[];
@@ -66,8 +67,8 @@ type CaptchaPayload = {
 
 type WebsiteTheme = "light" | "dark" | "system";
 
-const defaultScreeningCheckoutWindowMinutes = 2;
-const defaultExtractionCheckoutWindowMinutes = 15;
+const defaultScreeningCheckoutWindowMinutes = 60;
+const defaultExtractionCheckoutWindowMinutes = 120;
 
 type NewProjectInput = {
   title?: string;
@@ -80,6 +81,7 @@ type NewProjectInput = {
   abstractRequiredVotes?: number;
   fullTextRequiredVotes?: number;
   extractionRequiredVotes?: number;
+  exclusionReasons?: string[];
   maybePolicy?: ReviewProject["maybePolicy"];
   requireSequentialPhases?: boolean;
   memberIds?: string[];
@@ -177,14 +179,13 @@ const pdfStorage = createPdfStorageAdapter({ dataFilePath });
 function defaultAuthSettings(): AppAuthSettings {
   return {
     registrationEnabled: process.env.PRISMATICA_REGISTRATION_ENABLED?.toLowerCase() === "false" ? false : true,
-    screeningCheckoutWindowMinutes: clampCheckoutWindowMinutes(
-      process.env.PRISMATICA_SCREENING_CHECKOUT_WINDOW_MINUTES,
-      defaultScreeningCheckoutWindowMinutes
-    ),
-    extractionCheckoutWindowMinutes: clampCheckoutWindowMinutes(
-      process.env.PRISMATICA_EXTRACTION_CHECKOUT_WINDOW_MINUTES,
-      defaultExtractionCheckoutWindowMinutes
-    )
+  };
+}
+
+function defaultCheckoutWindowSettings(): AppCheckoutWindowSettings {
+  return {
+    screeningCheckoutWindowMinutes: defaultScreeningCheckoutWindowMinutes,
+    extractionCheckoutWindowMinutes: defaultExtractionCheckoutWindowMinutes
   };
 }
 
@@ -192,7 +193,14 @@ function normalizeAuthSettings(settings: Partial<AppAuthSettings> | undefined): 
   const defaults = defaultAuthSettings();
   return {
     ...defaults,
-    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaults.registrationEnabled,
+    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaults.registrationEnabled
+  };
+}
+
+function normalizeCheckoutWindowSettings(settings: Partial<AppCheckoutWindowSettings> | undefined): AppCheckoutWindowSettings {
+  const defaults = defaultCheckoutWindowSettings();
+  return {
+    ...defaults,
     screeningCheckoutWindowMinutes: clampCheckoutWindowMinutes(
       settings?.screeningCheckoutWindowMinutes,
       defaults.screeningCheckoutWindowMinutes
@@ -209,7 +217,26 @@ function clampCheckoutWindowMinutes(value: unknown, fallback: number) {
   if (!Number.isFinite(numericValue)) {
     return fallback;
   }
-  return Math.max(1, Math.min(120, Math.round(numericValue)));
+  return Math.max(1, Math.min(600, Math.round(numericValue)));
+}
+
+function normalizeExclusionReasons(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const uniqueReasons = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") {
+      continue;
+    }
+    const trimmed = item.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    uniqueReasons.add(trimmed);
+  }
+  return Array.from(uniqueReasons);
 }
 
 function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
@@ -220,6 +247,7 @@ function createSeedState(): PersistedState {
   return {
     version: 1,
     authSettings: defaultAuthSettings(),
+    checkoutWindowSettings: defaultCheckoutWindowSettings(),
     users: [],
     projects: [],
     imports: [],
@@ -343,6 +371,7 @@ function getNextImportItemId(state: PersistedState, projectId: string) {
 function normalizeState(state: Partial<PersistedState>): PersistedState {
   const now = new Date().toISOString();
   const authSettings = normalizeAuthSettings(state.authSettings);
+  const checkoutWindowSettings = normalizeCheckoutWindowSettings(state.checkoutWindowSettings);
   const persistedUsers = Array.isArray(state.users) ? state.users.filter((user) => !demoUserIds.has(user.id)) : [];
   const users = ensureAdminUser(
     persistedUsers.map((user) => ({
@@ -361,6 +390,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
           searchStrategies: typeof project.searchStrategies === "string" ? project.searchStrategies : "",
           fullTextRequiredVotes: clampFullTextVoteCount(project.fullTextRequiredVotes),
           extractionRequiredVotes: clampVoteCount(project.extractionRequiredVotes),
+          exclusionReasons: normalizeExclusionReasons(project.exclusionReasons),
           requireSequentialPhases:
             typeof project.requireSequentialPhases === "boolean" ? project.requireSequentialPhases : true,
           ownerIds: normalizeOwnerIds(project, userIds),
@@ -473,6 +503,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
   const normalizedState: PersistedState = {
     version: 1,
     authSettings,
+    checkoutWindowSettings,
     users: users.map((user) => {
       if (user.passwordHash && user.passwordSalt) {
         return user as StoredUser;
@@ -813,7 +844,7 @@ function getExtractionCheckoutCapacity(
   return Math.max(project.extractionRequiredVotes - submittedResponses.length, 0);
 }
 
-function getCheckoutTtlMs(stage: ScreeningCheckout["stage"], settings: AppAuthSettings) {
+function getCheckoutTtlMs(stage: ScreeningCheckout["stage"], settings: AppCheckoutWindowSettings) {
   const minutes = stage === "extraction" ? settings.extractionCheckoutWindowMinutes : settings.screeningCheckoutWindowMinutes;
   return clampCheckoutWindowMinutes(minutes, stage === "extraction" ? defaultExtractionCheckoutWindowMinutes : defaultScreeningCheckoutWindowMinutes) * 60 * 1000;
 }
@@ -901,6 +932,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
   return {
     currentUser: publicUser(currentUser),
     authSettings: state.authSettings,
+    checkoutWindowSettings: state.checkoutWindowSettings,
     users: state.users.filter((user) => currentUser.isAdmin || !user.isAdmin).map(publicUser),
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
@@ -1086,25 +1118,48 @@ export function updateAuthSettingsForUser(adminUserIdInput: string, settings: Pa
     ...settings
   });
   const registrationChanged = previousSettings.registrationEnabled !== state.authSettings.registrationEnabled;
-  const checkoutWindowChanged =
-    previousSettings.screeningCheckoutWindowMinutes !== state.authSettings.screeningCheckoutWindowMinutes ||
-    previousSettings.extractionCheckoutWindowMinutes !== state.authSettings.extractionCheckoutWindowMinutes;
-  const eventMessage = checkoutWindowChanged
-    ? "Updated checkout windows"
-    : state.authSettings.registrationEnabled
+  const eventMessage = state.authSettings.registrationEnabled
       ? "Enabled public registration"
       : "Disabled public registration";
   appendEvent(state, adminUser.name, eventMessage, adminUser.id);
   writeState(state);
   return {
     ...buildPayload(state, adminUser.id),
-    message: checkoutWindowChanged
-      ? "Checkout windows saved."
-      : registrationChanged
+    message: registrationChanged
         ? state.authSettings.registrationEnabled
           ? "Public registration enabled."
           : "Public registration disabled."
         : "Admin settings saved."
+  };
+}
+
+export function updateCheckoutWindowSettingsForUser(
+  adminUserIdInput: string,
+  settings: Partial<AppCheckoutWindowSettings>
+): AppMutationPayload {
+  const state = readState();
+  const adminUser = requireAdminUser(state, adminUserIdInput);
+
+  const previousSettings = normalizeCheckoutWindowSettings(state.checkoutWindowSettings);
+
+  state.checkoutWindowSettings = normalizeCheckoutWindowSettings({
+    ...previousSettings,
+    ...settings
+  });
+
+  const checkoutWindowChanged =
+    previousSettings.screeningCheckoutWindowMinutes !== state.checkoutWindowSettings.screeningCheckoutWindowMinutes ||
+    previousSettings.extractionCheckoutWindowMinutes !== state.checkoutWindowSettings.extractionCheckoutWindowMinutes;
+
+  const eventMessage = checkoutWindowChanged ? "Updated checkout windows" : "";
+
+  if (eventMessage) {
+    appendEvent(state, adminUser.name, eventMessage, adminUser.id);
+  }
+  writeState(state);
+  return {
+    ...buildPayload(state, adminUser.id),
+    message: checkoutWindowChanged ? "Checkout windows saved." : ""
   };
 }
 
@@ -1178,6 +1233,7 @@ export function registerUser(input: {
 export function updateCurrentUserForUser(
   userId: string,
   input: {
+    name?: string;
     organization?: string;
     title?: string;
     currentPassword?: string;
@@ -1191,13 +1247,14 @@ export function updateCurrentUserForUser(
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
   }
 
+  const name = input.name?.trim() ?? user.name;
   const organization = input.organization?.trim() ?? user.organization;
   const title = input.title?.trim() ?? user.title;
   const newPassword = input.newPassword?.trim() ?? "";
-  const websiteTheme = normalizeWebsiteTheme(input.websiteTheme);
+  const websiteTheme = input.websiteTheme === undefined ? normalizeWebsiteTheme(user.websiteTheme) : normalizeWebsiteTheme(input.websiteTheme);
 
-  if (!organization || !title) {
-    throw new ApiError("Organization and role title are required.");
+  if (!name || !organization || !title) {
+    throw new ApiError("Name, organization, and role title are required.");
   }
 
   let passwordUpdate: Pick<StoredUser, "passwordHash" | "passwordSalt"> | undefined;
@@ -1216,6 +1273,8 @@ export function updateCurrentUserForUser(
     candidate.id === userId
       ? {
           ...candidate,
+          name,
+          initials: getInitials(name),
           organization,
           title,
           websiteTheme,
@@ -1425,6 +1484,7 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes),
     fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes),
     extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes),
+    exclusionReasons: normalizeExclusionReasons(input.exclusionReasons),
     maybePolicy: input.maybePolicy ?? "advance_to_full_text",
     requireSequentialPhases: typeof input.requireSequentialPhases === "boolean" ? input.requireSequentialPhases : true,
     reviewers: memberIds.length,
@@ -1470,6 +1530,7 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
   }
 
   const maybePolicy = input.maybePolicy ?? project.maybePolicy;
+  const exclusionReasons = input.exclusionReasons ? normalizeExclusionReasons(input.exclusionReasons) : project.exclusionReasons;
   if (!["advance_to_full_text", "conflict", "third_vote"].includes(maybePolicy)) {
     throw new ApiError("Choose a valid maybe policy.");
   }
@@ -1488,6 +1549,7 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
           abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes ?? project.abstractRequiredVotes),
           fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes ?? project.fullTextRequiredVotes),
           extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes ?? project.extractionRequiredVotes),
+          exclusionReasons,
           maybePolicy,
           requireSequentialPhases:
             typeof input.requireSequentialPhases === "boolean" ? input.requireSequentialPhases : project.requireSequentialPhases,
@@ -2362,7 +2424,7 @@ export function updateScreeningCheckoutForUser(
       templateId: template.id,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.authSettings)).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.checkoutWindowSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2433,7 +2495,7 @@ export function updateScreeningCheckoutForUser(
       reportId,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.authSettings)).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.checkoutWindowSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2501,7 +2563,7 @@ export function updateScreeningCheckoutForUser(
     studyId,
     userId,
     checkedOutAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.authSettings)).toISOString()
+    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.checkoutWindowSettings)).toISOString()
   });
   writeState(state);
   return buildPayload(state, userId);
@@ -2639,6 +2701,12 @@ export function updateReportForUser(
   }
   if (decisionValue === "exclude" && !input.exclusionReasonId?.trim()) {
     throw new ApiError("Choose an exclusion reason for a full-text exclusion.");
+  }
+  if (decisionValue === "exclude" && project.exclusionReasons.length === 0) {
+    throw new ApiError("No exclusion reasons set for this project.");
+  }
+  if (decisionValue === "exclude" && input.exclusionReasonId && !project.exclusionReasons.includes(input.exclusionReasonId.trim())) {
+    throw new ApiError("Choose a valid project exclusion reason.");
   }
 
   let previousFullTextDecision: Decision | undefined;

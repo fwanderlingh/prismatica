@@ -1,5 +1,6 @@
+import { useMemo, useState } from "react";
 import { AlertTriangle, Check, Clock, ShieldCheck, UserPlus, Users } from "lucide-react";
-import type { AppAuthSettings } from "@/lib/apiTypes";
+import type { AppAuthSettings, AppCheckoutWindowSettings } from "@/lib/apiTypes";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 
@@ -14,7 +15,7 @@ type AdminCreateUserForm = {
   title: string;
 };
 
-type AuthSettingsForm = {
+export type CheckoutWindowSettingsForm = {
   screeningCheckoutWindowMinutes: number;
   extractionCheckoutWindowMinutes: number;
 };
@@ -24,8 +25,10 @@ type RegisteredUsersSectionProps = {
   currentUser: AppUser;
   adminDirectoryMessage: string;
   authSettings: AppAuthSettings;
-  authSettingsForm: AuthSettingsForm;
   authSettingsMessage: string;
+  checkoutWindowSettings: AppCheckoutWindowSettings;
+  checkoutWindowSettingsForm: CheckoutWindowSettingsForm;
+  checkoutWindowSettingsMessage: string;
   adminResetUserPassword: (user: AppUser) => void;
   adminDeleteUser: (user: AppUser) => void;
   createUserForm: AdminCreateUserForm;
@@ -37,19 +40,24 @@ type RegisteredUsersSectionProps = {
   isCreatingUser: boolean;
   pendingUserAction: { userId: string; action: "reset" | "delete" } | null;
   isUpdatingRegistrationSetting: boolean;
+  isUpdatingCheckoutWindowSettings: boolean;
   updateRegistrationSetting: (enabled: boolean) => void;
   onScreeningCheckoutWindowChange: (value: number) => void;
   onExtractionCheckoutWindowChange: (value: number) => void;
   updateCheckoutWindowSettings: (event: FormSubmitEvent) => void;
 };
 
+const adminUsersPageSize = 10;
+
 export function RegisteredUsersSection({
   users,
   currentUser,
   adminDirectoryMessage,
   authSettings,
-  authSettingsForm,
+  checkoutWindowSettings,
+  checkoutWindowSettingsForm,
   authSettingsMessage,
+  checkoutWindowSettingsMessage,
   adminResetUserPassword,
   adminDeleteUser,
   createUserForm,
@@ -61,6 +69,7 @@ export function RegisteredUsersSection({
   isCreatingUser,
   pendingUserAction,
   isUpdatingRegistrationSetting,
+  isUpdatingCheckoutWindowSettings,
   updateRegistrationSetting,
   onScreeningCheckoutWindowChange,
   onExtractionCheckoutWindowChange,
@@ -68,6 +77,14 @@ export function RegisteredUsersSection({
 }: RegisteredUsersSectionProps) {
   const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
   const authSettingsMessageIsSuccess = /saved|disabled|enabled/i.test(authSettingsMessage);
+  const checkoutWindowSettingsMessageIsSuccess = /saved/i.test(checkoutWindowSettingsMessage);
+  const userPageCount = Math.max(1, Math.ceil(users.length / adminUsersPageSize));
+  const [userPage, setUserPage] = useState(1);
+  const currentUserPage = Math.min(userPage, userPageCount);
+  const userPageStart = (currentUserPage - 1) * adminUsersPageSize;
+  const pagedUsers = useMemo(() => users.slice(userPageStart, userPageStart + adminUsersPageSize), [userPageStart, users]);
+  const firstUserNumber = users.length === 0 ? 0 : userPageStart + 1;
+  const lastUserNumber = Math.min(userPageStart + pagedUsers.length, users.length);
 
   return (
     <div className="viewStack">
@@ -83,7 +100,7 @@ export function RegisteredUsersSection({
         <div className="panel">
           <SectionTitle icon={Users} title="User Accounts" action={`${users.length} registered`} />
           <div className="memberPicker">
-            {users.map((user) => {
+            {pagedUsers.map((user) => {
               const isResettingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "reset";
               const isDeletingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "delete";
               const disableUserActions = user.id === currentUser.id || user.isAdmin || pendingUserAction !== null;
@@ -124,6 +141,17 @@ export function RegisteredUsersSection({
               );
             })}
           </div>
+          {userPageCount > 1 ? (
+            <div className="paginationBar" aria-label="User directory pagination">
+              <button className="ghostButton" type="button" disabled={currentUserPage <= 1} onClick={() => setUserPage(Math.max(currentUserPage - 1, 1))}>
+                Previous
+              </button>
+              <span>{`Showing ${firstUserNumber}-${lastUserNumber} of ${users.length}`}</span>
+              <button className="ghostButton" type="button" disabled={currentUserPage >= userPageCount} onClick={() => setUserPage(Math.min(currentUserPage + 1, userPageCount))}>
+                Next
+              </button>
+            </div>
+          ) : null}
           {adminDirectoryMessage ? (
             <div className={adminDirectoryMessageIsSuccess ? "validationItem ok adminDirectoryFeedback" : "validationItem blocked adminDirectoryFeedback"}>
               {adminDirectoryMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
@@ -170,6 +198,7 @@ export function RegisteredUsersSection({
 
         <div className="panel">
           <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
+          <p className="subtle">Control whether new users can self-register.</p>
           <label className="toggleRow">
             <input
               type="checkbox"
@@ -178,7 +207,7 @@ export function RegisteredUsersSection({
               onChange={(event) => updateRegistrationSetting(event.target.checked)}
             />
             <span />
-            <strong>{isUpdatingRegistrationSetting ? "Updating settings..." : "Allow public registration"}</strong>
+            <strong>{isUpdatingRegistrationSetting ? "Saving registration policy..." : "Allow public registration"}</strong>
           </label>
           <div className="stateRows">
             <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
@@ -194,15 +223,16 @@ export function RegisteredUsersSection({
 
         <div className="panel">
           <SectionTitle icon={Clock} title="Queue Checkout Windows" action="Global" />
+          <p className="subtle">Set how long screening, full-text, and extraction checkouts stay active.</p>
           <form className="inviteForm" onSubmit={updateCheckoutWindowSettings}>
             <label>
               <span>Screening/full-text minutes</span>
               <input
                 type="number"
                 min={1}
-                max={120}
-                value={authSettingsForm.screeningCheckoutWindowMinutes}
-                disabled={isUpdatingRegistrationSetting}
+                max={600}
+                value={checkoutWindowSettingsForm.screeningCheckoutWindowMinutes}
+                disabled={isUpdatingCheckoutWindowSettings}
                 onChange={(event) => onScreeningCheckoutWindowChange(Number(event.target.value))}
               />
             </label>
@@ -211,30 +241,36 @@ export function RegisteredUsersSection({
               <input
                 type="number"
                 min={1}
-                max={120}
-                value={authSettingsForm.extractionCheckoutWindowMinutes}
-                disabled={isUpdatingRegistrationSetting}
+                max={600}
+                value={checkoutWindowSettingsForm.extractionCheckoutWindowMinutes}
+                disabled={isUpdatingCheckoutWindowSettings}
                 onChange={(event) => onExtractionCheckoutWindowChange(Number(event.target.value))}
               />
             </label>
-            <button className="ghostButton" type="submit" disabled={isUpdatingRegistrationSetting}>
-              {isUpdatingRegistrationSetting ? (
+            <button className="ghostButton" type="submit" disabled={isUpdatingCheckoutWindowSettings}>
+              {isUpdatingCheckoutWindowSettings ? (
                 <>
                   <span className="inlineSpinner" aria-hidden="true" />
-                  Saving...
+                  Saving checkout windows...
                 </>
               ) : (
                 <>
                   <Check size={17} />
-                  Save windows
+                  Save checkout windows
                 </>
               )}
             </button>
           </form>
           <div className="stateRows">
-            <StatusRow label="Screening/full text" value={`${authSettings.screeningCheckoutWindowMinutes} min`} tone="info" />
-            <StatusRow label="Extraction" value={`${authSettings.extractionCheckoutWindowMinutes} min`} tone="info" />
+            <StatusRow label="Screening/full text" value={`${checkoutWindowSettings.screeningCheckoutWindowMinutes} min`} tone="info" />
+            <StatusRow label="Extraction" value={`${checkoutWindowSettings.extractionCheckoutWindowMinutes} min`} tone="info" />
           </div>
+          {checkoutWindowSettingsMessage ? (
+            <div className={checkoutWindowSettingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+              {checkoutWindowSettingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>{checkoutWindowSettingsMessage}</span>
+            </div>
+          ) : null}
         </div>
       </section>
     </div>
