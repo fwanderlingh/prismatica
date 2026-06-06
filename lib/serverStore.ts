@@ -2740,7 +2740,11 @@ export function updateReportForUser(
         checkout.userId === userId
     );
     if (!previousFullTextDecision && !hasActiveCheckout) {
-      throw new ApiError("This report is no longer checked out to you. Open the next active report to continue.");
+      const checkoutCapacity = getFullTextCheckoutCapacity(project, report, state.decisions);
+      const activeReportCheckouts = getEligibleReportCheckouts(projectId, reportId, state.decisions, state.screeningCheckouts);
+      if (checkoutCapacity <= 0 || activeReportCheckouts.length >= checkoutCapacity) {
+        throw new ApiError("This report is no longer checked out to you. Open the next active report to continue.");
+      }
     }
   }
 

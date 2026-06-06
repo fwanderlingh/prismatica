@@ -163,6 +163,9 @@ export function FullTextSection({
     : messageIsError
       ? "validationItem blocked"
       : "validationItem muted";
+  const messageIsUploadRelated = pendingFullTextAction === "upload" || /upload|pdf/i.test(fullTextMessage);
+  const showUploadMessage = Boolean(fullTextMessage) && messageIsUploadRelated;
+  const showDecisionMessage = Boolean(fullTextMessage) && !messageIsUploadRelated;
   const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
   const canGoPreviousReport = activeReportIndex > 0;
   const canGoNextReport = activeReportIndex >= 0 && activeReportIndex < projectReportQueue.length - 1;
@@ -256,13 +259,6 @@ export function FullTextSection({
         </div>
       </section>
 
-      {fullTextMessage ? (
-        <div className={fullTextMessageClassName}>
-          {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
-          <span>{fullTextMessage}</span>
-        </div>
-      ) : null}
-
       <section className="fullTextLayout">
         <div className="pdfPane">
           <div className="pdfToolbar">
@@ -283,6 +279,12 @@ export function FullTextSection({
               </button>
             </div>
           </div>
+          {showUploadMessage ? (
+            <div className={fullTextMessageClassName}>
+              {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
+              <span>{fullTextMessage}</span>
+            </div>
+          ) : null}
           <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
             {pdfViewerUrl ? (
               <div className="pdfFrameWrap" aria-busy={isPdfLoading}>
@@ -408,6 +410,12 @@ export function FullTextSection({
               {pendingFullTextAction === "exclude" ? "Saving..." : "Exclude"}
             </button>
           </div>
+          {showDecisionMessage ? (
+            <div className={fullTextMessageClassName}>
+              {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
+              <span>{fullTextMessage}</span>
+            </div>
+          ) : null}
 
           <label className="fieldLabel" htmlFor="exclusion-reason">
             Exclusion reason
