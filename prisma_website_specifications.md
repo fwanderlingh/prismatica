@@ -9,35 +9,32 @@ Below is the implementation blueprint I would use.
 
 # 1. Core architecture
 
-Use a modular monolith first. A distributed microservice design is unnecessary until import volume, PDF processing, or AI-assisted screening becomes large.
+Current implementation uses a modular monolith in a single Next.js application.
 
-**Stack**:
+**Current stack**:
 
-Frontend:        Next.js + React + TypeScript
-Backend:         NestJS + TypeScript
-Database:        PostgreSQL
-Search:          PostgreSQL Full-Text Search
-Queue:           Valkey + BullMQ
-File storage:    MinIO
-PDF viewer:      PDF.js
-Background jobs: BullMQ Workers
-Auth:            Keycloak
-Authorization:   PostgreSQL-backed RBAC + NestJS Guards
+Frontend:        Next.js App Router + React + TypeScript
+Backend:         Next.js route handlers under app/api
+Primary store:   JSON state file with atomic writes (default)
+Optional store:  PostgreSQL full-state mode (PRISMATICA_STORAGE_MODE=postgres)
+Auth/session:    Signed HTTP-only cookie sessions with server-side checks
+Users/settings:  In active store, with optional JSON -> PostgreSQL incremental sync
+PDF storage:     Local filesystem by default; optional MinIO/S3-compatible object storage
 
-The backend should expose the review workflow through a small number of services:
+Core runtime modules currently used by the app:
 
 ```text
-ImportService
-DeduplicationService
-ScreeningService
-ConflictResolutionService
-FullTextService
-ExtractionService
-RiskOfBiasService
-PrismaExportService
-AuditLogService
-NotificationService
+lib/serverStore.ts
+scripts/postgres-state-io.mjs
+lib/postgresUsersSync.ts
+lib/serverAuth.ts
+lib/serverRoute.ts
+lib/workflow.ts
+lib/pdfStorage.ts
+lib/objectStorage.ts
 ```
+
+The service decomposition below remains a useful target design for future extraction/scaling work, but it is not the current runtime structure.
 
 The key principle: **every reviewer action is append-only**. You may show the latest decision in the UI, but the database should preserve the historical sequence of decisions, overrides, adjudications, and exports.
 

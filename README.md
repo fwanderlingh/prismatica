@@ -78,16 +78,27 @@ This uses Next.js experimental local HTTPS support.
 ## Architecture Snapshot
 
 - Frontend: Next.js App Router + React UI
-- Backend: Next API routes under `app/api`
-- State: Server-side JSON store with atomic writes
-- Auth: Signed HTTP-only cookies and session checks in server routes
-- Files: Uploaded PDFs stored on disk by default, or in MinIO/S3-compatible object storage
+- Backend: Next route handlers under `app/api`
+- State: Configurable server-side store
+  - Default: JSON state file with atomic writes
+  - Optional: PostgreSQL-backed state (`PRISMATICA_STORAGE_MODE=postgres`)
+- Auth: Signed HTTP-only cookie sessions with server-side checks in route handlers
+- Users/Settings persistence:
+  - Included in the active state store (JSON or PostgreSQL)
+  - Optional incremental PostgreSQL sync while workflows stay on JSON (`PRISMATICA_USERS_SYNC_POSTGRES=true`)
+- Files: PDF storage adapter
+  - Local filesystem by default
+  - MinIO/S3-compatible object storage via AWS SDK (`PRISMATICA_OBJECT_STORAGE_PROVIDER=minio`), with optional local fallback during migration
 
 Core modules:
 
 - `lib/serverStore.ts`: persistence, business logic, and workflow mutations
+- `scripts/postgres-state-io.mjs`: PostgreSQL read/write adapter for full app state
+- `lib/postgresUsersSync.ts`: incremental PostgreSQL sync for users and auth/checkout settings
 - `lib/serverAuth.ts`: session and cookie handling
 - `lib/serverRoute.ts`: route helpers (auth, JSON, file responses)
+- `lib/pdfStorage.ts`: PDF storage abstraction (local/minio)
+- `lib/objectStorage.ts`: MinIO/S3-compatible object storage client
 - `lib/workflow.ts`: stage and decision-state progression logic
 - `components/prisma-review-app.tsx`: main application shell and view orchestration
 - `components/prisma-review-ui.tsx`: reusable UI presentation components
