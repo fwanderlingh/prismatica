@@ -8,7 +8,7 @@ An open source review platform,following the PRISMA (Preferred Reporting Items f
 
 Full information about the PRISMA guidelines can be found at [https://www.prisma-statement.org/](https://www.prisma-statement.org/).
 
-![Dashboard](images/dashboard_1.png "Dashboard")
+![Dashboard](images/PRISMATICA_themes.png "Dashboard")
 
 ## Why Prismatica
 
