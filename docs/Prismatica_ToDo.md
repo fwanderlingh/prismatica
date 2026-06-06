@@ -9,18 +9,21 @@ PRISMATICA
 
 
 
-### Optional Prisma ORM Track
+### Optional: Migrate To Prisma ORM
 
-Goal: replace custom SQL/state-IO wiring with typed Prisma models and migrations.
+If desired, PostgreSQL access can later move from custom SQL/state-IO helpers to Prisma ORM.
 
-Scope suggestion:
+Possible benefits:
 
-- Start with `users` and `auth_settings` models.
-- Continue with normalized review workflow models.
-- Retire legacy blob fallback once parity is verified.
+- Typed schema and generated client
+- Migration history tracking
+- Easier per-entity evolution as the data model grows
 
-Acceptance criteria:
+Suggested staged approach:
 
-- Prisma migrations are the source of truth for schema changes.
-- API behavior remains unchanged from current PostgreSQL mode.
-- Rollback path documented for schema or data migration issues.
+1. Add Prisma schema and model `users`, `auth_settings`, then validate parity.
+2. Expand to review entities (`projects`, `studies`, `reports`, `decisions`, extraction tables).
+3. Replace `app_state_store` blob persistence with normalized Prisma-backed tables.
+4. Keep existing API contracts stable during the swap.
+
+This is optional and can be scheduled after the current PostgreSQL + MinIO stabilization.

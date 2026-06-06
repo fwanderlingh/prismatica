@@ -296,24 +296,6 @@ Behavior:
 - Legacy `app_state_store` is read only as a compatibility fallback during transition; new writes target relational tables.
 - After cutover, keep JSON only as backup/export fallback.
 
-### Optional: Migrate To Prisma ORM
-
-If desired, PostgreSQL access can later move from custom SQL/state-IO helpers to Prisma ORM.
-
-Possible benefits:
-
-- Typed schema and generated client
-- Migration history tracking
-- Easier per-entity evolution as the data model grows
-
-Suggested staged approach:
-
-1. Add Prisma schema and model `users`, `auth_settings`, then validate parity.
-2. Expand to review entities (`projects`, `studies`, `reports`, `decisions`, extraction tables).
-3. Replace `app_state_store` blob persistence with normalized Prisma-backed tables.
-4. Keep existing API contracts stable during the swap.
-
-This is optional and can be scheduled after the current PostgreSQL + MinIO stabilization.
 
 ## Network Access Patterns
 
@@ -423,25 +405,3 @@ sudo systemctl reload caddy
 - Restrict filesystem permissions on data and PDF storage
 - Open only required firewall ports (`443`; optionally `80` for ACME HTTP challenge)
 - Keep Caddy internal CA materials restricted to trusted admins (if using internal CA mode)
-
-## Validation and Quality
-
-Run type checks:
-
-```bash
-npm run check
-```
-
-Create production build:
-
-```bash
-npm run build
-```
-
-Start production server directly (without reverse proxy):
-
-```bash
-npm run start -- --hostname 0.0.0.0 --port 3000
-```
-
-For production deployments, prefer the Caddy reverse-proxy pattern above.
