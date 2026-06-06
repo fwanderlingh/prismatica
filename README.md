@@ -10,8 +10,6 @@ Full information about the PRISMA guidelines can be found at [https://www.prisma
 
 ![Dashboard](images/PRISMATICA_themes.png "Dashboard")
 
-## Why Prismatica
-
 Prismatica is designed for teams running evidence reviews that need both speed and auditability:
 
 - Structured PRISMA workflow from import to export
