@@ -22,7 +22,6 @@ import {
   type WorkflowEvent
 } from "./prismaData";
 import { evaluateStage, type DecisionValue } from "./workflow";
-import { CheckoutWindowSettingsForm } from "@/components/review-sections/registered-users-section";
 
 type StoredUser = AppUser & {
   passwordHash: string;
@@ -82,6 +81,7 @@ type NewProjectInput = {
   abstractRequiredVotes?: number;
   fullTextRequiredVotes?: number;
   extractionRequiredVotes?: number;
+  exclusionReasons?: string[];
   maybePolicy?: ReviewProject["maybePolicy"];
   requireSequentialPhases?: boolean;
   memberIds?: string[];
@@ -218,6 +218,25 @@ function clampCheckoutWindowMinutes(value: unknown, fallback: number) {
     return fallback;
   }
   return Math.max(1, Math.min(600, Math.round(numericValue)));
+}
+
+function normalizeExclusionReasons(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const uniqueReasons = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") {
+      continue;
+    }
+    const trimmed = item.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    uniqueReasons.add(trimmed);
+  }
+  return Array.from(uniqueReasons);
 }
 
 function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
@@ -371,6 +390,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
           searchStrategies: typeof project.searchStrategies === "string" ? project.searchStrategies : "",
           fullTextRequiredVotes: clampFullTextVoteCount(project.fullTextRequiredVotes),
           extractionRequiredVotes: clampVoteCount(project.extractionRequiredVotes),
+          exclusionReasons: normalizeExclusionReasons(project.exclusionReasons),
           requireSequentialPhases:
             typeof project.requireSequentialPhases === "boolean" ? project.requireSequentialPhases : true,
           ownerIds: normalizeOwnerIds(project, userIds),
@@ -1115,7 +1135,7 @@ export function updateAuthSettingsForUser(adminUserIdInput: string, settings: Pa
 
 export function updateCheckoutWindowSettingsForUser(
   adminUserIdInput: string,
-  settings: Partial<CheckoutWindowSettingsForm>
+  settings: Partial<AppCheckoutWindowSettings>
 ): AppMutationPayload {
   const state = readState();
   const adminUser = requireAdminUser(state, adminUserIdInput);
@@ -1464,6 +1484,7 @@ export function createProjectForUser(userId: string, input: NewProjectInput): Ap
     abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes),
     fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes),
     extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes),
+    exclusionReasons: normalizeExclusionReasons(input.exclusionReasons),
     maybePolicy: input.maybePolicy ?? "advance_to_full_text",
     requireSequentialPhases: typeof input.requireSequentialPhases === "boolean" ? input.requireSequentialPhases : true,
     reviewers: memberIds.length,
@@ -1509,6 +1530,7 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
   }
 
   const maybePolicy = input.maybePolicy ?? project.maybePolicy;
+  const exclusionReasons = input.exclusionReasons ? normalizeExclusionReasons(input.exclusionReasons) : project.exclusionReasons;
   if (!["advance_to_full_text", "conflict", "third_vote"].includes(maybePolicy)) {
     throw new ApiError("Choose a valid maybe policy.");
   }
@@ -1527,6 +1549,7 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
           abstractRequiredVotes: clampVoteCount(input.abstractRequiredVotes ?? project.abstractRequiredVotes),
           fullTextRequiredVotes: clampFullTextVoteCount(input.fullTextRequiredVotes ?? project.fullTextRequiredVotes),
           extractionRequiredVotes: clampVoteCount(input.extractionRequiredVotes ?? project.extractionRequiredVotes),
+          exclusionReasons,
           maybePolicy,
           requireSequentialPhases:
             typeof input.requireSequentialPhases === "boolean" ? input.requireSequentialPhases : project.requireSequentialPhases,
@@ -2678,6 +2701,12 @@ export function updateReportForUser(
   }
   if (decisionValue === "exclude" && !input.exclusionReasonId?.trim()) {
     throw new ApiError("Choose an exclusion reason for a full-text exclusion.");
+  }
+  if (decisionValue === "exclude" && project.exclusionReasons.length === 0) {
+    throw new ApiError("No exclusion reasons set for this project.");
+  }
+  if (decisionValue === "exclude" && input.exclusionReasonId && !project.exclusionReasons.includes(input.exclusionReasonId.trim())) {
+    throw new ApiError("Choose a valid project exclusion reason.");
   }
 
   let previousFullTextDecision: Decision | undefined;

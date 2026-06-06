@@ -106,7 +106,7 @@ import { ExportsSection } from "./review-sections/exports-section";
 import { AuditTrailSection } from "./review-sections/audit-trail-section";
 import { AboutSection } from "./review-sections/about-section";
 import { AdminReviewsSection } from "./review-sections/admin-reviews-section";
-import { CheckoutWindowSettingsForm, RegisteredUsersSection } from "./review-sections/registered-users-section";
+import { RegisteredUsersSection } from "./review-sections/registered-users-section";
 import { ImportEditorSection } from "./review-sections/import-editor-section";
 import { ImportsSection } from "./review-sections/imports-section";
 import { DedupSection } from "./review-sections/dedup-section";
@@ -340,6 +340,9 @@ function sanitizeRedirectTarget(redirectTarget: string | null) {
 }
 
 type ProjectSettingsForm = Omit<NewProjectForm, "memberIds">;
+type ProjectSettingsFormState = ProjectSettingsForm & {
+  exclusionReasonsText: string;
+};
 
 type ImportDetailForm = {
   sourceName: string;
@@ -383,9 +386,7 @@ type ProjectPhaseProgress = {
   label: string;
 };
 
-const exclusionReasons = Object.keys(prismaCounts.reportsExcludedWithReasons);
-
-const emptyProjectSettingsForm: ProjectSettingsForm = {
+const emptyProjectSettingsForm: ProjectSettingsFormState = {
   title: "",
   organization: "",
   protocolId: "",
@@ -396,9 +397,21 @@ const emptyProjectSettingsForm: ProjectSettingsForm = {
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
   extractionRequiredVotes: 2,
+  exclusionReasonsText: "",
   maybePolicy: "advance_to_full_text",
   requireSequentialPhases: true
 };
+function parseExclusionReasonsText(value: string) {
+  const uniqueReasons = new Set<string>();
+  for (const line of value.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    uniqueReasons.add(trimmed);
+  }
+  return Array.from(uniqueReasons);
+}
 
 const emptyImportDetailForm: ImportDetailForm = {
   sourceName: "",
@@ -538,7 +551,7 @@ export function PrismaReviewApp() {
     title: "Reviewer"
   });
   const [queuedNewProjectInvites, setQueuedNewProjectInvites] = useState<NewProjectInviteDraft[]>([]);
-  const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsForm>(emptyProjectSettingsForm);
+  const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsFormState>(emptyProjectSettingsForm);
   const [projectSettingsMessage, setProjectSettingsMessage] = useState("");
   const [isSavingProjectSettings, setIsSavingProjectSettings] = useState(false);
   const [isSavingImportDetails, setIsSavingImportDetails] = useState(false);
@@ -568,7 +581,7 @@ export function PrismaReviewApp() {
   const [isFinalizingExtractionConsensus, setIsFinalizingExtractionConsensus] = useState(false);
   const [exportMessage, setExportMessage] = useState("");
   const [isExportingConsensusCsv, setIsExportingConsensusCsv] = useState(false);
-  const [fullTextReason, setFullTextReason] = useState(exclusionReasons[0]);
+  const [fullTextReason, setFullTextReason] = useState("");
   const [fullTextMessage, setFullTextMessage] = useState("");
   const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "retrieval" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
@@ -1013,16 +1026,6 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function loadCheckoutWindowSettings() {
-    const payload = await apiRequest<CheckoutWindowSettingsForm>("/api/checkout-window-settings");
-
-    setCheckoutWindowSettings(payload);
-    setCheckoutWindowSettingsForm({
-      screeningCheckoutWindowMinutes: payload.screeningCheckoutWindowMinutes,
-      extractionCheckoutWindowMinutes: payload.extractionCheckoutWindowMinutes
-    });
-  }
-
   function applyPostAuthRedirect() {
     const params = new URLSearchParams(window.location.search);
     const target = sanitizeRedirectTarget(params.get("redirect"));
@@ -1437,6 +1440,7 @@ export function PrismaReviewApp() {
       abstractRequiredVotes: selectedProject.abstractRequiredVotes,
       fullTextRequiredVotes: selectedProject.fullTextRequiredVotes,
       extractionRequiredVotes: selectedProject.extractionRequiredVotes,
+      exclusionReasonsText: selectedProject.exclusionReasons.join("\n"),
       maybePolicy: selectedProject.maybePolicy,
       requireSequentialPhases: selectedProject.requireSequentialPhases
     });
@@ -1450,6 +1454,7 @@ export function PrismaReviewApp() {
     selectedProject.description,
     selectedProject.dueDate,
     selectedProject.extractionRequiredVotes,
+    selectedProject.exclusionReasons,
     selectedProject.fullTextRequiredVotes,
     selectedProject.id,
     selectedProject.maybePolicy,
@@ -1530,7 +1535,8 @@ export function PrismaReviewApp() {
         candidate.stage === "full_text" &&
         candidate.isCurrent
     );
-    setFullTextReason(decision?.exclusionReasonId ?? exclusionReasons[0]);
+    const configuredReason = selectedProject.exclusionReasons[0] ?? "";
+    setFullTextReason(decision?.exclusionReasonId ?? configuredReason);
   }, [activeReportId, currentUser.id, decisions, selectedProject.id]);
 
   useEffect(() => {
@@ -1736,7 +1742,7 @@ export function PrismaReviewApp() {
     navigateToProjectView("screening");
   }
 
-  function updateProjectSettingsForm<Key extends keyof ProjectSettingsForm>(key: Key, value: ProjectSettingsForm[Key]) {
+  function updateProjectSettingsForm<Key extends keyof ProjectSettingsFormState>(key: Key, value: ProjectSettingsFormState[Key]) {
     setProjectSettingsForm((previous) => ({
       ...previous,
       [key]: value
@@ -2053,9 +2059,13 @@ export function PrismaReviewApp() {
 
     try {
       setIsSavingProjectSettings(true);
+      const { exclusionReasonsText, ...projectSettingsRequest } = projectSettingsForm;
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}`, {
         method: "PATCH",
-        body: JSON.stringify(projectSettingsForm)
+        body: JSON.stringify({
+          ...projectSettingsRequest,
+          exclusionReasons: parseExclusionReasonsText(exclusionReasonsText)
+        })
       });
       applyAppState(payload);
 
@@ -2903,7 +2913,7 @@ export function PrismaReviewApp() {
         decisionTone={decisionTone}
         fullTextReason={fullTextReason}
         setFullTextReason={setFullTextReason}
-        exclusionReasons={exclusionReasons}
+        exclusionReasons={selectedProject.exclusionReasons}
         studies={studies}
       />
     );
@@ -3033,6 +3043,7 @@ export function PrismaReviewApp() {
         onSettingsAbstractVotesChange={(value) => updateProjectSettingsForm("abstractRequiredVotes", value)}
         onSettingsFullTextVotesChange={(value) => updateProjectSettingsForm("fullTextRequiredVotes", value)}
         onSettingsExtractionVotesChange={(value) => updateProjectSettingsForm("extractionRequiredVotes", value)}
+        onSettingsExclusionReasonsTextChange={(value) => updateProjectSettingsForm("exclusionReasonsText", value)}
         onSettingsMaybePolicyChange={(value) => updateProjectSettingsForm("maybePolicy", value)}
         onSettingsRequireSequentialPhasesChange={(value) => updateProjectSettingsForm("requireSequentialPhases", value)}
         teamUserSearch={teamUserSearch}
@@ -3351,18 +3362,13 @@ function getCountsForProject(
         reportDecisions.every((decision) => decision.decisionValue === "exclude")
     )
     .map((reportDecisions) => reportDecisions[0]);
-  const reportsExcludedWithReasons = {
-    "Wrong population": 0,
-    "Wrong intervention": 0,
-    "Wrong comparator": 0,
-    "Wrong outcome": 0,
-    "Wrong study design": 0,
-    "Full text unavailable": 0
-  };
+  const reportsExcludedWithReasons = Object.fromEntries(project.exclusionReasons.map((reason) => [reason, 0])) as Record<string, number>;
   for (const decision of fullTextExcluded) {
-    const reason = decision.exclusionReasonId ?? "Wrong study design";
-    reportsExcludedWithReasons[reason as keyof typeof reportsExcludedWithReasons] =
-      (reportsExcludedWithReasons[reason as keyof typeof reportsExcludedWithReasons] ?? 0) + 1;
+    const reason = decision.exclusionReasonId;
+    if (!reason || !(reason in reportsExcludedWithReasons)) {
+      continue;
+    }
+    reportsExcludedWithReasons[reason] = (reportsExcludedWithReasons[reason] ?? 0) + 1;
   }
 
   const activeExtractionTemplate = extractionTemplates.find(

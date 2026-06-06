@@ -43,6 +43,7 @@ export type ProjectSummary = {
   abstractRequiredVotes: number;
   fullTextRequiredVotes: number;
   extractionRequiredVotes: number;
+  exclusionReasons: string[];
   maybePolicy: MaybePolicy;
   requireSequentialPhases: boolean;
   reviewers: number;
@@ -284,6 +285,14 @@ export const projectSummary: ProjectSummary = {
   abstractRequiredVotes: 2,
   fullTextRequiredVotes: 2,
   extractionRequiredVotes: 2,
+  exclusionReasons: [
+    "Wrong population",
+    "Wrong intervention",
+    "Wrong comparator",
+    "Wrong outcome",
+    "Wrong study design",
+    "Full text unavailable"
+  ],
   maybePolicy: "advance_to_full_text",
   requireSequentialPhases: true,
   reviewers: 8,

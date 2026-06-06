@@ -198,6 +198,7 @@ export function RegisteredUsersSection({
 
         <div className="panel">
           <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
+          <p className="subtle">Control whether new users can self-register.</p>
           <label className="toggleRow">
             <input
               type="checkbox"
@@ -206,7 +207,7 @@ export function RegisteredUsersSection({
               onChange={(event) => updateRegistrationSetting(event.target.checked)}
             />
             <span />
-            <strong>{isUpdatingRegistrationSetting ? "Updating settings..." : "Allow public registration"}</strong>
+            <strong>{isUpdatingRegistrationSetting ? "Saving registration policy..." : "Allow public registration"}</strong>
           </label>
           <div className="stateRows">
             <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
@@ -222,6 +223,7 @@ export function RegisteredUsersSection({
 
         <div className="panel">
           <SectionTitle icon={Clock} title="Queue Checkout Windows" action="Global" />
+          <p className="subtle">Set how long screening, full-text, and extraction checkouts stay active.</p>
           <form className="inviteForm" onSubmit={updateCheckoutWindowSettings}>
             <label>
               <span>Screening/full-text minutes</span>
@@ -249,12 +251,12 @@ export function RegisteredUsersSection({
               {isUpdatingCheckoutWindowSettings ? (
                 <>
                   <span className="inlineSpinner" aria-hidden="true" />
-                  Saving...
+                  Saving checkout windows...
                 </>
               ) : (
                 <>
                   <Check size={17} />
-                  Save windows
+                  Save checkout windows
                 </>
               )}
             </button>

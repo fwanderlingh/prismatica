@@ -3417,6 +3417,9 @@ button:disabled {
   gap: calc(12px * var(--ui-scale));
   align-items: center;
   cursor: pointer;
+  border-top: calc(1px * var(--ui-scale)) solid var(--border);
+  padding-top: calc(12px * var(--ui-scale));
+  margin-top: calc(12px * var(--ui-scale));
 }
 
 .toggleRow input {

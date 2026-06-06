@@ -407,6 +407,7 @@ async function readProjects(client) {
       abstractRequiredVotes: row.abstract_required_votes ?? payload?.abstractRequiredVotes ?? 2,
       fullTextRequiredVotes: row.full_text_required_votes ?? payload?.fullTextRequiredVotes ?? 2,
       extractionRequiredVotes: row.extraction_required_votes ?? payload?.extractionRequiredVotes ?? 2,
+      exclusionReasons: asArray(payload?.exclusionReasons).filter((reason) => typeof reason === "string" && reason.trim().length > 0),
       maybePolicy: row.maybe_policy ?? payload?.maybePolicy ?? "advance_to_full_text",
       requireSequentialPhases: row.require_sequential_phases ?? payload?.requireSequentialPhases ?? true,
       reviewers: row.reviewers ?? payload?.reviewers ?? 0,

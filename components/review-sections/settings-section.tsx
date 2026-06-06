@@ -14,6 +14,7 @@ type ProjectSettingsFormShape = {
   abstractRequiredVotes: number;
   fullTextRequiredVotes: number;
   extractionRequiredVotes: number;
+  exclusionReasonsText: string;
   maybePolicy: "advance_to_full_text" | "conflict" | "third_vote";
   requireSequentialPhases: boolean;
 };
@@ -45,6 +46,7 @@ type SettingsSectionProps = {
   onSettingsAbstractVotesChange: (value: number) => void;
   onSettingsFullTextVotesChange: (value: number) => void;
   onSettingsExtractionVotesChange: (value: number) => void;
+  onSettingsExclusionReasonsTextChange: (value: string) => void;
   onSettingsMaybePolicyChange: (value: ProjectSettingsFormShape["maybePolicy"]) => void;
   onSettingsRequireSequentialPhasesChange: (value: boolean) => void;
   teamUserSearch: string;
@@ -89,6 +91,7 @@ export function SettingsSection({
   onSettingsAbstractVotesChange,
   onSettingsFullTextVotesChange,
   onSettingsExtractionVotesChange,
+  onSettingsExclusionReasonsTextChange,
   onSettingsMaybePolicyChange,
   onSettingsRequireSequentialPhasesChange,
   teamUserSearch,
@@ -290,6 +293,15 @@ export function SettingsSection({
               <option value="third_vote">Request third vote</option>
               <option value="conflict">Treat as conflict</option>
             </select>
+            <label className="wideField">
+              <span>Full-text exclusion reasons (one per line)</span>
+              <textarea
+                value={projectSettingsForm.exclusionReasonsText}
+                onChange={(event) => onSettingsExclusionReasonsTextChange(event.target.value)}
+                disabled={!canManageProject}
+                placeholder={"Wrong population\nWrong intervention\nWrong comparator"}
+              />
+            </label>
           </div>
         </section>
       </form>
