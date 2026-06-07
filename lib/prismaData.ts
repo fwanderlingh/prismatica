@@ -103,6 +103,7 @@ export type Study = {
   titleAbstractRequiredVotes?: number;
   titleAbstractActiveViewerCount?: number;
   titleAbstractCheckedOutByCurrentUser?: boolean;
+  titleAbstractCheckoutExpiresAt?: string;
   keywords: string[];
   pdfUrl?: string;
   rawCitation?: string;
@@ -131,6 +132,7 @@ export type Report = {
   fullTextRequiredVotes?: number;
   fullTextActiveViewerCount?: number;
   fullTextCheckedOutByCurrentUser?: boolean;
+  fullTextCheckoutExpiresAt?: string;
   extractionTemplateId?: string;
   extractionVoteCount?: number;
   extractionRequiredVotes?: number;

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
 import type { Decision, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
@@ -65,6 +66,22 @@ export function ScreeningSection({
 }: ScreeningSectionProps) {
   const isSubmittingDecision = pendingScreeningDecision !== null;
   const activeDecisionValue = currentUserDecision?.decisionValue;
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!currentStudy.titleAbstractCheckedOutByCurrentUser || !currentStudy.titleAbstractCheckoutExpiresAt) {
+      return;
+    }
+
+    setNow(Date.now());
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [currentStudy.titleAbstractCheckedOutByCurrentUser, currentStudy.titleAbstractCheckoutExpiresAt]);
+
+  const screeningCheckoutTimer =
+    currentStudy.titleAbstractCheckedOutByCurrentUser && currentStudy.titleAbstractCheckoutExpiresAt
+      ? formatCheckoutTimer(currentStudy.titleAbstractCheckoutExpiresAt, now)
+      : "Current reviewer";
 
   if (projectScreeningStudies.length === 0) {
     const hasCompletedScreeningQueue = totalScreeningStudyCount > 0;
@@ -171,7 +188,7 @@ export function ScreeningSection({
         </article>
 
         <aside className="panel actionPanel">
-          <SectionTitle icon={PanelRight} title="Decision" action="Current reviewer" />
+          <SectionTitle icon={PanelRight} title="Decision" action={screeningCheckoutTimer} />
           <div className="decisionState">
             <span>My current vote</span>
             <strong>{currentUserDecision ? formatDecision(currentUserDecision.decisionValue) : "No vote"}</strong>
@@ -257,4 +274,12 @@ export function ScreeningSection({
       </section>
     </div>
   );
+}
+
+function formatCheckoutTimer(expiresAt: string, now: number) {
+  const remainingMs = Math.max(0, Date.parse(expiresAt) - now);
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }

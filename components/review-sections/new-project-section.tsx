@@ -18,6 +18,7 @@ type NewProjectSectionProps = {
   users: AppUser[];
   newProjectForm: NewProjectForm;
   canCreate: boolean;
+  isCreatingProject: boolean;
   creationStatus: string;
   creationSummary: string;
   onBack: () => void;
@@ -54,6 +55,7 @@ export function NewProjectSection({
   users,
   newProjectForm,
   canCreate,
+  isCreatingProject,
   creationStatus,
   creationSummary,
   onBack,
@@ -108,9 +110,9 @@ export function NewProjectSection({
             <strong>{creationStatus}</strong>
             <span>{creationSummary}</span>
           </div>
-          <button className="primaryButton" type="submit" disabled={!canCreate}>
-            <Plus size={17} />
-            Create Review
+          <button className="primaryButton" type="submit" disabled={!canCreate || isCreatingProject}>
+            {isCreatingProject ? <span className="inlineSpinner" aria-hidden="true" /> : <Plus size={17} />}
+            {isCreatingProject ? "Creating..." : "Create Review"}
           </button>
         </section>
 
@@ -303,9 +305,9 @@ export function NewProjectSection({
             <strong>{creationStatus}</strong>
             <span>{creationSummary}</span>
           </div>
-          <button className="primaryButton" type="submit" disabled={!canCreate}>
-            <Plus size={17} />
-            Create Review
+          <button className="primaryButton" type="submit" disabled={!canCreate || isCreatingProject}>
+            {isCreatingProject ? <span className="inlineSpinner" aria-hidden="true" /> : <Plus size={17} />}
+            {isCreatingProject ? "Creating..." : "Create Review"}
           </button>
         </section>
       </form>

@@ -651,7 +651,8 @@ function withReportWorkflowState(
     requiredVotes,
     project.maybePolicy
   );
-  const checkedOutUserIds = getEligibleReportCheckouts(project.id, report.id, decisions, screeningCheckouts).map((checkout) => checkout.userId);
+  const activeReportCheckouts = getEligibleReportCheckouts(project.id, report.id, decisions, screeningCheckouts);
+  const currentUserCheckout = activeReportCheckouts.find((checkout) => checkout.userId === currentUserId);
   const activeExtractionTemplate = extractionTemplates.find((template) => template.projectId === project.id && template.isActive);
   const extractionSubmittedResponses = activeExtractionTemplate
     ? getCurrentExtractionResponses(extractionResponses, project.id, report.id, activeExtractionTemplate.id)
@@ -665,8 +666,9 @@ function withReportWorkflowState(
     fullTextStatusLabel: evaluation.label,
     fullTextVoteCount: currentDecisions.length,
     fullTextRequiredVotes: requiredVotes,
-    fullTextActiveViewerCount: checkedOutUserIds.length,
-    fullTextCheckedOutByCurrentUser: checkedOutUserIds.includes(currentUserId),
+    fullTextActiveViewerCount: activeReportCheckouts.length,
+    fullTextCheckedOutByCurrentUser: Boolean(currentUserCheckout),
+    fullTextCheckoutExpiresAt: currentUserCheckout?.expiresAt,
     extractionTemplateId: activeExtractionTemplate?.id,
     extractionVoteCount: extractionSubmittedResponses.length,
     extractionRequiredVotes: project.extractionRequiredVotes,
@@ -693,15 +695,17 @@ function withStudyWorkflowState(
     project.abstractRequiredVotes,
     project.maybePolicy
   );
-  const checkedOutUserIds = getEligibleStudyCheckouts(project.id, study.id, decisions, screeningCheckouts).map((checkout) => checkout.userId);
+  const activeStudyCheckouts = getEligibleStudyCheckouts(project.id, study.id, decisions, screeningCheckouts);
+  const currentUserCheckout = activeStudyCheckouts.find((checkout) => checkout.userId === currentUserId);
   return {
     ...study,
     titleAbstractStatus: evaluation.state,
     titleAbstractStatusLabel: evaluation.label,
     titleAbstractVoteCount: currentDecisions.length,
     titleAbstractRequiredVotes: project.abstractRequiredVotes,
-    titleAbstractActiveViewerCount: checkedOutUserIds.length,
-    titleAbstractCheckedOutByCurrentUser: checkedOutUserIds.includes(currentUserId)
+    titleAbstractActiveViewerCount: activeStudyCheckouts.length,
+    titleAbstractCheckedOutByCurrentUser: Boolean(currentUserCheckout),
+    titleAbstractCheckoutExpiresAt: currentUserCheckout?.expiresAt
   };
 }
 
@@ -2670,6 +2674,7 @@ export function updateReportForUser(
   projectId: string,
   reportId: string,
   input: {
+    retrievalStatus?: Report["retrievalStatus"];
     decisionValue?: DecisionValue;
     exclusionReasonId?: string;
     note?: string;
@@ -2687,6 +2692,7 @@ export function updateReportForUser(
     throw new ApiError("Report not found.", 404);
   }
 
+  const nextRetrievalStatus = input.retrievalStatus && isRetrievalStatus(input.retrievalStatus) ? input.retrievalStatus : report.retrievalStatus;
   const decisionValue = input.decisionValue;
   if (decisionValue && !["include", "exclude"].includes(decisionValue)) {
     throw new ApiError("A full-text decision must be include or exclude.");
@@ -2755,7 +2761,8 @@ export function updateReportForUser(
   state.reports = state.reports.map((candidate) =>
     candidate.id === reportId && candidate.projectId === projectId
       ? {
-          ...candidate
+          ...candidate,
+          retrievalStatus: nextRetrievalStatus
         }
       : candidate
   );
@@ -2793,6 +2800,8 @@ export function updateReportForUser(
     );
     appendEvent(state, currentUser.name, `Full-text ${formatDecision(decisionValue)}`, reportId);
     syncStudyAfterFullTextDecision(state, project, reportId);
+  } else if (input.retrievalStatus && isRetrievalStatus(input.retrievalStatus)) {
+    appendEvent(state, currentUser.name, `Updated retrieval status to ${formatRetrievalStatus(nextRetrievalStatus)}`, reportId);
   }
 
   syncProjectWorkflowCounts(state, projectId);

@@ -1,5 +1,6 @@
 import { jsonError, jsonOk, pdfFileResponse, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
 import { ApiError, getReportPdfForUser, updateReportForUser } from "@/lib/serverStore";
+import type { Report } from "@/lib/prismaData";
 import type { DecisionValue } from "@/lib/workflow";
 
 export async function GET(request: Request, context: { params: Promise<{ projectId: string; reportId: string }> }) {
@@ -24,6 +25,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ proje
     const body = await readJsonBody(request);
     return jsonOk(
       updateReportForUser(userId, projectId, reportId, {
+        retrievalStatus: body.retrievalStatus as Report["retrievalStatus"],
         decisionValue: body.decisionValue as DecisionValue,
         exclusionReasonId: typeof body.exclusionReasonId === "string" ? body.exclusionReasonId : undefined,
         note: typeof body.note === "string" ? body.note : undefined

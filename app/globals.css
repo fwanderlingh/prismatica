@@ -284,6 +284,7 @@ h3 {
 .breadcrumbItem {
   gap: calc(6px * var(--ui-scale));
   min-width: 0;
+  max-width: min(100%, calc(300px * var(--ui-scale)));
 }
 
 .breadcrumbLink,

@@ -14,6 +14,7 @@ import { type DecisionValue, evaluateStage } from "@/lib/workflow";
 import { EmptyState, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
 
 type FullTextUpdateInput = {
+  retrievalStatus?: Report["retrievalStatus"];
   decisionValue?: DecisionValue;
   exclusionReasonId?: string;
 };
@@ -37,7 +38,7 @@ type FullTextSectionProps = {
   setActiveReportId: (reportId: string) => void;
   setFullTextMessage: (message: string) => void;
   pdfInputRef: RefObject<HTMLInputElement | null>;
-  pendingFullTextAction: "upload" | "include" | "exclude" | null;
+  pendingFullTextAction: "upload" | "retrieval" | "include" | "exclude" | null;
   uploadReportPdf: (event: ChangeEvent<HTMLInputElement>) => void;
   updateFullTextReport: (input: FullTextUpdateInput) => void;
   formatDecision: (value: DecisionValue) => string;
@@ -78,6 +79,7 @@ export function FullTextSection({
   exclusionReasons,
   studies
 }: FullTextSectionProps) {
+  const [now, setNow] = useState(Date.now());
   const pdfViewerUrl = activeReport.fileName
     ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}${pdfViewerPreferences}`
     : "";
@@ -92,6 +94,21 @@ export function FullTextSection({
   useEffect(() => {
     setPdfLoadState(pdfViewerUrl ? "loading" : "idle");
   }, [pdfFrameKey, pdfViewerUrl]);
+
+  useEffect(() => {
+    if (!activeReport.fullTextCheckedOutByCurrentUser || !activeReport.fullTextCheckoutExpiresAt) {
+      return;
+    }
+
+    setNow(Date.now());
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [activeReport.fullTextCheckedOutByCurrentUser, activeReport.fullTextCheckoutExpiresAt]);
+
+  const reportActionLabel =
+    activeReport.fullTextCheckedOutByCurrentUser && activeReport.fullTextCheckoutExpiresAt
+      ? `${activeReport.notes} notes · ${formatCheckoutTimer(activeReport.fullTextCheckoutExpiresAt, now)}`
+      : `${activeReport.notes} notes`;
 
   if (projectReportQueue.length === 0) {
     return (
@@ -146,6 +163,7 @@ export function FullTextSection({
   const hasUploadedPdf = Boolean(activeReport.fileName);
   const uploadedPdfPercent = totalFullTextReportCount > 0 ? Math.round((uploadedPdfCount / totalFullTextReportCount) * 100) : 0;
   const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
+  const retrievalStatusLabel = activeReport.retrievalStatus.replace(/_/g, " ");
   const hasConfiguredExclusionReasons = exclusionReasons.length > 0;
   const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
   const canRecordFullTextDecision = hasFullTextCheckout || Boolean(activeFullTextDecision);
@@ -323,7 +341,7 @@ export function FullTextSection({
         </div>
 
         <aside className="panel fullTextPanel">
-          <SectionTitle icon={BookOpen} title="Report Metadata" action={`${activeReport.notes} notes`} />
+          <SectionTitle icon={BookOpen} title="Report Metadata" action={reportActionLabel} />
           <h2>{activeReport.title}</h2>
           <p className="subtle">{activeReport.citation}</p>
           <div className="metaStrip">
@@ -334,6 +352,7 @@ export function FullTextSection({
 
           <div className="pdfStatusGrid">
             <StatusRow label="PDF" value={pdfStatus} tone={hasUploadedPdf ? "secure" : "danger"} />
+            <StatusRow label="Retrieval status" value={retrievalStatusLabel} tone="info" />
             <StatusRow
               label="Full-text status"
               value={fullTextStatusLabel}
@@ -353,6 +372,21 @@ export function FullTextSection({
             />
             <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
           </div>
+
+          <label className="fieldLabel" htmlFor="retrieval-status">
+            Retrieval status
+          </label>
+          <select
+            id="retrieval-status"
+            value={activeReport.retrievalStatus}
+            disabled={isFullTextActionPending}
+            onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
+          >
+            <option value="not_sought">Not sought</option>
+            <option value="sought">Sought</option>
+            <option value="retrieved">Retrieved</option>
+            <option value="not_retrieved">Not retrieved</option>
+          </select>
 
           <div className="decisionState">
             <span>My current full-text vote</span>
@@ -439,4 +473,12 @@ export function FullTextSection({
       </section>
     </div>
   );
+}
+
+function formatCheckoutTimer(expiresAt: string, now: number) {
+  const remainingMs = Math.max(0, Date.parse(expiresAt) - now);
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }

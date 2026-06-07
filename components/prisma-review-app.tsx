@@ -551,6 +551,7 @@ export function PrismaReviewApp() {
     title: "Reviewer"
   });
   const [queuedNewProjectInvites, setQueuedNewProjectInvites] = useState<NewProjectInviteDraft[]>([]);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectSettingsForm, setProjectSettingsForm] = useState<ProjectSettingsFormState>(emptyProjectSettingsForm);
   const [projectSettingsMessage, setProjectSettingsMessage] = useState("");
   const [isSavingProjectSettings, setIsSavingProjectSettings] = useState(false);
@@ -583,7 +584,7 @@ export function PrismaReviewApp() {
   const [isExportingConsensusCsv, setIsExportingConsensusCsv] = useState(false);
   const [fullTextReason, setFullTextReason] = useState("");
   const [fullTextMessage, setFullTextMessage] = useState("");
-  const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "include" | "exclude" | null>(null);
+  const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "retrieval" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
@@ -1963,6 +1964,7 @@ export function PrismaReviewApp() {
       return;
     }
 
+    setIsCreatingProject(true);
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/projects", {
         method: "POST",
@@ -1970,7 +1972,11 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       const createdProjectId = payload.selectedProjectId ?? selectedProjectId;
+      skipUrlSyncRef.current = true;
+      setRequestedProjectId(createdProjectId);
       setSelectedProjectId(createdProjectId);
+      setActiveView("projectDashboard");
+      window.history.replaceState(null, "", buildPathForState("projectDashboard", createdProjectId));
 
       if (queuedNewProjectInvites.length > 0) {
         let sentInvites = 0;
@@ -2001,6 +2007,8 @@ export function PrismaReviewApp() {
       setActiveView("projectDashboard");
     } catch (error) {
       setNewProjectTeamMessage(getErrorMessage(error));
+    } finally {
+      setIsCreatingProject(false);
     }
   }
 
@@ -2654,6 +2662,7 @@ export function PrismaReviewApp() {
   }
 
   async function updateFullTextReport(input: {
+    retrievalStatus?: Report["retrievalStatus"];
     decisionValue?: DecisionValue;
     exclusionReasonId?: string;
   }) {
@@ -2661,7 +2670,14 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const action = input.decisionValue === "include" ? "include" : input.decisionValue === "exclude" ? "exclude" : null;
+    const action =
+      input.decisionValue === "include"
+        ? "include"
+        : input.decisionValue === "exclude"
+          ? "exclude"
+          : input.retrievalStatus
+            ? "retrieval"
+            : null;
     if (!action) {
       return;
     }
@@ -2672,7 +2688,7 @@ export function PrismaReviewApp() {
         body: JSON.stringify(input)
       });
       applyAppState(payload);
-      setFullTextMessage("Full-text decision saved.");
+      setFullTextMessage(input.decisionValue ? "Full-text decision saved." : "Retrieval status updated.");
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
     } finally {
@@ -3099,6 +3115,7 @@ export function PrismaReviewApp() {
         users={users}
         newProjectForm={newProjectForm}
         canCreate={canCreate}
+        isCreatingProject={isCreatingProject}
         creationStatus={creationStatus}
         creationSummary={creationSummary}
         onBack={() => setActiveView("dashboard")}
