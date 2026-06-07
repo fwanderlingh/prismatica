@@ -56,6 +56,14 @@ export function AboutSection() {
           ))}
         </div>
       </section>
+
+      <section className="panel aboutPanel">
+        <SectionTitle icon={Info} title="PDF Upload Disclaimer" action="Usage policy" />
+        <p>
+          Users may upload PDFs only if they have the right to use them in this project. Uploaded PDFs are stored for private review workflows only and must not be shared outside authorized project members. Users should prefer
+          open-access versions, author-accepted manuscripts, or official DOI links where available.
+        </p>
+      </section>
     </div>
   );
 }

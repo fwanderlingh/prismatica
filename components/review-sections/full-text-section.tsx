@@ -147,10 +147,10 @@ export function FullTextSection({
   const hasUploadedPdf = Boolean(activeReport.fileName);
   const uploadedPdfPercent = totalFullTextReportCount > 0 ? Math.round((uploadedPdfCount / totalFullTextReportCount) * 100) : 0;
   const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
-  const canInclude = activeReport.retrievalStatus === "retrieved" && hasUploadedPdf;
+  const canInclude = activeReport.retrievalStatus === "retrieved";
   const hasConfiguredExclusionReasons = exclusionReasons.length > 0;
   const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
-  const canRecordFullTextDecision = hasUploadedPdf && (hasFullTextCheckout || Boolean(activeFullTextDecision));
+  const canRecordFullTextDecision = hasFullTextCheckout || Boolean(activeFullTextDecision);
   const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
   const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
   const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
@@ -394,7 +394,7 @@ export function FullTextSection({
             <button
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
               type="button"
-              disabled={!canInclude || !canRecordFullTextDecision || isFullTextActionPending}
+              disabled={!canInclude || isFullTextActionPending}
               onClick={() => updateFullTextReport({ retrievalStatus: "retrieved", decisionValue: "include" })}
             >
               {pendingFullTextAction === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
@@ -438,16 +438,14 @@ export function FullTextSection({
             {canInclude && canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
               {!hasUploadedPdf
-                ? "Upload the PDF before recording a full-text vote or exclusion reason."
+                ? "PDF upload is optional for full-text decisions."
                 : !hasConfiguredExclusionReasons
                 ? "Set project exclusion reasons before recording an exclusion."
-                : !canRecordFullTextDecision
-                ? "Waiting for an active reviewer slot before recording a full-text vote."
                 : hasFullTextConflict
                 ? "This report is in resolve-conflict state and cannot advance to extraction until the votes are reconciled."
                 : canInclude
-                ? "Include is available for this retrieved report with an uploaded PDF."
-                : "Include requires retrieved status and an uploaded PDF."}
+                ? "Include is available for this retrieved report."
+                : "Include requires retrieved status."}
             </span>
           </div>
           {canExclude ? (

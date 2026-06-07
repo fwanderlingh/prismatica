@@ -2693,9 +2693,6 @@ export function updateReportForUser(
   if (decisionValue && !["include", "exclude", "not_retrieved"].includes(decisionValue)) {
     throw new ApiError("A full-text decision must be include, exclude, or not retrieved.");
   }
-  if (decisionValue && !report.fileName) {
-    throw new ApiError("Upload the report PDF before recording a full-text decision.");
-  }
   if (decisionValue === "include" && nextRetrievalStatus !== "retrieved") {
     throw new ApiError("A full-text include requires retrieved status.");
   }
@@ -2745,6 +2742,18 @@ export function updateReportForUser(
       if (checkoutCapacity <= 0 || activeReportCheckouts.length >= checkoutCapacity) {
         throw new ApiError("This report is no longer checked out to you. Open the next active report to continue.");
       }
+
+      // Re-acquire checkout atomically here so immediate votes after page open do not fail on timing races.
+      const now = Date.now();
+      state.screeningCheckouts.push({
+        projectId,
+        stage: "full_text",
+        studyId: report.studyId,
+        reportId,
+        userId,
+        checkedOutAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.checkoutWindowSettings)).toISOString()
+      });
     }
   }
 

@@ -1557,6 +1557,25 @@ export function PrismaReviewApp() {
     });
   }, [imports, isImportEditorOpen, selectedImportId, selectedProject.id]);
 
+  useEffect(() => {
+    if (!fullTextMessage || pendingFullTextAction !== null) {
+      return;
+    }
+
+    const isErrorMessage = /error|failed|invalid|cannot|unable|missing|required|not found|forbidden|unauthorized|denied/i.test(fullTextMessage);
+    if (isErrorMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFullTextMessage("");
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [fullTextMessage, pendingFullTextAction]);
+
   if (!isAuthResolved) {
     return (
       <main className="loginShell" aria-busy="true" aria-live="polite">
