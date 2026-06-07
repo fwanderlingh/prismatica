@@ -583,7 +583,7 @@ export function PrismaReviewApp() {
   const [isExportingConsensusCsv, setIsExportingConsensusCsv] = useState(false);
   const [fullTextReason, setFullTextReason] = useState("");
   const [fullTextMessage, setFullTextMessage] = useState("");
-  const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "retrieval" | "include" | "exclude" | null>(null);
+  const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
@@ -2654,7 +2654,6 @@ export function PrismaReviewApp() {
   }
 
   async function updateFullTextReport(input: {
-    retrievalStatus?: Report["retrievalStatus"];
     decisionValue?: DecisionValue;
     exclusionReasonId?: string;
   }) {
@@ -2662,7 +2661,10 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const action = input.decisionValue === "include" ? "include" : input.decisionValue === "exclude" ? "exclude" : "retrieval";
+    const action = input.decisionValue === "include" ? "include" : input.decisionValue === "exclude" ? "exclude" : null;
+    if (!action) {
+      return;
+    }
     setPendingFullTextAction(action);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}`, {
@@ -2670,7 +2672,7 @@ export function PrismaReviewApp() {
         body: JSON.stringify(input)
       });
       applyAppState(payload);
-      setFullTextMessage(input.decisionValue ? "Full-text decision saved." : "Retrieval status updated.");
+      setFullTextMessage("Full-text decision saved.");
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
     } finally {
@@ -3497,8 +3499,7 @@ function getCheckoutRefreshIntervalMs(windowMinutes: number) {
 function isFullTextReportComplete(report: Report, project: ReviewProject) {
   if (
     report.fullTextStatus === "advance_extraction" ||
-    report.fullTextStatus === "excluded_full_text" ||
-    report.fullTextStatus === "report_not_retrieved"
+    report.fullTextStatus === "excluded_full_text"
   ) {
     return true;
   }
@@ -3623,7 +3624,6 @@ function getActiveFullTextReports(project: ReviewProject, reports: Report[], dec
       voteCount >= requiredVotes ||
       evaluationState === "advance_extraction" ||
       evaluationState === "excluded_full_text" ||
-      evaluationState === "report_not_retrieved" ||
       evaluationState === "manual_review"
     ) {
       return false;
@@ -3662,11 +3662,7 @@ function getActiveExtractionReports(
 }
 
 function isFullTextEvaluationComplete(evaluation: StageEvaluation | undefined) {
-  return (
-    evaluation?.state === "advance_extraction" ||
-    evaluation?.state === "excluded_full_text" ||
-    evaluation?.state === "report_not_retrieved"
-  );
+  return evaluation?.state === "advance_extraction" || evaluation?.state === "excluded_full_text";
 }
 
 function formatProjectPhase(stage: ReviewProject["stage"]) {
@@ -3857,9 +3853,6 @@ function decisionTone(value: DecisionValue): "success" | "warning" | "danger" | 
   }
   if (value === "maybe") {
     return "warning";
-  }
-  if (value === "not_retrieved") {
-    return "info";
   }
   return "neutral";
 }

@@ -2670,7 +2670,6 @@ export function updateReportForUser(
   projectId: string,
   reportId: string,
   input: {
-    retrievalStatus?: Report["retrievalStatus"];
     decisionValue?: DecisionValue;
     exclusionReasonId?: string;
     note?: string;
@@ -2688,13 +2687,9 @@ export function updateReportForUser(
     throw new ApiError("Report not found.", 404);
   }
 
-  const nextRetrievalStatus = input.retrievalStatus && isRetrievalStatus(input.retrievalStatus) ? input.retrievalStatus : report.retrievalStatus;
   const decisionValue = input.decisionValue;
-  if (decisionValue && !["include", "exclude", "not_retrieved"].includes(decisionValue)) {
-    throw new ApiError("A full-text decision must be include, exclude, or not retrieved.");
-  }
-  if (decisionValue === "include" && nextRetrievalStatus !== "retrieved") {
-    throw new ApiError("A full-text include requires retrieved status.");
+  if (decisionValue && !["include", "exclude"].includes(decisionValue)) {
+    throw new ApiError("A full-text decision must be include or exclude.");
   }
   if (decisionValue === "exclude" && !input.exclusionReasonId?.trim()) {
     throw new ApiError("Choose an exclusion reason for a full-text exclusion.");
@@ -2760,8 +2755,7 @@ export function updateReportForUser(
   state.reports = state.reports.map((candidate) =>
     candidate.id === reportId && candidate.projectId === projectId
       ? {
-          ...candidate,
-          retrievalStatus: decisionValue === "not_retrieved" ? "not_retrieved" : nextRetrievalStatus
+          ...candidate
         }
       : candidate
   );
@@ -2799,8 +2793,6 @@ export function updateReportForUser(
     );
     appendEvent(state, currentUser.name, `Full-text ${formatDecision(decisionValue)}`, reportId);
     syncStudyAfterFullTextDecision(state, project, reportId);
-  } else {
-    appendEvent(state, currentUser.name, `Updated retrieval status to ${formatRetrievalStatus(nextRetrievalStatus)}`, reportId);
   }
 
   syncProjectWorkflowCounts(state, projectId);

@@ -14,7 +14,6 @@ import { type DecisionValue, evaluateStage } from "@/lib/workflow";
 import { EmptyState, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
 
 type FullTextUpdateInput = {
-  retrievalStatus?: Report["retrievalStatus"];
   decisionValue?: DecisionValue;
   exclusionReasonId?: string;
 };
@@ -38,7 +37,7 @@ type FullTextSectionProps = {
   setActiveReportId: (reportId: string) => void;
   setFullTextMessage: (message: string) => void;
   pdfInputRef: RefObject<HTMLInputElement | null>;
-  pendingFullTextAction: "upload" | "retrieval" | "include" | "exclude" | null;
+  pendingFullTextAction: "upload" | "include" | "exclude" | null;
   uploadReportPdf: (event: ChangeEvent<HTMLInputElement>) => void;
   updateFullTextReport: (input: FullTextUpdateInput) => void;
   formatDecision: (value: DecisionValue) => string;
@@ -111,7 +110,7 @@ export function FullTextSection({
             description={
               totalFullTextReportCount > 0
                 ? "All available reports have enough votes, are waiting on checked-out reviewers, or need owner resolution."
-                : "No reports have been sought or uploaded for this review yet."
+                : "No reports are available for full-text review yet."
             }
           />
         </section>
@@ -147,7 +146,6 @@ export function FullTextSection({
   const hasUploadedPdf = Boolean(activeReport.fileName);
   const uploadedPdfPercent = totalFullTextReportCount > 0 ? Math.round((uploadedPdfCount / totalFullTextReportCount) * 100) : 0;
   const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
-  const canInclude = activeReport.retrievalStatus === "retrieved";
   const hasConfiguredExclusionReasons = exclusionReasons.length > 0;
   const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
   const canRecordFullTextDecision = hasFullTextCheckout || Boolean(activeFullTextDecision);
@@ -185,7 +183,7 @@ export function FullTextSection({
         <div>
           <p className="eyebrow">Full-text screening</p>
           <h1>Report Review</h1>
-          <p className="subtle">Retrieval status and report-level exclusion reasons feed the PRISMA export.</p>
+          <p className="subtle">Record include/exclude decisions and report-level exclusion reasons.</p>
         </div>
         <div className="progressStack">
           <div className="progressBlock">
@@ -340,7 +338,7 @@ export function FullTextSection({
               label="Full-text status"
               value={fullTextStatusLabel}
               tone={
-                hasFullTextConflict || fullTextStatus === "excluded_full_text" || fullTextStatus === "report_not_retrieved"
+                hasFullTextConflict || fullTextStatus === "excluded_full_text"
                   ? "danger"
                   : fullTextStatus === "advance_extraction"
                     ? "secure"
@@ -355,21 +353,6 @@ export function FullTextSection({
             />
             <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
           </div>
-
-          <label className="fieldLabel" htmlFor="retrieval-status">
-            Retrieval status
-          </label>
-          <select
-            id="retrieval-status"
-            value={activeReport.retrievalStatus}
-            disabled={isFullTextActionPending}
-            onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
-          >
-            <option value="not_sought">Not sought</option>
-            <option value="sought">Sought</option>
-            <option value="retrieved">Retrieved</option>
-            <option value="not_retrieved">Not retrieved</option>
-          </select>
 
           <div className="decisionState">
             <span>My current full-text vote</span>
@@ -394,8 +377,8 @@ export function FullTextSection({
             <button
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
               type="button"
-              disabled={!canInclude || isFullTextActionPending}
-              onClick={() => updateFullTextReport({ retrievalStatus: "retrieved", decisionValue: "include" })}
+              disabled={!canRecordFullTextDecision || isFullTextActionPending}
+              onClick={() => updateFullTextReport({ decisionValue: "include" })}
             >
               {pendingFullTextAction === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
               {pendingFullTextAction === "include" ? "Saving..." : "Include"}
@@ -434,8 +417,8 @@ export function FullTextSection({
           </select>
           {!hasConfiguredExclusionReasons ? <p className="subtle">No reasons set.</p> : null}
 
-          <div className={canInclude && canRecordFullTextDecision && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
-            {canInclude && canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <div className={canRecordFullTextDecision && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
+            {canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
               {!hasUploadedPdf
                 ? "PDF upload is optional for full-text decisions."
@@ -443,9 +426,7 @@ export function FullTextSection({
                 ? "Set project exclusion reasons before recording an exclusion."
                 : hasFullTextConflict
                 ? "This report is in resolve-conflict state and cannot advance to extraction until the votes are reconciled."
-                : canInclude
-                ? "Include is available for this retrieved report."
-                : "Include requires retrieved status."}
+                : "Include and Exclude are available while this report is checked out to you."}
             </span>
           </div>
           {canExclude ? (

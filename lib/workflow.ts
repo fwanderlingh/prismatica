@@ -1,4 +1,4 @@
-export type DecisionValue = "include" | "exclude" | "maybe" | "not_retrieved";
+export type DecisionValue = "include" | "exclude" | "maybe";
 
 export type Stage = "title_abstract" | "full_text" | "extraction" | "risk_of_bias";
 
@@ -12,7 +12,6 @@ export type StageEvaluation =
   | { state: "needs_third_vote"; label: string }
   | { state: "advance_extraction"; label: string }
   | { state: "excluded_full_text"; label: string }
-  | { state: "report_not_retrieved"; label: string }
   | { state: "manual_review"; label: string };
 
 export function evaluateStage(
@@ -72,10 +71,6 @@ export function evaluateStage(
 
     if (decisions.every((decision) => decision === "exclude")) {
       return { state: "excluded_full_text", label: "Excluded with reason" };
-    }
-
-    if (decisions.includes("not_retrieved")) {
-      return { state: "report_not_retrieved", label: "Report not retrieved" };
     }
   }
 
