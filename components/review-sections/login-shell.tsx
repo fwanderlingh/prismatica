@@ -81,23 +81,34 @@ export function LoginShell({
           </div>
         </div>
 
-        <div className={registrationEnabled ? "segmented authTabs" : "segmented authTabs singleAuthTab"}>
-          <button className={authMode === "signIn" ? "active" : ""} type="button" disabled={isAuthPending} onClick={() => onSwitchAuthMode("signIn")}>
-            Sign In
-          </button>
-          {registrationEnabled ? (
-            <button className={authMode === "register" ? "active" : ""} type="button" disabled={isAuthPending} onClick={() => onSwitchAuthMode("register")}>
+        {registrationEnabled ? (
+          <div className="segmented authTabs">
+            <button
+              className={authMode === "signIn" ? "active" : ""}
+              type="button"
+              disabled={isAuthPending}
+              onClick={() => onSwitchAuthMode("signIn")}
+            >
+              Sign In
+            </button>
+
+            <button
+              className={authMode === "register" ? "active" : ""}
+              type="button"
+              disabled={isAuthPending}
+              onClick={() => onSwitchAuthMode("register")}
+            >
               Register
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         {authMode === "signIn" ? (
           <form className="loginForm" aria-busy={isLoginPending} onSubmit={onLoginSubmit}>
             <div>
               <p className="eyebrow">Sign in</p>
               <h1>Continue to your review dashboard</h1>
-              <p className="subtle">Use an existing account to see review memberships, profiles, and project access.</p>
+              {/*<p className="subtle">Use an existing account to see review memberships, profiles, and project access.</p>*/}
             </div>
             <label>
               <span>Email</span>

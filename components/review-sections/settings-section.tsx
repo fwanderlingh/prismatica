@@ -502,7 +502,7 @@ export function SettingsSection({
           </div>
           <div className="projectDeleteActions">
             <label>
-              <span>Type exactly: {DELETE_CONFIRMATION_TEXT}</span>
+              <span>TYPE EXACTLY: {DELETE_CONFIRMATION_TEXT}</span>
               <input
                 value={deleteConfirmationInput}
                 onChange={(event) => setDeleteConfirmationInput(event.target.value)}

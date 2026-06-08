@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { PrismaReviewAppClient } from "@/components/prisma-review-app-client";
+import { ApiError, getAppStateForUser } from "@/lib/serverStore";
+import { requireSessionUserId } from "@/lib/serverRoute";
 
 type CatchAllPageProps = {
   params:
@@ -60,11 +62,39 @@ function isKnownCatchAllRoute(slug: string[]) {
   return validProjectSubroutes.has(slug.slice(2).join("/"));
 }
 
+function getRequestedProjectId(slug: string[]) {
+  if (slug[0] !== "projects" || !slug[1] || slug[1] === "new") {
+    return null;
+  }
+  return decodeURIComponent(slug[1]);
+}
+
+async function assertProjectAccessIfAuthenticated(projectId: string) {
+  try {
+    const userId = await requireSessionUserId();
+    const appState = getAppStateForUser(userId);
+    const canAccessProject = appState.projects.some((project) => project.id === projectId);
+    if (!canAccessProject) {
+      notFound();
+    }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      return;
+    }
+    throw error;
+  }
+}
+
 export default async function CatchAllPage({ params }: CatchAllPageProps) {
   const resolvedParams = await resolveParams(params);
   const slug = resolvedParams.slug ?? [];
   if (!isKnownCatchAllRoute(slug)) {
     notFound();
+  }
+
+  const requestedProjectId = getRequestedProjectId(slug);
+  if (requestedProjectId) {
+    await assertProjectAccessIfAuthenticated(requestedProjectId);
   }
 
   return <PrismaReviewAppClient />;

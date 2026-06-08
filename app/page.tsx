@@ -1,5 +1,5 @@
-import { PrismaReviewAppClient } from "@/components/prisma-review-app-client";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <PrismaReviewAppClient />;
+  redirect("/dashboard");
 }

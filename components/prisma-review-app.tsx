@@ -218,7 +218,7 @@ function normalizePathname(pathname: string) {
 function buildPathForState(view: ViewKey, projectId: string) {
   switch (view) {
     case "dashboard":
-      return "/";
+      return "/dashboard";
     case "newProject":
       return "/projects/new";
     case "about":
@@ -263,7 +263,7 @@ function getViewLabel(view: ViewKey) {
 function parseRouteState(pathname: string, search: string): { view: ViewKey; projectId?: string } {
   const normalizedPath = normalizePathname(pathname);
 
-  if (normalizedPath === "/") {
+  if (normalizedPath === "/" || normalizedPath === "/dashboard") {
     return { view: "dashboard" };
   }
   if (normalizedPath === "/projects/new") {
@@ -670,6 +670,8 @@ export function PrismaReviewApp() {
     () => (currentUser.isAdmin ? projects : projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id)),
     [currentUser.id, currentUser.isAdmin, projects]
   );
+  const hasRequestedProject = Boolean(requestedProjectId);
+  const canAccessRequestedProject = hasRequestedProject ? userProjects.some((project) => project.id === requestedProjectId) : true;
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
   const teamUserSearchResults = useMemo(
     () => {
@@ -3261,6 +3263,28 @@ export function PrismaReviewApp() {
         onRegisterFormChange={updateRegisterForm}
         onRefreshCaptcha={() => loadAuthConfig().catch(() => undefined)}
       />
+    );
+  }
+
+  if (hasRequestedProject && !canAccessRequestedProject) {
+    return (
+      <main className="loginShell" aria-busy="true" aria-live="polite">
+        <section className="loginPanel authLoadingPanel">
+          <div className="brandBlock loginBrand">
+            <div className="brandMark brandMarkImage">
+              <img src="/icon.svg" alt={BRAND_LOGO_ALT} width={30} height={30} />
+            </div>
+            <div>
+              <strong>{BRAND_NAME}</strong>
+              <span>{BRAND_TAGLINE}</span>
+            </div>
+          </div>
+          <div className="authLoadingBody">
+            <span className="authLoadingSpinner" aria-hidden="true" />
+            <p className="subtle">Resolving route...</p>
+          </div>
+        </section>
+      </main>
     );
   }
 

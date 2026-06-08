@@ -3110,7 +3110,7 @@ textarea:disabled {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .projectDeleteActions input {
@@ -3501,6 +3501,62 @@ button:disabled {
 
 .notFoundCard .primaryButton {
   width: fit-content;
+}
+
+.glitchTitle {
+  position: relative;
+  display: inline-block;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.glitchTitle::before,
+.glitchTitle::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.glitchTitle::after {
+  color: #000000;
+  transform: translate(-2px, 0);
+  animation: glitchShift 4s infinite linear alternate-reverse;
+}
+
+.glitchTitle::before {
+  color: #ff2a6d;
+  transform: translate(2px, 0);
+  animation: glitchShift 2.5s infinite linear alternate;
+}
+
+@keyframes glitchShift {
+  0% {
+    clip-path: inset(0 0 88% 0);
+    transform: translate(0);
+  }
+
+  8% {
+    clip-path: inset(18% 0 58% 0);
+    transform: translate(-3px, -1px);
+  }
+
+  16% {
+    clip-path: inset(76% 0 5% 0);
+    transform: translate(3px, 1px);
+  }
+
+  24% {
+    clip-path: inset(35% 0 42% 0);
+    transform: translate(-2px, 0);
+  }
+
+  32%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    transform: translate(0);
+  }
 }
 
 @media (max-width: 1180px) {
