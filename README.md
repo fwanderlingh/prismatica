@@ -10,7 +10,7 @@ Full information about the PRISMA guidelines can be found at [https://www.prisma
 
 ![Dashboard](images/dashboard_1.png "Dashboard")
 
-Prismatica is designed for teams running evidence reviews that need both speed and auditability:
+Prismatica is designed for teams running evidence reviews, offering a clear workflow path and and auditability:
 
 - Structured PRISMA workflow from import to export
 - Multi-user collaboration with role-aware controls
