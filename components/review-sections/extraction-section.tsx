@@ -62,6 +62,10 @@ type ExtractionSectionProps = {
 
 const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
 
+function formatArticleQueueId(study?: Pick<Study, "id" | "importItemId">, fallbackId?: string) {
+  return `# ${study?.importItemId ?? study?.id ?? fallbackId ?? "unknown"}`;
+}
+
 export function ExtractionSection({
   activeCounts,
   projectReportQueue,
@@ -291,6 +295,7 @@ export function ExtractionSection({
   const activeStudyForExtraction = activeReportForExtraction
     ? projectScreeningStudies.find((study) => study.id === activeReportForExtraction.studyId)
     : undefined;
+  const activeExtractionArticleId = formatArticleQueueId(activeStudyForExtraction, activeReportForExtraction?.studyId);
   const extractionPdfUrl = activeReportForExtraction?.fileName
     ? `/api/projects/${selectedProject.id}/reports/${activeReportForExtraction.id}?pdf=1&checksum=${encodeURIComponent(activeReportForExtraction.checksum ?? "")}${pdfViewerPreferences}`
     : "";
@@ -323,6 +328,7 @@ export function ExtractionSection({
               {projectExtractionReports.length} active of {totalExtractionReportCount} report{totalExtractionReportCount === 1 ? "" : "s"}
             </strong>
             <p className="subtle">At least {requiredExtractionVotes} submitted extraction vote{requiredExtractionVotes === 1 ? "" : "s"} required.</p>
+            <small className="queueArticleId">{activeExtractionArticleId}</small>
           </div>
           <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
             <GitMerge size={16} />
@@ -336,11 +342,14 @@ export function ExtractionSection({
             value={activeReportForExtraction?.id ?? ""}
             onChange={(event) => setActiveExtractionReportId(event.target.value)}
           >
-            {projectExtractionReports.map((report) => (
-              <option key={report.id} value={report.id}>
-                {report.title}
-              </option>
-            ))}
+            {projectExtractionReports.map((report) => {
+              const reportStudy = projectScreeningStudies.find((study) => study.id === report.studyId);
+              return (
+                <option key={report.id} value={report.id}>
+                  {formatArticleQueueId(reportStudy, report.studyId)} · {report.title}
+                </option>
+              );
+            })}
           </select>
         </div>
       </section>

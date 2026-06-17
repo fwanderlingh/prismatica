@@ -130,7 +130,7 @@ export function AppSidebar({
                       aria-disabled={isLocked || undefined}
                       disabled={isLocked}
                       onClick={() => onNavigate(key)}
-                      title={isLocked ? `${path} · previous phase incomplete` : phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
+                      title={isLocked ? `Previous phase incomplete` : phaseState ? `${phaseState === "current" ? "Current phase" : phaseState}` : path}
                     >
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>

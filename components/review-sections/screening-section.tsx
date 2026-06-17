@@ -9,6 +9,10 @@ type StageEvaluation = {
   label: string;
 };
 
+function formatArticleQueueId(study: Pick<Study, "id" | "importItemId">) {
+  return `# ${study.importItemId ?? study.id}`;
+}
+
 type ScreeningSectionProps = {
   projectScreeningStudies: Study[];
   totalScreeningStudyCount: number;
@@ -90,7 +94,7 @@ export function ScreeningSection({
   const screeningCheckoutTimer =
     currentStudy.titleAbstractCheckedOutByCurrentUser && currentStudy.titleAbstractCheckoutExpiresAt
       ? formatCheckoutTimer(currentStudy.titleAbstractCheckoutExpiresAt, now)
-      : "Current reviewer";
+      : "Acquiring checkout...";
 
   if (projectScreeningStudies.length === 0) {
     const hasCompletedScreeningQueue = totalScreeningStudyCount > 0;
@@ -156,11 +160,19 @@ export function ScreeningSection({
                   key={study.id}
                   onClick={() => setStudyIndex(index)}
                 >
-                  <span>{study.title}</span>
-                  <span className="queueBadges">
-                    {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
-                    {decision ? <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} /> : <Badge label="open" tone="neutral" />}
-                  </span>
+                  <div className="queueItemTop">
+                    <small className="queueArticleId">{formatArticleQueueId(study)}</small>
+                    <span className="queueBadges">
+                      {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
+                      {decision ? (
+                        <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} />
+                      ) : (
+                        <Badge label="open" tone="neutral" />
+                      )}
+                    </span>
+                  </div>
+
+                  <span className="queueItemTitle">{study.title}</span>
                 </button>
               );
             })}

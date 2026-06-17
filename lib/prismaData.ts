@@ -540,12 +540,12 @@ export const projectCounts: Record<string, PrismaCounts> = {
 };
 
 export const highlightRules: HighlightRule[] = [
-  { term: "randomized", type: "include" },
+  /*{ term: "randomized", type: "include" },
   { term: "controlled", type: "include" },
   { term: "benchmark", type: "include" },
   { term: "baseline", type: "neutral" },
   { term: "protocol", type: "exclude" },
-  { term: "editorial", type: "exclude" }
+  { term: "editorial", type: "exclude" }*/
 ];
 
 export const initialWorkflowEvents: WorkflowEvent[] = [

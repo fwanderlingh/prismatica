@@ -54,6 +54,10 @@ type PdfLoadState = "idle" | "loading" | "ready" | "error";
 
 const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
 
+function formatArticleQueueId(study?: Pick<Study, "id" | "importItemId">, fallbackId?: string) {
+  return `# ${study?.importItemId ?? study?.id ?? fallbackId ?? "unknown"}`;
+}
+
 export function FullTextSection({
   hasProjectSeedData,
   phaseProgress,
@@ -135,7 +139,10 @@ export function FullTextSection({
     );
   }
 
-  const currentReportStudy = (hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === activeReport.studyId) ?? screeningStudies[0];
+  const fullTextStudyPool = hasProjectSeedData ? screeningStudies : studies;
+  const matchedCurrentReportStudy = fullTextStudyPool.find((study) => study.id === activeReport.studyId);
+  const currentReportStudy = matchedCurrentReportStudy ?? screeningStudies[0];
+  const currentReportArticleId = formatArticleQueueId(matchedCurrentReportStudy, activeReport.studyId);
   const activeFullTextDecision = decisions.find(
     (decision) =>
       decision.projectId === selectedProject.id &&
@@ -223,7 +230,8 @@ export function FullTextSection({
             <strong>
               {projectReportQueue.length} active of {totalFullTextReportCount} report{totalFullTextReportCount === 1 ? "" : "s"}
             </strong>
-            <p className="subtle">Active report: #{currentReportStudy.importItemId ?? activeReportIndex + 1} · {activeReport.title}</p>
+            <p className="subtle">Active report: {activeReport.title}</p>
+            <small className="queueArticleId">{currentReportArticleId}</small>
           </div>
           <label className="fieldLabel" htmlFor="full-text-report-picker">
             Jump to report
@@ -233,11 +241,14 @@ export function FullTextSection({
             value={activeReport.id}
             onChange={(event) => selectReport(event.target.value)}
           >
-            {projectReportQueue.map((report) => (
-              <option key={report.id} value={report.id}>
-                #{(hasProjectSeedData ? screeningStudies : studies).find((study) => study.id === report.studyId)?.importItemId ?? projectReportQueue.findIndex((candidate) => candidate.id === report.id) + 1} · {report.title}
-              </option>
-            ))}
+            {projectReportQueue.map((report) => {
+              const reportStudy = fullTextStudyPool.find((study) => study.id === report.studyId);
+              return (
+                <option key={report.id} value={report.id}>
+                  {formatArticleQueueId(reportStudy, report.studyId)} · {report.title}
+                </option>
+              );
+            })}
           </select>
           <div className="buttonRow" aria-label="Report navigation">
             <button
