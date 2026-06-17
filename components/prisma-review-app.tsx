@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   AlertTriangle,
   Archive,
-  ArrowLeft,
-  ArrowRight,
   BarChart3,
   Bell,
   BookOpen,
@@ -59,7 +58,6 @@ import {
   highlightRules,
   initialDecisions,
   initialWorkflowEvents,
-  projectCounts as seedProjectCounts,
   prismaCounts,
   qualityDomains,
   reportQueue,
@@ -76,7 +74,6 @@ import {
   type ExtractionTemplate,
   type ImportBatch,
   type ProjectWorkflowConflict,
-  type PrismaCounts,
   type ReviewProject,
   type Report,
   type Study,
@@ -86,6 +83,21 @@ import {
 } from "@/lib/prismaData";
 import type { ApiErrorPayload, AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
+import {
+  getActiveExtractionReports,
+  getActiveFullTextReports,
+  getActiveTitleAbstractStudies,
+  getCheckoutRefreshIntervalMs,
+  getConfirmedDuplicateStudyIds,
+  getCountsForProject,
+  getDedupCandidateProjectId,
+  getProjectPhaseProgress,
+  getWorkflowReportsForProject,
+  isFullTextEvaluationComplete,
+  isTitleAbstractEvaluationComplete,
+  sortReportsByStudyOrder,
+  sumObject
+} from "@/lib/workflowSelectors";
 import {
   Badge,
   EmptyState,
@@ -260,26 +272,29 @@ function getViewLabel(view: ViewKey) {
   return globalNavItems.find((item) => item.key === view)?.label ?? projectNavItems.find((item) => item.key === view)?.label ?? "Review";
 }
 
-function parseRouteState(pathname: string, search: string): { view: ViewKey; projectId?: string } {
+function parseRouteState(pathname: string, search: string): { view: ViewKey; projectId?: string; isKnownRoute: boolean } {
   const normalizedPath = normalizePathname(pathname);
 
   if (normalizedPath === "/" || normalizedPath === "/dashboard") {
-    return { view: "dashboard" };
+    return { view: "dashboard", isKnownRoute: true };
   }
   if (normalizedPath === "/projects/new") {
-    return { view: "newProject" };
+    return { view: "newProject", isKnownRoute: true };
   }
   if (normalizedPath === "/about") {
-    return { view: "about" };
+    return { view: "about", isKnownRoute: true };
   }
   if (normalizedPath === "/admin/reviews") {
-    return { view: "adminReviews" };
+    return { view: "adminReviews", isKnownRoute: true };
   }
   if (normalizedPath === "/admin/users") {
-    return { view: "registeredUsers" };
+    return { view: "registeredUsers", isKnownRoute: true };
   }
   if (normalizedPath === "/profile") {
-    return { view: "profile" };
+    return { view: "profile", isKnownRoute: true };
+  }
+  if (normalizedPath === "/sign-in") {
+    return { view: "dashboard", isKnownRoute: true };
   }
 
   const parts = normalizedPath.split("/").filter(Boolean);
@@ -299,10 +314,12 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
       audit: "audit",
       settings: "settings"
     };
+    const routeView = routeViewMap[routeKey];
 
     return {
-      view: routeViewMap[routeKey] ?? "projectDashboard",
-      projectId: decodeURIComponent(parts[1])
+      view: routeView ?? "projectDashboard",
+      projectId: decodeURIComponent(parts[1]),
+      isKnownRoute: routeView !== undefined
     };
   }
 
@@ -313,7 +330,8 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
 
   return {
     view: isViewKey(requestedView) ? requestedView : "dashboard",
-    projectId: requestedProjectId ?? undefined
+    projectId: requestedProjectId ?? undefined,
+    isKnownRoute: isViewKey(requestedView)
   };
 }
 
@@ -381,10 +399,6 @@ type ProjectUserStats = {
 
 type PhaseNavState = "done" | "current" | "pending";
 type PhaseAccessMap = Partial<Record<ViewKey, boolean>>;
-type ProjectPhaseProgress = {
-  percent: number;
-  label: string;
-};
 
 const emptyProjectSettingsForm: ProjectSettingsFormState = {
   title: "",
@@ -503,10 +517,17 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 }
 
 export function PrismaReviewApp() {
-  const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const routeSearch = searchParams.toString();
+  const routeState = useMemo(
+    () => parseRouteState(pathname ?? "/dashboard", routeSearch ? `?${routeSearch}` : ""),
+    [pathname, routeSearch]
+  );
+  const activeView = routeState.view;
+  const requestedProjectId = routeState.projectId ?? null;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const skipUrlSyncRef = useRef(false);
-  const isApplyingPostAuthRedirectRef = useRef(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -530,7 +551,6 @@ export function PrismaReviewApp() {
   const [extractionConsensus, setExtractionConsensus] = useState<ExtractionConsensus[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
   const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
-  const [requestedProjectId, setRequestedProjectId] = useState<string | null>(null);
   const [teamUserSearch, setTeamUserSearch] = useState("");
   const [inviteForm, setInviteForm] = useState({
     name: "",
@@ -704,19 +724,10 @@ export function PrismaReviewApp() {
   const projectScreeningStudies = (hasProjectSeedData ? screeningStudies : importedProjectStudies).filter(
     (study) => !confirmedDuplicateStudyIds.has(study.id)
   );
-  const reportOrderByStudyId = new Map(
-    projectScreeningStudies.map((study, index) => [study.id, study.importItemId ?? index + 1])
+  const projectReportQueue = sortReportsByStudyOrder(
+    hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(selectedProject, importedProjectStudies, reports),
+    projectScreeningStudies
   );
-  const projectReportQueue = (hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(selectedProject, importedProjectStudies, reports))
-    .slice()
-    .sort((left, right) => {
-      const leftOrder = reportOrderByStudyId.get(left.studyId) ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder = reportOrderByStudyId.get(right.studyId) ?? Number.MAX_SAFE_INTEGER;
-      if (leftOrder !== rightOrder) {
-        return leftOrder - rightOrder;
-      }
-      return left.title.localeCompare(right.title);
-    });
   const activeFullTextReports = useMemo(
     () => getActiveFullTextReports(selectedProject, projectReportQueue, decisions, currentUser.id),
     [currentUser.id, decisions, projectReportQueue, selectedProject]
@@ -1011,9 +1022,26 @@ export function PrismaReviewApp() {
     return sequentialPhaseAccess[view] ?? true;
   }
 
+  function setActiveView(view: ViewKey, options: { projectId?: string; replace?: boolean } = {}) {
+    const nextProjectId = options.projectId ?? selectedProjectId;
+    const nextPath = normalizePathname(buildPathForState(view, nextProjectId));
+    const currentPath = normalizePathname(pathname ?? window.location.pathname);
+
+    if (nextPath === currentPath) {
+      return;
+    }
+
+    if (options.replace) {
+      router.replace(nextPath);
+      return;
+    }
+
+    router.push(nextPath);
+  }
+
   function navigateToProjectView(view: ViewKey) {
     if (!canNavigateToProjectView(view)) {
-      setActiveView("projectDashboard");
+      setActiveView("projectDashboard", { replace: true });
       setIsMobileNavOpen(false);
       return;
     }
@@ -1039,12 +1067,10 @@ export function PrismaReviewApp() {
   }
 
   function applyPostAuthRedirect() {
-    const params = new URLSearchParams(window.location.search);
-    const target = sanitizeRedirectTarget(params.get("redirect"));
+    const target = sanitizeRedirectTarget(searchParams.get("redirect"));
 
     if (!target) {
-      skipUrlSyncRef.current = false;
-      setActiveView("dashboard");
+      setActiveView("dashboard", { replace: true });
       return;
     }
 
@@ -1052,14 +1078,10 @@ export function PrismaReviewApp() {
     const routeState = parseRouteState(redirectUrl.pathname, redirectUrl.search);
     const nextUrl = `${normalizePathname(redirectUrl.pathname)}${redirectUrl.search}${redirectUrl.hash}`;
 
-    isApplyingPostAuthRedirectRef.current = true;
-    skipUrlSyncRef.current = true;
-    setActiveView(routeState.view);
-    setRequestedProjectId(routeState.projectId ?? null);
     if (routeState.projectId) {
       setSelectedProjectId(routeState.projectId);
     }
-    window.history.replaceState(null, "", nextUrl);
+    router.replace(nextUrl);
   }
 
   useEffect(() => {
@@ -1093,49 +1115,13 @@ export function PrismaReviewApp() {
   }, []);
 
   useEffect(() => {
-    function applyUrlState() {
-      const routeState = parseRouteState(window.location.pathname, window.location.search);
-
-      skipUrlSyncRef.current = true;
-      setActiveView(routeState.view);
-      setRequestedProjectId(routeState.projectId ?? null);
-      if (routeState.projectId) {
-        setSelectedProjectId(routeState.projectId);
-      }
-    }
-
-    applyUrlState();
-    window.addEventListener("popstate", applyUrlState);
-    return () => window.removeEventListener("popstate", applyUrlState);
-  }, []);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    const nextPath = normalizePathname(buildPathForState(activeView, selectedProjectId));
-    const currentPath = normalizePathname(window.location.pathname);
-    const nextUrl = `${nextPath}${window.location.hash}`;
-    const currentUrl = `${currentPath}${window.location.hash}`;
-
-    if (skipUrlSyncRef.current) {
-      skipUrlSyncRef.current = false;
-      return;
-    }
-
-    if (nextUrl !== currentUrl) {
-      window.history.pushState(null, "", nextUrl);
-    }
-  }, [activeView, isAuthenticated, selectedProjectId]);
-
-  useEffect(() => {
     if (!isAuthResolved) {
       return;
     }
 
-    const currentPath = normalizePathname(window.location.pathname);
-    const currentWithSearch = `${currentPath}${window.location.search}`;
+    const currentPath = normalizePathname(pathname ?? "/dashboard");
+    const currentSearch = routeSearch ? `?${routeSearch}` : "";
+    const currentWithSearch = `${currentPath}${currentSearch}`;
 
     if (!isAuthenticated) {
       if (currentPath === "/sign-in") {
@@ -1143,19 +1129,14 @@ export function PrismaReviewApp() {
       }
 
       const nextUrl = `/sign-in?redirect=${encodeURIComponent(currentWithSearch)}`;
-      window.history.replaceState(null, "", nextUrl);
-      return;
-    }
-
-    if (isApplyingPostAuthRedirectRef.current) {
-      isApplyingPostAuthRedirectRef.current = false;
+      router.replace(nextUrl);
       return;
     }
 
     if (currentPath === "/sign-in") {
       applyPostAuthRedirect();
     }
-  }, [isAuthResolved, isAuthenticated]);
+  }, [isAuthResolved, isAuthenticated, pathname, routeSearch]);
 
   useEffect(() => {
     if (!isAuthenticated || !isAuthResolved) {
@@ -1174,7 +1155,6 @@ export function PrismaReviewApp() {
       }
 
       if (selectedProjectId !== routeProjectId) {
-        skipUrlSyncRef.current = true;
         setSelectedProjectId(routeProjectId);
       }
       return;
@@ -1196,7 +1176,7 @@ export function PrismaReviewApp() {
     }
 
     if (!canNavigateToProjectView(activeView)) {
-      setActiveView("projectDashboard");
+      setActiveView("projectDashboard", { replace: true });
       setIsMobileNavOpen(false);
     }
   }, [activeView, isAuthenticated, isAuthResolved, selectedProject.requireSequentialPhases, sequentialPhaseAccess]);
@@ -1598,6 +1578,10 @@ export function PrismaReviewApp() {
     };
   }, [fullTextMessage, pendingFullTextAction]);
 
+  if (!routeState.isKnownRoute) {
+    return null;
+  }
+
   if (!isAuthResolved) {
     return (
       <main className="loginShell" aria-busy="true" aria-live="polite">
@@ -1753,15 +1737,14 @@ export function PrismaReviewApp() {
   async function handleLogout() {
     await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setIsAuthenticated(false);
-    setActiveView("dashboard");
+    setActiveView("dashboard", { replace: true });
     clearLoginPassword();
   }
 
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
     const nextView = projectId === selectedProject.id && !canNavigateToProjectView(view) ? "projectDashboard" : view;
-    setRequestedProjectId(projectId);
     setSelectedProjectId(projectId);
-    setActiveView(nextView);
+    setActiveView(nextView, { projectId });
     setIsMobileNavOpen(false);
     setStudyIndex(0);
     setActiveReportId("");
@@ -1933,8 +1916,7 @@ export function PrismaReviewApp() {
         method: "DELETE"
       });
       applyAppState(payload);
-      setRequestedProjectId(null);
-      setActiveView("dashboard");
+      setActiveView("dashboard", { replace: true });
       setDashboardMessage(payload.message ?? `Deleted review ${selectedProject.title}.`);
     } catch (error) {
       setDeleteProjectMessage(getErrorMessage(error));
@@ -1995,11 +1977,8 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       const createdProjectId = payload.selectedProjectId ?? selectedProjectId;
-      skipUrlSyncRef.current = true;
-      setRequestedProjectId(createdProjectId);
       setSelectedProjectId(createdProjectId);
-      setActiveView("projectDashboard");
-      window.history.replaceState(null, "", buildPathForState("projectDashboard", createdProjectId));
+      setActiveView("projectDashboard", { projectId: createdProjectId, replace: true });
 
       if (queuedNewProjectInvites.length > 0) {
         let sentInvites = 0;
@@ -2027,7 +2006,6 @@ export function PrismaReviewApp() {
       setNewProjectInviteDraft({ name: "", email: "", title: "Reviewer" });
       setQueuedNewProjectInvites([]);
       setNewProjectTeamMessage("");
-      setActiveView("projectDashboard");
     } catch (error) {
       setNewProjectTeamMessage(getErrorMessage(error));
     } finally {
@@ -2865,7 +2843,10 @@ export function PrismaReviewApp() {
           const projectStudies = (project.id === "demo-review" ? screeningStudies : studies.filter((study) => study.projectId === project.id)).filter(
             (study) => !projectDuplicateStudyIds.has(study.id)
           );
-          const projectReports = project.id === "demo-review" ? reportQueue : getWorkflowReportsForProject(project, projectStudies, reports);
+          const projectReports = sortReportsByStudyOrder(
+            project.id === "demo-review" ? reportQueue : getWorkflowReportsForProject(project, projectStudies, reports),
+            projectStudies
+          );
           return getProjectPhaseProgress(
             project,
             getCountsForProject(project, projectStudies, projectReports, decisions, extractionResponses, extractionTemplates, projectCandidates),
@@ -3486,164 +3467,6 @@ export function PrismaReviewApp() {
   );
 }
 
-function getWorkflowReportsForProject(project: ReviewProject, projectStudies: Study[], reports: Report[]) {
-  const activeStudyIds = new Set(
-    projectStudies
-      .filter((study) => study.projectId === project.id && (study.stage === "full_text" || study.stage === "extraction"))
-      .map((study) => study.id)
-  );
-  return reports.filter((report) => report.projectId === project.id && activeStudyIds.has(report.studyId));
-}
-
-function getCountsForProject(
-  project: ReviewProject,
-  projectStudies: Study[] = [],
-  projectReports: Report[] = [],
-  decisions: Decision[] = [],
-  extractionResponses: ExtractionResponse[] = [],
-  extractionTemplates: ExtractionTemplate[] = [],
-  projectDedupCandidates: DedupCandidate[] = []
-): PrismaCounts {
-  const fullTextCurrentDecisions = decisions.filter(
-    (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
-  );
-  const fullTextDecisionsByReport = new Map<string, Decision[]>();
-  for (const decision of fullTextCurrentDecisions) {
-    const reportKey = decision.reportId ?? decision.studyId;
-    fullTextDecisionsByReport.set(reportKey, [...(fullTextDecisionsByReport.get(reportKey) ?? []), decision]);
-  }
-  const fullTextExcluded = Array.from(fullTextDecisionsByReport.values())
-    .filter(
-      (reportDecisions) =>
-        reportDecisions.length >= project.fullTextRequiredVotes &&
-        reportDecisions.every((decision) => decision.decisionValue === "exclude")
-    )
-    .map((reportDecisions) => reportDecisions[0]);
-  const reportsExcludedWithReasons = Object.fromEntries(project.exclusionReasons.map((reason) => [reason, 0])) as Record<string, number>;
-  for (const decision of fullTextExcluded) {
-    const reason = decision.exclusionReasonId;
-    if (!reason || !(reason in reportsExcludedWithReasons)) {
-      continue;
-    }
-    reportsExcludedWithReasons[reason] = (reportsExcludedWithReasons[reason] ?? 0) + 1;
-  }
-
-  const activeExtractionTemplate = extractionTemplates.find(
-    (template) => template.projectId === project.id && template.isActive
-  );
-  const includedStudyIds = new Set(projectStudies.filter((study) => study.projectId === project.id && study.stage === "extraction").map((study) => study.id));
-  const includedReports = projectReports.filter((report) => includedStudyIds.has(report.studyId));
-  const studiesExtracted = activeExtractionTemplate
-    ? includedReports.filter((report) => {
-        const submittedVotes = extractionResponses.filter(
-          (response) =>
-            response.projectId === project.id &&
-            response.reportId === report.id &&
-            response.templateId === activeExtractionTemplate.id &&
-            response.isSubmitted
-        ).length;
-        return submittedVotes >= project.extractionRequiredVotes;
-      }).length
-    : 0;
-
-  return (
-    seedProjectCounts[project.id] ?? {
-      recordsIdentifiedDatabase: project.recordsTotal,
-      recordsIdentifiedRegisters: 0,
-      recordsIdentifiedOther: 0,
-      duplicateRecordsRemoved: projectDedupCandidates.filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed").length,
-      automationRemoved: 0,
-      removedOtherReasons: 0,
-      recordsScreened: project.recordsScreened,
-      recordsExcluded: Math.max(project.recordsScreened - projectReports.length, 0),
-      reportsSought: projectReports.length,
-      reportsNotRetrieved: projectReports.filter((report) => report.retrievalStatus === "not_retrieved").length,
-      reportsAssessed: new Set(fullTextCurrentDecisions.map((decision) => decision.reportId ?? decision.studyId)).size,
-      reportsExcludedWithReasons,
-      studiesIncluded: project.studiesIncluded,
-      studiesExtracted,
-      studiesIncludedMetaAnalysis: 0
-    }
-  );
-}
-
-function getProjectPhaseProgress(
-  project: ReviewProject,
-  counts: PrismaCounts,
-  projectReports: Report[],
-  formatValue: (value: number) => string
-): ProjectPhaseProgress {
-  if (project.stage === "complete") {
-    return {
-      percent: 100,
-      label: `100% complete · ${formatValue(counts.studiesIncluded)} studies included`
-    };
-  }
-
-  if (project.stage === "extraction") {
-    const total = counts.studiesIncluded;
-    const value = counts.studiesExtracted;
-    const percent = getProgressPercent(value, total);
-    return {
-      percent,
-      label: `${percent}% extracted · ${formatValue(value)} of ${formatValue(total)} studies`
-    };
-  }
-
-  if (project.stage === "full_text") {
-    const total = projectReports.length > 0 ? projectReports.length : counts.reportsSought;
-    const value =
-      projectReports.length > 0
-        ? projectReports.filter((report) => isFullTextReportComplete(report, project)).length
-        : counts.reportsAssessed;
-    const percent = getProgressPercent(value, total);
-    return {
-      percent,
-      label: `${percent}% full-text reviewed · ${formatValue(value)} of ${formatValue(total)} reports`
-    };
-  }
-
-  if (project.stage === "screening") {
-    const total = project.recordsTotal;
-    const value = Math.min(project.recordsScreened, total);
-    const percent = getProgressPercent(value, total);
-    return {
-      percent,
-      label: `${percent}% screened · ${formatValue(value)} of ${formatValue(total)} records`
-    };
-  }
-
-  const imported = project.recordsTotal || counts.recordsIdentifiedDatabase + counts.recordsIdentifiedRegisters + counts.recordsIdentifiedOther;
-  return {
-    percent: imported > 0 ? 100 : 0,
-    label: `${formatValue(imported)} records imported`
-  };
-}
-
-function getProgressPercent(value: number, total: number) {
-  if (total <= 0) {
-    return 0;
-  }
-  return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
-}
-
-function getCheckoutRefreshIntervalMs(windowMinutes: number) {
-  const ttlMs = Math.max(1, Math.min(120, Math.round(windowMinutes))) * 60_000;
-  return Math.max(30_000, Math.min(Math.floor(ttlMs / 2), ttlMs - 5_000));
-}
-
-function isFullTextReportComplete(report: Report, project: ReviewProject) {
-  if (
-    report.fullTextStatus === "advance_extraction" ||
-    report.fullTextStatus === "excluded_full_text"
-  ) {
-    return true;
-  }
-
-  const requiredVotes = report.fullTextRequiredVotes ?? project.fullTextRequiredVotes;
-  return Boolean(report.fullTextVoteCount && report.fullTextVoteCount >= requiredVotes && report.fullTextStatus === "manual_review");
-}
-
 function highlightText(text: string) {
   const escapedTerms = highlightRules.map((rule) => escapeRegExp(rule.term));
   const expression = new RegExp(`(${escapedTerms.join("|")})`, "gi");
@@ -3664,22 +3487,6 @@ function highlightText(text: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function sumObject(values: Record<string, number>) {
-  return Object.values(values).reduce((total, value) => total + value, 0);
-}
-
-function getDedupCandidateProjectId(candidate: DedupCandidate) {
-  return candidate.projectId ?? candidate.recordA.projectId ?? candidate.recordB.projectId ?? "demo-review";
-}
-
-function getConfirmedDuplicateStudyIds(candidates: DedupCandidate[]) {
-  return new Set(
-    candidates
-      .filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed")
-      .map((candidate) => candidate.recordB.id)
-  );
 }
 
 function formatNumber(value: number) {
@@ -3710,107 +3517,6 @@ function formatMaybePolicy(value: "advance_to_full_text" | "conflict" | "third_v
     return "Request third vote";
   }
   return "Treat as conflict";
-}
-
-function isTitleAbstractEvaluationComplete(evaluation: StageEvaluation | undefined) {
-  return evaluation?.state === "advance_full_text" || evaluation?.state === "excluded_abstract";
-}
-
-function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {
-  return studies.filter((study) => {
-    const currentDecisions = decisions.filter(
-      (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
-    );
-    const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
-    const voteCount = study.titleAbstractVoteCount ?? currentDecisions.length;
-    const requiredVotes = study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes;
-    const activeViewerCount = study.titleAbstractActiveViewerCount ?? 0;
-    const checkedOutByCurrentUser = Boolean(study.titleAbstractCheckedOutByCurrentUser);
-    const evaluationState =
-      study.titleAbstractStatus ??
-      evaluateStage(
-        "title_abstract",
-        currentDecisions.map((decision) => decision.decisionValue),
-        requiredVotes,
-        project.maybePolicy
-      ).state;
-
-    if (evaluationState === "conflict" || evaluationState === "needs_third_vote") {
-      return checkedOutByCurrentUser || activeViewerCount < 1;
-    }
-    if (currentUserHasVoted || voteCount >= requiredVotes) {
-      return false;
-    }
-    return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
-  });
-}
-
-function getActiveFullTextReports(project: ReviewProject, reports: Report[], decisions: Decision[], currentUserId: string) {
-  return reports.filter((report) => {
-    const currentDecisions = decisions.filter(
-      (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
-    );
-    const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
-    const voteCount = report.fullTextVoteCount ?? currentDecisions.length;
-    const requiredVotes = report.fullTextRequiredVotes ?? project.fullTextRequiredVotes;
-    const activeViewerCount = report.fullTextActiveViewerCount ?? 0;
-    const checkedOutByCurrentUser = Boolean(report.fullTextCheckedOutByCurrentUser);
-    const evaluationState =
-      report.fullTextStatus ??
-      evaluateStage(
-        "full_text",
-        currentDecisions.map((decision) => decision.decisionValue),
-        requiredVotes,
-        project.maybePolicy
-      ).state;
-
-    if (evaluationState === "conflict" || evaluationState === "needs_third_vote") {
-      return checkedOutByCurrentUser || activeViewerCount < 1;
-    }
-    if (
-      currentUserHasVoted ||
-      voteCount >= requiredVotes ||
-      evaluationState === "advance_extraction" ||
-      evaluationState === "excluded_full_text" ||
-      evaluationState === "manual_review"
-    ) {
-      return false;
-    }
-    return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
-  });
-}
-
-function getActiveExtractionReports(
-  project: ReviewProject,
-  reports: Report[],
-  extractionResponses: ExtractionResponse[],
-  templateId: string,
-  currentUserId: string
-) {
-  return reports.filter((report) => {
-    const submittedResponses = extractionResponses.filter(
-      (response) =>
-        response.projectId === project.id &&
-        response.reportId === report.id &&
-        response.templateId === templateId &&
-        response.isSubmitted
-    );
-    const currentUserHasSubmitted = submittedResponses.some((response) => response.userId === currentUserId);
-    const metadataMatchesTemplate = report.extractionTemplateId === templateId;
-    const submittedCount = metadataMatchesTemplate ? report.extractionVoteCount ?? submittedResponses.length : submittedResponses.length;
-    const requiredVotes = report.extractionRequiredVotes ?? project.extractionRequiredVotes;
-    const activeViewerCount = metadataMatchesTemplate ? report.extractionActiveViewerCount ?? 0 : 0;
-    const checkedOutByCurrentUser = metadataMatchesTemplate ? Boolean(report.extractionCheckedOutByCurrentUser) : false;
-
-    if (currentUserHasSubmitted || submittedCount >= requiredVotes) {
-      return false;
-    }
-    return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - submittedCount, 1);
-  });
-}
-
-function isFullTextEvaluationComplete(evaluation: StageEvaluation | undefined) {
-  return evaluation?.state === "advance_extraction" || evaluation?.state === "excluded_full_text";
 }
 
 function formatProjectPhase(stage: ReviewProject["stage"]) {

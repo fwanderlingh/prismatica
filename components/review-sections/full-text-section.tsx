@@ -1,8 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type RefObject } from "react";
 import {
   AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
   BookOpen,
   Check,
   CheckCircle2,
@@ -11,17 +9,14 @@ import {
 } from "lucide-react";
 import { type AppUser, type Decision, type Report, type ReviewProject, screeningStudies, type Study } from "@/lib/prismaData";
 import { type DecisionValue, evaluateStage } from "@/lib/workflow";
+import type { ProjectPhaseProgress } from "@/lib/workflowSelectors";
 import { EmptyState, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
+import { ReportNavigation, ReportPicker } from "@/components/review-sections/review-queue";
 
 type FullTextUpdateInput = {
   retrievalStatus?: Report["retrievalStatus"];
   decisionValue?: DecisionValue;
   exclusionReasonId?: string;
-};
-
-type ProjectPhaseProgress = {
-  percent: number;
-  label: string;
 };
 
 type FullTextSectionProps = {
@@ -53,10 +48,6 @@ type FullTextSectionProps = {
 type PdfLoadState = "idle" | "loading" | "ready" | "error";
 
 const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
-
-function formatArticleQueueId(study?: Pick<Study, "id" | "importItemId">, fallbackId?: string) {
-  return `# ${study?.importItemId ?? study?.id ?? fallbackId ?? "unknown"}`;
-}
 
 export function FullTextSection({
   hasProjectSeedData,
@@ -142,7 +133,8 @@ export function FullTextSection({
   const fullTextStudyPool = hasProjectSeedData ? screeningStudies : studies;
   const matchedCurrentReportStudy = fullTextStudyPool.find((study) => study.id === activeReport.studyId);
   const currentReportStudy = matchedCurrentReportStudy ?? screeningStudies[0];
-  const currentReportArticleId = formatArticleQueueId(matchedCurrentReportStudy, activeReport.studyId);
+  const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
+  const activeReportFallbackId = activeReportIndex >= 0 ? activeReportIndex + 1 : undefined;
   const activeFullTextDecision = decisions.find(
     (decision) =>
       decision.projectId === selectedProject.id &&
@@ -189,7 +181,6 @@ export function FullTextSection({
   const messageIsUploadRelated = pendingFullTextAction === "upload" || /upload|pdf/i.test(fullTextMessage);
   const showUploadMessage = Boolean(fullTextMessage) && messageIsUploadRelated;
   const showDecisionMessage = Boolean(fullTextMessage) && !messageIsUploadRelated;
-  const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
   const canGoPreviousReport = activeReportIndex > 0;
   const canGoNextReport = activeReportIndex >= 0 && activeReportIndex < projectReportQueue.length - 1;
   const isFullTextActionPending = pendingFullTextAction !== null;
@@ -224,66 +215,39 @@ export function FullTextSection({
             </div>
           </div>
         </div>
-        <div className="reportPicker">
-          <div>
-            <p className="eyebrow">Report queue</p>
-            <strong>
-              {projectReportQueue.length} active of {totalFullTextReportCount} report{totalFullTextReportCount === 1 ? "" : "s"}
-            </strong>
-            <p className="subtle">Active report: {activeReport.title}</p>
-            <small className="queueArticleId">{currentReportArticleId}</small>
-          </div>
-          <label className="fieldLabel" htmlFor="full-text-report-picker">
-            Jump to report
-          </label>
-          <select
-            id="full-text-report-picker"
-            value={activeReport.id}
-            onChange={(event) => selectReport(event.target.value)}
-          >
-            {projectReportQueue.map((report) => {
-              const reportStudy = fullTextStudyPool.find((study) => study.id === report.studyId);
-              return (
-                <option key={report.id} value={report.id}>
-                  {formatArticleQueueId(reportStudy, report.studyId)} · {report.title}
-                </option>
-              );
-            })}
-          </select>
-          <div className="buttonRow" aria-label="Report navigation">
-            <button
-              className="ghostButton iconOnly"
-              type="button"
-              title="Previous report"
-              disabled={!canGoPreviousReport}
-              onClick={() => {
-                if (!canGoPreviousReport) {
-                  return;
-                }
-                selectReport(projectReportQueue[activeReportIndex - 1].id);
-              }}
-            >
-              <ArrowLeft size={17} />
-            </button>
-            <span>
-              {activeReportIndex + 1} of {projectReportQueue.length}
-            </span>
-            <button
-              className="ghostButton iconOnly"
-              type="button"
-              title="Next report"
-              disabled={!canGoNextReport}
-              onClick={() => {
+        <ReportPicker
+          activeFallbackId={activeReportFallbackId}
+          activeStudy={matchedCurrentReportStudy}
+          detail={`Active report: ${activeReport.title}`}
+          eyebrow="Report queue"
+          id="full-text-report-picker"
+          navigation={
+            <ReportNavigation
+              canGoNext={canGoNextReport}
+              canGoPrevious={canGoPreviousReport}
+              currentIndex={activeReportIndex}
+              onNext={() => {
                 if (!canGoNextReport) {
                   return;
                 }
                 selectReport(projectReportQueue[activeReportIndex + 1].id);
               }}
-            >
-              <ArrowRight size={17} />
-            </button>
-          </div>
-        </div>
+              onPrevious={() => {
+                if (!canGoPreviousReport) {
+                  return;
+                }
+                selectReport(projectReportQueue[activeReportIndex - 1].id);
+              }}
+              total={projectReportQueue.length}
+            />
+          }
+          onSelectReport={selectReport}
+          reports={projectReportQueue}
+          selectLabel="Jump to report"
+          selectedReportId={activeReport.id}
+          studies={fullTextStudyPool}
+          summary={`${projectReportQueue.length} active of ${totalFullTextReportCount} report${totalFullTextReportCount === 1 ? "" : "s"}`}
+        />
       </section>
 
       <section className="fullTextLayout">

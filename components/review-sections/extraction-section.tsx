@@ -12,6 +12,7 @@ import {
   type ViewKey
 } from "@/lib/prismaData";
 import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+import { ReportPicker } from "@/components/review-sections/review-queue";
 
 type FormSubmitEvent = {
   preventDefault: () => void;
@@ -61,10 +62,6 @@ type ExtractionSectionProps = {
 };
 
 const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
-
-function formatArticleQueueId(study?: Pick<Study, "id" | "importItemId">, fallbackId?: string) {
-  return `# ${study?.importItemId ?? study?.id ?? fallbackId ?? "unknown"}`;
-}
 
 export function ExtractionSection({
   activeCounts,
@@ -295,7 +292,8 @@ export function ExtractionSection({
   const activeStudyForExtraction = activeReportForExtraction
     ? projectScreeningStudies.find((study) => study.id === activeReportForExtraction.studyId)
     : undefined;
-  const activeExtractionArticleId = formatArticleQueueId(activeStudyForExtraction, activeReportForExtraction?.studyId);
+  const activeExtractionReportIndex = projectExtractionReports.findIndex((report) => report.id === activeReportForExtraction?.id);
+  const activeExtractionFallbackId = activeExtractionReportIndex >= 0 ? activeExtractionReportIndex + 1 : undefined;
   const extractionPdfUrl = activeReportForExtraction?.fileName
     ? `/api/projects/${selectedProject.id}/reports/${activeReportForExtraction.id}?pdf=1&checksum=${encodeURIComponent(activeReportForExtraction.checksum ?? "")}${pdfViewerPreferences}`
     : "";
@@ -321,37 +319,25 @@ export function ExtractionSection({
           <h1>Dual Independent Extraction</h1>
           <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
         </div>
-        <div className="reportPicker">
-          <div>
-            <p className="eyebrow">Included reports</p>
-            <strong>
-              {projectExtractionReports.length} active of {totalExtractionReportCount} report{totalExtractionReportCount === 1 ? "" : "s"}
-            </strong>
-            <p className="subtle">At least {requiredExtractionVotes} submitted extraction vote{requiredExtractionVotes === 1 ? "" : "s"} required.</p>
-            <small className="queueArticleId">{activeExtractionArticleId}</small>
-          </div>
-          <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
-            <GitMerge size={16} />
-            Resolve Conflicts
-          </button>
-          <label className="fieldLabel" htmlFor="extraction-report-picker">
-            Jump to report
-          </label>
-          <select
-            id="extraction-report-picker"
-            value={activeReportForExtraction?.id ?? ""}
-            onChange={(event) => setActiveExtractionReportId(event.target.value)}
-          >
-            {projectExtractionReports.map((report) => {
-              const reportStudy = projectScreeningStudies.find((study) => study.id === report.studyId);
-              return (
-                <option key={report.id} value={report.id}>
-                  {formatArticleQueueId(reportStudy, report.studyId)} · {report.title}
-                </option>
-              );
-            })}
-          </select>
-        </div>
+        <ReportPicker
+          action={
+            <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
+              <GitMerge size={16} />
+              Resolve Conflicts
+            </button>
+          }
+          activeFallbackId={activeExtractionFallbackId}
+          activeStudy={activeStudyForExtraction}
+          detail={`At least ${requiredExtractionVotes} submitted extraction vote${requiredExtractionVotes === 1 ? "" : "s"} required.`}
+          eyebrow="Included reports"
+          id="extraction-report-picker"
+          onSelectReport={setActiveExtractionReportId}
+          reports={projectExtractionReports}
+          selectLabel="Jump to report"
+          selectedReportId={activeReportForExtraction?.id ?? ""}
+          studies={projectScreeningStudies}
+          summary={`${projectExtractionReports.length} active of ${totalExtractionReportCount} report${totalExtractionReportCount === 1 ? "" : "s"}`}
+        />
       </section>
 
       {extractionMessage ? (

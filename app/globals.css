@@ -2607,17 +2607,6 @@ td span {
   background: var(--teal-soft);
 }
 
-.queueItem span {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 0.86rem;
-  line-height: 1.28;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-}
-
 .queueArticleId {
   color: var(--muted);
   font-size: 0.74rem;

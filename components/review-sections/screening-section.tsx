@@ -3,15 +3,12 @@ import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, FileSearch, 
 import type { Decision, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
+import { ReviewQueueItem } from "@/components/review-sections/review-queue";
 
 type StageEvaluation = {
   state: string;
   label: string;
 };
-
-function formatArticleQueueId(study: Pick<Study, "id" | "importItemId">) {
-  return `# ${study.importItemId ?? study.id}`;
-}
 
 type ScreeningSectionProps = {
   projectScreeningStudies: Study[];
@@ -154,26 +151,24 @@ export function ScreeningSection({
               const queueEvaluation = titleAbstractEvaluations.get(study.id);
               const hasQueueConflict = queueEvaluation?.state === "conflict" || queueEvaluation?.state === "needs_third_vote";
               return (
-                <button
-                  className={index === studyIndex ? "queueItem active" : "queueItem"}
-                  type="button"
-                  key={study.id}
-                  onClick={() => setStudyIndex(index)}
-                >
-                  <div className="queueItemTop">
-                    <small className="queueArticleId">{formatArticleQueueId(study)}</small>
-                    <span className="queueBadges">
+                <ReviewQueueItem
+                  active={index === studyIndex}
+                  badges={
+                    <>
                       {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
                       {decision ? (
                         <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} />
                       ) : (
                         <Badge label="open" tone="neutral" />
                       )}
-                    </span>
-                  </div>
-
-                  <span className="queueItemTitle">{study.title}</span>
-                </button>
+                    </>
+                  }
+                  fallbackId={index + 1}
+                  key={study.id}
+                  onSelect={() => setStudyIndex(index)}
+                  study={study}
+                  title={study.title}
+                />
               );
             })}
           </div>
