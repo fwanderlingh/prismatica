@@ -34,6 +34,8 @@ type ImportEditorSectionProps = {
   openScreening: () => void;
   isSavingImportDetails: boolean;
   isSavingStudyEdit: boolean;
+  isReviewingImportWarnings: boolean;
+  pendingReviewedStudyId: string;
   updateImportDetails: (event: FormSubmitEvent) => void;
   onImportSourceNameChange: (value: string) => void;
   onImportFilenameChange: (value: string) => void;
@@ -43,6 +45,7 @@ type ImportEditorSectionProps = {
   cancelStudyEdit: () => void;
   editImportStudy: (study: Study) => void;
   deleteImportStudy: (study: Study) => void;
+  markImportStudyReviewed: (study: Study) => void;
 };
 
 export function ImportEditorSection({
@@ -55,6 +58,7 @@ export function ImportEditorSection({
   studyEditForm,
   isSavingImportDetails,
   isSavingStudyEdit,
+  isReviewingImportWarnings,
   closeImportEditor,
   deleteImportBatch,
   openScreening,
@@ -66,9 +70,135 @@ export function ImportEditorSection({
   onStudyEditFormChange,
   cancelStudyEdit,
   editImportStudy,
-  deleteImportStudy
+  deleteImportStudy,
+  markImportStudyReviewed,
+  pendingReviewedStudyId
 }: ImportEditorSectionProps) {
   const messageIsSuccess = /imported|updated|deleted|reviewed/i.test(importDetailMessage);
+  const entryFallbackIndexes = new Map(batchStudies.map((study, index) => [study.id, index + 1]));
+  const reviewQueueStudies = batchStudies.filter((study) => studyNeedsReview(study));
+  const okStudies = batchStudies.filter((study) => !studyNeedsReview(study));
+
+  function recordLabel(study: Study) {
+    return `Record ${study.importItemId ?? entryFallbackIndexes.get(study.id) ?? 1}`;
+  }
+
+  function renderStudyCard(study: Study) {
+    const needsReview = studyNeedsReview(study);
+
+    return (
+      <article className={studyEditId === study.id ? "importEntryCard editing" : "importEntryCard"} key={study.id}>
+        {studyEditId === study.id ? (
+          <form className="studyEditForm" onSubmit={updateImportStudy}>
+            <span className="entryReference">{recordLabel(study)}</span>
+            <label className="wideField">
+              <span>Title</span>
+              <input value={studyEditForm.title} onChange={(event) => onStudyEditFormChange({ title: event.target.value })} />
+            </label>
+            <div className="formGrid">
+              <label>
+                <span>Authors</span>
+                <input value={studyEditForm.authors} onChange={(event) => onStudyEditFormChange({ authors: event.target.value })} />
+              </label>
+              <label>
+                <span>Journal</span>
+                <input value={studyEditForm.journal} onChange={(event) => onStudyEditFormChange({ journal: event.target.value })} />
+              </label>
+              <label>
+                <span>Year</span>
+                <input inputMode="numeric" value={studyEditForm.year} onChange={(event) => onStudyEditFormChange({ year: event.target.value })} />
+              </label>
+              <label>
+                <span>DOI</span>
+                <input value={studyEditForm.doi} onChange={(event) => onStudyEditFormChange({ doi: event.target.value })} />
+              </label>
+            </div>
+            <label className="wideField">
+              <span>Keywords</span>
+              <input value={studyEditForm.keywords} onChange={(event) => onStudyEditFormChange({ keywords: event.target.value })} />
+            </label>
+            <label className="wideField">
+              <span>Abstract</span>
+              <textarea value={studyEditForm.abstract} onChange={(event) => onStudyEditFormChange({ abstract: event.target.value })} />
+            </label>
+            <div className="buttonRow">
+              <button className="primaryButton" type="submit" disabled={isSavingStudyEdit}>
+                {isSavingStudyEdit ? (
+                  <>
+                    <span className="inlineSpinner" aria-hidden="true" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check size={17} />
+                    Save Entry
+                  </>
+                )}
+              </button>
+              <button className="ghostButton" type="button" onClick={cancelStudyEdit}>
+                <X size={17} />
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="importEntryHeader">
+              <div>
+                <span className="entryReference">{recordLabel(study)}</span>
+                <strong>{study.title}</strong>
+                <span>
+                  {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} ·{" "}
+                  {study.year > 0 ? study.year : <span className="needsReviewText">Year needs review</span>}
+                </span>
+              </div>
+              {needsReview ? (
+                <span className="needsReviewPill">
+                  <AlertTriangle size={15} />
+                  Needs Review
+                </span>
+              ) : (
+                <span className="entryStatusOk">
+                  <Check size={15} />
+                  OK
+                </span>
+              )}
+            </div>
+            <p className="importAbstract">{study.abstract}</p>
+            {study.pdfUrl ? (
+              <p className="importPdfLink">
+                <FileText size={15} />
+                <a href={study.pdfUrl} target="_blank" rel="noreferrer">Linked PDF</a>
+              </p>
+            ) : null}
+            {study.parserWarnings && study.parserWarnings.length > 0 ? (
+              <ul className="plainList compactList">
+                {study.parserWarnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="importEntryFooter buttonRow">
+              {needsReview ? (
+                <button className="ghostButton" type="button" disabled={pendingReviewedStudyId === study.id} onClick={() => markImportStudyReviewed(study)}>
+                  {pendingReviewedStudyId === study.id ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={17} />}
+                  {pendingReviewedStudyId === study.id ? "Marking..." : "Mark Reviewed"}
+                </button>
+              ) : null}
+              <button className="ghostButton" type="button" onClick={() => editImportStudy(study)}>
+                <PenLine size={17} />
+                Edit
+              </button>
+              <button className="dangerButton" type="button" onClick={() => deleteImportStudy(study)}>
+                <Trash2 size={17} />
+                Delete
+              </button>
+            </div>
+          </>
+        )}
+      </article>
+    );
+  }
 
   return (
     <div className="viewStack">
@@ -130,9 +260,9 @@ export function ImportEditorSection({
                 )}
               </button>
               {batch.parserWarnings > 0 ? (
-                <button className="ghostButton" type="button" onClick={() => reviewImportWarnings(batch.id)}>
-                  <CheckCircle2 size={17} />
-                  Mark Reviewed
+                <button className="ghostButton" type="button" disabled={isReviewingImportWarnings} onClick={() => reviewImportWarnings(batch.id)}>
+                  {isReviewingImportWarnings ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={17} />}
+                  {isReviewingImportWarnings ? "Saving..." : "Save + Mark Reviewed"}
                 </button>
               ) : null}
             </div>
@@ -158,102 +288,25 @@ export function ImportEditorSection({
         <div className="panel">
           <SectionTitle icon={FileText} title="Citation Entries" action={`${batchStudies.length} records`} />
           {batchStudies.length > 0 ? (
-            <div className="importEntryList">
-              {batchStudies.map((study, index) => (
-                <article className={studyEditId === study.id ? "importEntryCard editing" : "importEntryCard"} key={study.id}>
-                  {studyEditId === study.id ? (
-                    <form className="studyEditForm" onSubmit={updateImportStudy}>
-                      <span className="entryReference">Record {index + 1}</span>
-                      <label className="wideField">
-                        <span>Title</span>
-                        <input value={studyEditForm.title} onChange={(event) => onStudyEditFormChange({ title: event.target.value })} />
-                      </label>
-                      <div className="formGrid">
-                        <label>
-                          <span>Authors</span>
-                          <input value={studyEditForm.authors} onChange={(event) => onStudyEditFormChange({ authors: event.target.value })} />
-                        </label>
-                        <label>
-                          <span>Journal</span>
-                          <input value={studyEditForm.journal} onChange={(event) => onStudyEditFormChange({ journal: event.target.value })} />
-                        </label>
-                        <label>
-                          <span>Year</span>
-                          <input inputMode="numeric" value={studyEditForm.year} onChange={(event) => onStudyEditFormChange({ year: event.target.value })} />
-                        </label>
-                        <label>
-                          <span>DOI</span>
-                          <input value={studyEditForm.doi} onChange={(event) => onStudyEditFormChange({ doi: event.target.value })} />
-                        </label>
-                      </div>
-                      <label className="wideField">
-                        <span>Keywords</span>
-                        <input value={studyEditForm.keywords} onChange={(event) => onStudyEditFormChange({ keywords: event.target.value })} />
-                      </label>
-                      <label className="wideField">
-                        <span>Abstract</span>
-                        <textarea value={studyEditForm.abstract} onChange={(event) => onStudyEditFormChange({ abstract: event.target.value })} />
-                      </label>
-                      <div className="buttonRow">
-                        <button className="primaryButton" type="submit" disabled={isSavingStudyEdit}>
-                          {isSavingStudyEdit ? (
-                            <>
-                              <span className="inlineSpinner" aria-hidden="true" />
-                              Saving...
-                            </>
-                          ) : (
-                            <>
-                              <Check size={17} />
-                              Save Entry
-                            </>
-                          )}
-                        </button>
-                        <button className="ghostButton" type="button" onClick={cancelStudyEdit}>
-                          <X size={17} />
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <>
-                      <div className="importEntryHeader">
-                        <div>
-                          <span className="entryReference">Record {study.importItemId ?? index + 1}</span>
-                          <strong>{study.title}</strong>
-                          <span>
-                            {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} · {" "}
-                            {study.year > 0 ? study.year : "Year needs review"}
-                          </span>
-                        </div>
-                        <div className="buttonRow">
-                          <button className="ghostButton" type="button" onClick={() => editImportStudy(study)}>
-                            <PenLine size={17} />
-                            Edit
-                          </button>
-                          <button className="dangerButton" type="button" onClick={() => deleteImportStudy(study)}>
-                            <Trash2 size={17} />
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                      <p className="importAbstract">{study.abstract}</p>
-                      {study.pdfUrl ? (
-                        <p className="importPdfLink">
-                          <FileText size={15} />
-                          <a href={study.pdfUrl} target="_blank" rel="noreferrer">Linked PDF</a>
-                        </p>
-                      ) : null}
-                      {study.parserWarnings && study.parserWarnings.length > 0 ? (
-                        <ul className="plainList compactList">
-                          {study.parserWarnings.map((warning) => (
-                            <li key={warning}>{warning}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </>
-                  )}
-                </article>
-              ))}
+            <div className="importEntryGroups">
+              {reviewQueueStudies.length > 0 ? (
+                <section className="importEntryGroup">
+                  <div className="importEntryGroupHeader">
+                    <strong>Review Queue</strong>
+                    <span>{reviewQueueStudies.length} need review</span>
+                  </div>
+                  <div className="importEntryList">{reviewQueueStudies.map((study) => renderStudyCard(study))}</div>
+                </section>
+              ) : null}
+              {okStudies.length > 0 ? (
+                <section className="importEntryGroup">
+                  <div className="importEntryGroupHeader">
+                    <strong>OK Entries</strong>
+                    <span>{okStudies.length} ready</span>
+                  </div>
+                  <div className="importEntryList">{okStudies.map((study) => renderStudyCard(study))}</div>
+                </section>
+              ) : null}
             </div>
           ) : (
             <EmptyState icon={FileText} title="No citation entries" description="This import batch does not contain screening records." />
@@ -262,4 +315,8 @@ export function ImportEditorSection({
       </section>
     </div>
   );
+}
+
+function studyNeedsReview(study: Study) {
+  return (study.parserWarnings ?? []).length > 0;
 }

@@ -22,6 +22,59 @@ export function ImportsSection({
   onImportCitationFile,
   onOpenImportEditor
 }: ImportsSectionProps) {
+  const reviewBatches = projectImportBatches.filter((batch) => batch.status === "needs_review" || batch.parserWarnings > 0);
+  const okBatches = projectImportBatches.filter((batch) => batch.status !== "needs_review" && batch.parserWarnings === 0);
+  const importMessageIsSuccess = /deleted|imported|importing|reviewed|saved|updated/i.test(importMessage);
+
+  function renderBatchTable(batches: ImportBatch[]) {
+    return (
+      <div className="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Format</th>
+              <th>Records</th>
+              <th>PDFs</th>
+              <th>Warnings</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {batches.map((batch) => (
+              <tr className={batch.id === selectedReviewBatch?.id ? "activeImportRow" : undefined} key={batch.id}>
+                <td>
+                  <strong>{batch.sourceName}</strong>
+                  <span>{batch.filename}</span>
+                </td>
+                <td>{batch.format.toUpperCase()}</td>
+                <td>{batch.records}</td>
+                <td>
+                  {(batch.pdfLinks ?? 0) > 0 ? `${batch.pdfsRetrieved ?? 0}/${batch.pdfLinks ?? 0}` : "None"}
+                </td>
+                <td>{batch.parserWarnings}</td>
+                <td>
+                  {batch.status === "needs_review" ? (
+                    <Badge label="needs review" tone="warning" />
+                  ) : (
+                    <Badge label={batch.status.replace("_", " ")} tone="success" />
+                  )}
+                </td>
+                <td>
+                  <button className="ghostButton" type="button" onClick={() => onOpenImportEditor(batch.id)}>
+                    <FileSearch size={17} />
+                    Review Import
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -56,8 +109,8 @@ export function ImportsSection({
         </div>
       </section>
       {importMessage ? (
-        <div className={importMessage.startsWith("Importing") || importMessage.includes("imported") ? "validationItem ok" : "validationItem blocked"}>
-          {importMessage.startsWith("Importing") || importMessage.includes("imported") ? <Check size={17} /> : <AlertTriangle size={17} />}
+        <div className={importMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+          {importMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
           <span>{importMessage}</span>
         </div>
       ) : null}
@@ -66,45 +119,25 @@ export function ImportsSection({
         <div className="panel">
           <SectionTitle icon={Database} title="Import Batches" action="Parser status" />
           {projectImportBatches.length > 0 ? (
-            <div className="tableWrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Source</th>
-                    <th>Format</th>
-                    <th>Records</th>
-                    <th>PDFs</th>
-                    <th>Warnings</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {projectImportBatches.map((batch) => (
-                    <tr className={batch.id === selectedReviewBatch?.id ? "activeImportRow" : undefined} key={batch.id}>
-                      <td>
-                        <strong>{batch.sourceName}</strong>
-                        <span>{batch.filename}</span>
-                      </td>
-                      <td>{batch.format.toUpperCase()}</td>
-                      <td>{batch.records}</td>
-                      <td>
-                        {(batch.pdfLinks ?? 0) > 0 ? `${batch.pdfsRetrieved ?? 0}/${batch.pdfLinks ?? 0}` : "None"}
-                      </td>
-                      <td>{batch.parserWarnings}</td>
-                      <td>
-                        <Badge label={batch.status.replace("_", " ")} tone={batch.status === "needs_review" ? "warning" : "success"} />
-                      </td>
-                      <td>
-                        <button className="ghostButton" type="button" onClick={() => onOpenImportEditor(batch.id)}>
-                          <FileSearch size={17} />
-                          Review Import
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="importBatchGroups">
+              {reviewBatches.length > 0 ? (
+                <section className="importEntryGroup">
+                  <div className="importEntryGroupHeader">
+                    <strong>Review Queue</strong>
+                    <span>{reviewBatches.length} need review</span>
+                  </div>
+                  {renderBatchTable(reviewBatches)}
+                </section>
+              ) : null}
+              {okBatches.length > 0 ? (
+                <section className="importEntryGroup">
+                  <div className="importEntryGroupHeader">
+                    <strong>OK Imports</strong>
+                    <span>{okBatches.length} ready</span>
+                  </div>
+                  {renderBatchTable(okBatches)}
+                </section>
+              ) : null}
             </div>
           ) : (
             <EmptyState icon={Upload} title="No imports yet" description="Upload RIS and BibTeX files to populate records for this review." />

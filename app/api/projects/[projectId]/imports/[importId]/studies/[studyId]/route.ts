@@ -1,5 +1,5 @@
 import { jsonError, jsonOk, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
-import { deleteImportStudyForUser, updateImportStudyForUser } from "@/lib/serverStore";
+import { deleteImportStudyForUser, markImportStudyReviewedForUser, updateImportStudyForUser } from "@/lib/serverStore";
 
 export async function PATCH(
   request: Request,
@@ -33,6 +33,19 @@ export async function DELETE(
     const userId = await requireSessionUserId();
     const { projectId, importId, studyId } = await context.params;
     return jsonOk(deleteImportStudyForUser(userId, projectId, importId, studyId));
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+export async function POST(
+  _request: Request,
+  context: { params: Promise<{ projectId: string; importId: string; studyId: string }> }
+) {
+  try {
+    const userId = await requireSessionUserId();
+    const { projectId, importId, studyId } = await context.params;
+    return jsonOk(markImportStudyReviewedForUser(userId, projectId, importId, studyId));
   } catch (error) {
     return jsonError(error);
   }

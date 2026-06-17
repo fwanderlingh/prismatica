@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
 import type { Decision, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
@@ -27,6 +27,8 @@ type ScreeningSectionProps = {
   highlightText: (text: string) => React.ReactNode;
   screeningNote: string;
   setScreeningNote: (value: string) => void;
+  screeningMessage: string;
+  canRecordScreeningDecision: boolean;
   currentUserDecision: Decision | undefined;
   currentStageDecisions: Decision[];
   pendingScreeningDecision: Exclude<DecisionValue, "not_retrieved"> | null;
@@ -55,6 +57,8 @@ export function ScreeningSection({
   highlightText,
   screeningNote,
   setScreeningNote,
+  screeningMessage,
+  canRecordScreeningDecision,
   currentUserDecision,
   currentStageDecisions,
   pendingScreeningDecision,
@@ -66,6 +70,12 @@ export function ScreeningSection({
 }: ScreeningSectionProps) {
   const isSubmittingDecision = pendingScreeningDecision !== null;
   const activeDecisionValue = currentUserDecision?.decisionValue;
+  const isDecisionDisabled = isSubmittingDecision || isUndoingScreeningDecision || !canRecordScreeningDecision;
+  const visibleScreeningMessage =
+    screeningMessage || (!canRecordScreeningDecision ? "Waiting for this citation to be checked out before saving a vote." : "");
+  const messageIsSuccess = /saved|undone/i.test(visibleScreeningMessage);
+  const messageIsError = /already|cannot|denied|duplicate|error|failed|forbidden|invalid|no longer|not found|required|unauthorized/i.test(visibleScreeningMessage);
+  const screeningMessageClassName = messageIsSuccess ? "validationItem ok" : messageIsError ? "validationItem blocked" : "validationItem warning";
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -165,7 +175,7 @@ export function ScreeningSection({
               <h2>{currentStudy.title}</h2>
               <p className="subtle">
                 {currentStudy.authors.length > 0 ? currentStudy.authors.join(", ") : "No authors parsed"} · {currentStudy.journal} ·{" "}
-                {currentStudy.year > 0 ? currentStudy.year : "Year needs review"}
+                {currentStudy.year > 0 ? currentStudy.year : <span className="needsReviewText">Year needs review</span>}
               </p>
             </div>
             <Badge label={stageEvaluation.label} tone={stageEvaluation.state === "conflict" ? "danger" : "info"} />
@@ -193,6 +203,12 @@ export function ScreeningSection({
             <span>My current vote</span>
             <strong>{currentUserDecision ? formatDecision(currentUserDecision.decisionValue) : "No vote"}</strong>
           </div>
+          {visibleScreeningMessage ? (
+            <div className={screeningMessageClassName}>
+              {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>{visibleScreeningMessage}</span>
+            </div>
+          ) : null}
           {stageEvaluation.state === "conflict" || stageEvaluation.state === "needs_third_vote" ? (
             <div className="conflictVotesBox">
               <strong>{stageEvaluation.label}</strong>
@@ -212,7 +228,7 @@ export function ScreeningSection({
               className={activeDecisionValue === "include" ? "includeButton active" : "includeButton"}
               type="button"
               onClick={() => addScreeningDecision("include")}
-              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+              disabled={isDecisionDisabled}
             >
               {pendingScreeningDecision === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
               {pendingScreeningDecision === "include" ? "Saving..." : "Include"}
@@ -221,7 +237,7 @@ export function ScreeningSection({
               className={activeDecisionValue === "maybe" ? "maybeButton active" : "maybeButton"}
               type="button"
               onClick={() => addScreeningDecision("maybe")}
-              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+              disabled={isDecisionDisabled}
             >
               {pendingScreeningDecision === "maybe" ? <span className="inlineSpinner" aria-hidden="true" /> : <Minus size={18} />}
               {pendingScreeningDecision === "maybe" ? "Saving..." : "Maybe"}
@@ -230,7 +246,7 @@ export function ScreeningSection({
               className={activeDecisionValue === "exclude" ? "excludeButton active" : "excludeButton"}
               type="button"
               onClick={() => addScreeningDecision("exclude")}
-              disabled={isSubmittingDecision || isUndoingScreeningDecision}
+              disabled={isDecisionDisabled}
             >
               {pendingScreeningDecision === "exclude" ? <span className="inlineSpinner" aria-hidden="true" /> : <XCircle size={18} />}
               {pendingScreeningDecision === "exclude" ? "Saving..." : "Exclude"}

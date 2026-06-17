@@ -19,7 +19,8 @@ import {
   type Report,
   type ReviewProject,
   type Study,
-  type WorkflowEvent
+  type WorkflowEvent,
+  reviewProjects
 } from "./prismaData";
 import { evaluateStage, type DecisionValue } from "./workflow";
 
@@ -51,6 +52,7 @@ type PersistedState = {
 type ScreeningCheckout = {
   projectId: string;
   stage: "title_abstract" | "full_text" | "extraction";
+  checkoutId?: string;
   studyId?: string;
   reportId?: string;
   templateId?: string;
@@ -446,6 +448,24 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     })
   ];
   const studiesWithImportItemIds = assignImportItemIds(studies);
+  const importsWithStudyWarnings: ImportBatch[] = imports.map((batch): ImportBatch => {
+    if (batch.parserWarnings <= 0) {
+      return batch;
+    }
+    const batchStudies = studiesWithImportItemIds.filter(
+      (study) => study.projectId === batch.projectId && study.importBatchId === batch.id
+    );
+    if (batchStudies.length === 0) {
+      return batch;
+    }
+    const parserWarningMessages = buildImportWarningMessages(batchStudies);
+    return {
+      ...batch,
+      parserWarnings: parserWarningMessages.length,
+      parserWarningMessages,
+      status: parserWarningMessages.length > 0 ? "needs_review" : "parsed"
+    };
+  });
   const studyIds = new Set(studiesWithImportItemIds.map((study) => study.id));
   const reports = Array.isArray(state.reports)
     ? state.reports
@@ -516,7 +536,7 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
       } as StoredUser;
     }),
     projects: projectsWithImportState,
-    imports,
+    imports: importsWithStudyWarnings,
     studies: studiesWithImportItemIds,
     reports,
     extractionTemplates,
@@ -545,8 +565,13 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
     events: Array.isArray(state.events)
       ? state.events.filter((event) => projectIds.has(event.entity) || studyIds.has(event.entity) || reportIds.has(event.entity))
       : [],
-    dedupCandidates: Array.isArray(state.dedupCandidates) ? state.dedupCandidates.filter(() => projectIds.has("demo-review")) : []
+    dedupCandidates: Array.isArray(state.dedupCandidates)
+      ? state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)))
+      : []
   };
+  for (const project of normalizedState.projects) {
+    syncDedupCandidatesForProject(normalizedState, project.id);
+  }
   resyncAllProjectWorkflowState(normalizedState);
   return normalizedState;
 }
@@ -931,7 +956,8 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
   const activeScreeningCheckouts = state.screeningCheckouts;
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const allProjectIds = new Set(state.projects.map((project) => project.id));
-  const demoProjectAccessible = projectIds.has("demo-review");
+  const visibleDedupCandidates = state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)));
+  const visibleDedupCandidateIds = new Set(visibleDedupCandidates.map((candidate) => candidate.id));
 
   return {
     currentUser: publicUser(currentUser),
@@ -985,10 +1011,11 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
           projectIds.has(event.entity) ||
           studyIds.has(event.entity) ||
           reportIds.has(event.entity) ||
-          (demoProjectAccessible && !allProjectIds.has(event.entity))
+          visibleDedupCandidateIds.has(event.entity) ||
+          (projectIds.has("demo-review") && !allProjectIds.has(event.entity))
       )
       .slice(0, 50),
-    dedupCandidates: demoProjectAccessible ? state.dedupCandidates : []
+    dedupCandidates: visibleDedupCandidates
   };
 }
 
@@ -1061,6 +1088,19 @@ function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
 
 export function getAppStateForUser(userId: string): AppStatePayload {
   return buildPayload(readState(), userId);
+}
+
+export function canAccessProjectRoute(projectId: string, userId: string | null) {
+  const state = readState();
+  const project = getProject(state, projectId);
+  if (!project) {
+    return reviewProjects.some((seedProject) => seedProject.id === projectId);
+  }
+  if (!userId) {
+    return true;
+  }
+  const user = getUser(state, userId);
+  return Boolean(user?.isAdmin || isProjectMember(project, userId));
 }
 
 export function deleteProjectForUser(userId: string, projectId: string): AppMutationPayload {
@@ -1940,18 +1980,37 @@ export async function createImportBatchForUser(
   const content = input.content ?? "";
   const parsedCitations = parseCitationFile(input.format, content);
   const records = parsedCitations.length;
-  const parserWarningMessages = parsedCitations.flatMap((citation, index) =>
-    citation.warnings.map((warning) => `Record ${index + 1}: ${warning}`)
-  );
+  const importFileWarnings: string[] = [];
   if (!content.trim()) {
-    parserWarningMessages.push("File is empty or only contains whitespace.");
+    importFileWarnings.push("Import file: File is empty or only contains whitespace.");
   }
-  const parserWarnings = parserWarningMessages.length;
   const sourceName = input.format === "bib" ? "BibTeX upload" : "RIS upload";
   const now = new Date();
   const pdfLinks = parsedCitations.filter((citation) => citation.pdfUrl).length;
+  const batchId = createId("imp");
+  const nextImportItemId = getNextImportItemId(state, projectId);
+  const importedStudies: Study[] = parsedCitations.map((citation, index) => ({
+    id: createId("study"),
+    importItemId: nextImportItemId + index,
+    projectId,
+    importBatchId: batchId,
+    title: citation.title,
+    abstract: citation.abstract,
+    authors: citation.authors,
+    journal: citation.journal,
+    year: citation.year,
+    doi: citation.doi,
+    source: sourceName,
+    stage: "title_abstract",
+    keywords: citation.keywords,
+    pdfUrl: citation.pdfUrl || undefined,
+    rawCitation: citation.rawCitation,
+    parserWarnings: citation.warnings
+  }));
+  const parserWarningMessages = [...buildImportWarningMessages(importedStudies), ...importFileWarnings];
+  const parserWarnings = parserWarningMessages.length;
   const batch: ImportBatch = {
-    id: createId("imp"),
+    id: batchId,
     projectId,
     sourceName,
     format: input.format,
@@ -1966,25 +2025,6 @@ export async function createImportBatchForUser(
     uploadedBy: currentUser.name,
     uploadedAt: now.toISOString().slice(0, 16).replace("T", " ")
   };
-  const nextImportItemId = getNextImportItemId(state, projectId);
-  const importedStudies: Study[] = parsedCitations.map((citation, index) => ({
-    id: createId("study"),
-    importItemId: nextImportItemId + index,
-    projectId,
-    importBatchId: batch.id,
-    title: citation.title,
-    abstract: citation.abstract,
-    authors: citation.authors,
-    journal: citation.journal,
-    year: citation.year,
-    doi: citation.doi,
-    source: sourceName,
-    stage: "title_abstract",
-    keywords: citation.keywords,
-    pdfUrl: citation.pdfUrl || undefined,
-    rawCitation: citation.rawCitation,
-    parserWarnings: citation.warnings
-  }));
   const importedReports = importedStudies
     .filter((study) => study.pdfUrl)
     .map((study) => createReportForStudy(projectId, study, study.pdfUrl));
@@ -1992,6 +2032,7 @@ export async function createImportBatchForUser(
   state.imports.unshift(batch);
   state.studies.unshift(...importedStudies);
   state.reports.unshift(...importedReports);
+  syncDedupCandidatesForProject(state, projectId);
   if (importedReports.length > 0) {
     await retrieveImportedPdfReports(state, projectId, batch.id, importedReports, currentUser);
   }
@@ -2024,7 +2065,12 @@ export async function createImportBatchForUser(
   };
 }
 
-export function markImportBatchReviewedForUser(userId: string, projectId: string, importId: string): AppMutationPayload {
+export function markImportBatchReviewedForUser(
+  userId: string,
+  projectId: string,
+  importId: string,
+  input: { sourceName?: string; filename?: string } = {}
+): AppMutationPayload {
   const state = readState();
   const currentUser = getUser(state, userId);
   requireProjectMember(state, projectId, userId);
@@ -2032,14 +2078,24 @@ export function markImportBatchReviewedForUser(userId: string, projectId: string
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
   }
 
+  const sourceName = input.sourceName?.trim();
+  const filename = input.filename?.trim();
+  if ((input.sourceName !== undefined && !sourceName) || (input.filename !== undefined && !filename)) {
+    throw new ApiError("Source and filename are required.");
+  }
+
+  let reviewedFilename = importId;
   let found = false;
   state.imports = state.imports.map((batch) => {
     if (batch.id !== importId || batch.projectId !== projectId) {
       return batch;
     }
     found = true;
+    reviewedFilename = filename || batch.filename;
     return {
       ...batch,
+      sourceName: sourceName || batch.sourceName,
+      filename: filename || batch.filename,
       status: "parsed",
       parserWarnings: 0,
       parserWarningMessages: []
@@ -2053,9 +2109,13 @@ export function markImportBatchReviewedForUser(userId: string, projectId: string
   state.studies = state.studies.map((study) =>
     study.projectId === projectId && study.importBatchId === importId ? { ...study, parserWarnings: [] } : study
   );
-  appendEvent(state, currentUser.name, `Reviewed parser warnings for ${importId}`, projectId);
+  syncProjectAfterImportChange(state, projectId, `Reviewed parser warnings for ${reviewedFilename}`);
+  appendEvent(state, currentUser.name, `Reviewed parser warnings for ${reviewedFilename}`, projectId);
   writeState(state);
-  return buildPayload(state, userId);
+  return {
+    ...buildPayload(state, userId),
+    message: `Saved details and marked ${reviewedFilename} reviewed.`
+  };
 }
 
 export function updateImportBatchForUser(
@@ -2122,11 +2182,17 @@ export function deleteImportBatchForUser(userId: string, projectId: string, impo
   state.studies = state.studies.filter((study) => study.projectId !== projectId || study.importBatchId !== importId);
   state.reports = state.reports.filter((report) => !removedStudyIds.has(report.studyId));
   state.decisions = state.decisions.filter((decision) => !removedStudyIds.has(decision.studyId));
+  state.dedupCandidates = state.dedupCandidates.filter(
+    (candidate) => !removedStudyIds.has(candidate.recordA.id) && !removedStudyIds.has(candidate.recordB.id)
+  );
 
   syncProjectAfterImportChange(state, projectId, `Deleted import ${batch.filename}`);
   appendEvent(state, currentUser.name, `Deleted import ${batch.filename}`, projectId);
   writeState(state);
-  return buildPayload(state, userId);
+  return {
+    ...buildPayload(state, userId),
+    message: `Deleted ${batch.filename} and ${removedStudyIds.size} citation ${removedStudyIds.size === 1 ? "entry" : "entries"}.`
+  };
 }
 
 export function updateImportStudyForUser(
@@ -2202,6 +2268,7 @@ export function updateImportStudyForUser(
   }
 
   syncImportBatchAfterStudyChange(state, projectId, importId, true);
+  syncDedupCandidatesForProject(state, projectId);
   syncProjectAfterImportChange(state, projectId, `Updated imported citation in ${batch.filename}`);
   appendEvent(state, currentUser.name, `Updated imported citation in ${batch.filename}`, studyId);
   writeState(state);
@@ -2227,11 +2294,42 @@ export function deleteImportStudyForUser(userId: string, projectId: string, impo
   state.extractionResponses = state.extractionResponses.filter((response) => response.studyId !== studyId);
   state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.studyId !== studyId);
   state.decisions = state.decisions.filter((decision) => decision.studyId !== studyId);
+  state.dedupCandidates = state.dedupCandidates.filter((candidate) => candidate.recordA.id !== studyId && candidate.recordB.id !== studyId);
   syncImportBatchAfterStudyChange(state, projectId, importId, batch.parserWarnings > 0 || batch.status === "needs_review");
+  syncDedupCandidatesForProject(state, projectId);
   syncProjectAfterImportChange(state, projectId, `Deleted imported citation from ${batch.filename}`);
   appendEvent(state, currentUser.name, `Deleted imported citation from ${batch.filename}`, studyId);
   writeState(state);
   return buildPayload(state, userId);
+}
+
+export function markImportStudyReviewedForUser(userId: string, projectId: string, importId: string, studyId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const batch = state.imports.find((candidate) => candidate.id === importId && candidate.projectId === projectId);
+  const study = state.studies.find((candidate) => candidate.id === studyId && candidate.projectId === projectId && candidate.importBatchId === importId);
+  if (!batch || !study) {
+    throw new ApiError("Citation entry not found.", 404);
+  }
+
+  state.studies = state.studies.map((candidate) =>
+    candidate.id === studyId && candidate.projectId === projectId && candidate.importBatchId === importId
+      ? { ...candidate, parserWarnings: [] }
+      : candidate
+  );
+  syncImportBatchAfterStudyChange(state, projectId, importId, true);
+  syncProjectAfterImportChange(state, projectId, `Reviewed imported citation in ${batch.filename}`);
+  appendEvent(state, currentUser.name, `Reviewed imported citation in ${batch.filename}`, studyId);
+  writeState(state);
+  return {
+    ...buildPayload(state, userId),
+    message: `Marked "${study.title}" reviewed.`
+  };
 }
 
 export function addScreeningDecisionForUser(
@@ -2255,6 +2353,9 @@ export function addScreeningDecisionForUser(
 
   if (!studyId || !["include", "exclude", "maybe"].includes(input.decisionValue ?? "")) {
     throw new ApiError("A title/abstract decision must be include, exclude, or maybe.");
+  }
+  if (getConfirmedDuplicateStudyIds(state, projectId).has(studyId)) {
+    throw new ApiError("This citation has been confirmed as a duplicate and is no longer in the screening queue.");
   }
 
   state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts);
@@ -2337,6 +2438,7 @@ export function updateScreeningCheckoutForUser(
     studyId?: string;
     reportId?: string;
     templateId?: string;
+    checkoutId?: string;
     stage?: string;
     action?: string;
   }
@@ -2350,6 +2452,7 @@ export function updateScreeningCheckoutForUser(
   const projectId = input.projectId ?? "";
   const stage = input.stage === "extraction" ? "extraction" : input.stage === "full_text" ? "full_text" : "title_abstract";
   const action = input.action === "release" ? "release" : "acquire";
+  const checkoutId = input.checkoutId?.trim() || "";
   const project = requireProjectMember(state, projectId, userId);
 
   if (stage === "extraction") {
@@ -2378,7 +2481,8 @@ export function updateScreeningCheckoutForUser(
           checkout.projectId === projectId &&
           checkout.reportId === reportId &&
           checkout.templateId === template.id &&
-          checkout.userId === userId
+          checkout.userId === userId &&
+          (action !== "release" || !checkoutId || checkout.checkoutId === checkoutId)
         )
     );
 
@@ -2423,6 +2527,7 @@ export function updateScreeningCheckoutForUser(
     state.screeningCheckouts.push({
       projectId,
       stage: "extraction",
+      checkoutId: checkoutId || createId("checkout"),
       studyId: report.studyId,
       reportId,
       templateId: template.id,
@@ -2447,7 +2552,8 @@ export function updateScreeningCheckoutForUser(
           getScreeningCheckoutStage(checkout) === "full_text" &&
           checkout.projectId === projectId &&
           checkout.reportId === reportId &&
-          checkout.userId === userId
+          checkout.userId === userId &&
+          (action !== "release" || !checkoutId || checkout.checkoutId === checkoutId)
         )
     );
 
@@ -2495,6 +2601,7 @@ export function updateScreeningCheckoutForUser(
     state.screeningCheckouts.push({
       projectId,
       stage: "full_text",
+      checkoutId: checkoutId || createId("checkout"),
       studyId: report.studyId,
       reportId,
       userId,
@@ -2510,16 +2617,24 @@ export function updateScreeningCheckoutForUser(
   if (!study) {
     throw new ApiError("Citation entry not found.", 404);
   }
+  if (getConfirmedDuplicateStudyIds(state, projectId).has(studyId)) {
+    writeState(state);
+    return {
+      ...buildPayload(state, userId),
+      message: "This citation has been confirmed as a duplicate."
+    };
+  }
 
   state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
     (checkout) =>
       !(
-        getScreeningCheckoutStage(checkout) === "title_abstract" &&
-        checkout.projectId === projectId &&
-        checkout.studyId === studyId &&
-        checkout.userId === userId
-      )
-  );
+          getScreeningCheckoutStage(checkout) === "title_abstract" &&
+          checkout.projectId === projectId &&
+          checkout.studyId === studyId &&
+          checkout.userId === userId &&
+          (action !== "release" || !checkoutId || checkout.checkoutId === checkoutId)
+        )
+    );
 
   if (action === "release") {
     writeState(state);
@@ -2564,6 +2679,7 @@ export function updateScreeningCheckoutForUser(
   state.screeningCheckouts.push({
     projectId,
     stage: "title_abstract",
+    checkoutId: checkoutId || createId("checkout"),
     studyId,
     userId,
     checkedOutAt: new Date(now).toISOString(),
@@ -2969,23 +3085,28 @@ export function updateDedupCandidateForUser(
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
   }
 
-  requireProjectMember(state, "demo-review", userId);
   if (!["pending", "confirmed", "rejected", "auto_confirmed"].includes(status)) {
     throw new ApiError("Unknown duplicate candidate status.");
   }
 
-  let updated = false;
+  const existingCandidate = state.dedupCandidates.find((candidate) => candidate.id === candidateId);
+  if (!existingCandidate) {
+    throw new ApiError("Duplicate candidate not found.", 404);
+  }
+  const projectId = getDedupCandidateProjectId(existingCandidate);
+  const project = requireProjectMember(state, projectId, userId);
   state.dedupCandidates = state.dedupCandidates.map((candidate) => {
     if (candidate.id !== candidateId) {
       return candidate;
     }
-    updated = true;
-    return { ...candidate, status };
+    return { ...candidate, projectId, status };
   });
 
-  if (!updated) {
-    throw new ApiError("Duplicate candidate not found.", 404);
+  if (status === "confirmed" || status === "auto_confirmed") {
+    const duplicateStudyId = existingCandidate.recordB.id;
+    state.screeningCheckouts = state.screeningCheckouts.filter((checkout) => checkout.studyId !== duplicateStudyId);
   }
+  syncProjectWorkflowCounts(state, project.id);
 
   appendEvent(
     state,
@@ -3448,15 +3569,22 @@ async function storeReportPdfBuffer(
 }
 
 function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
-  const reports = getWorkflowReportsForProject(state, projectId);
+  const confirmedDuplicateStudyIds = getConfirmedDuplicateStudyIds(state, projectId);
+  const reports = getWorkflowReportsForProject(state, projectId).filter((report) => !confirmedDuplicateStudyIds.has(report.studyId));
   const screenedStudyIds = new Set(
     state.decisions
-      .filter((decision) => decision.projectId === projectId && decision.stage === "title_abstract" && decision.isCurrent)
+      .filter(
+        (decision) =>
+          decision.projectId === projectId &&
+          decision.stage === "title_abstract" &&
+          decision.isCurrent &&
+          !confirmedDuplicateStudyIds.has(decision.studyId)
+      )
       .map((decision) => decision.studyId)
   );
   const includedStudyIds = new Set(
     state.studies
-      .filter((study) => study.projectId === projectId && study.stage === "extraction")
+      .filter((study) => study.projectId === projectId && study.stage === "extraction" && !confirmedDuplicateStudyIds.has(study.id))
       .map((study) => study.id)
   );
   const includedStudies = includedStudyIds.size;
@@ -3580,6 +3708,247 @@ function countProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
   return titleAbstractConflicts + fullTextConflicts;
 }
 
+const dedupStopWords = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with"
+]);
+
+function buildImportWarningMessages(studies: Study[]) {
+  return studies
+    .slice()
+    .sort(compareStudiesByImportItemId)
+    .flatMap((study, index) => {
+      const recordNumber = study.importItemId ?? index + 1;
+      return (study.parserWarnings ?? []).map((warning) => `Record ${recordNumber}: ${warning}`);
+    });
+}
+
+function compareStudiesByImportItemId(left: Study, right: Study) {
+  const leftOrder = left.importItemId ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = right.importItemId ?? Number.MAX_SAFE_INTEGER;
+  if (leftOrder !== rightOrder) {
+    return leftOrder - rightOrder;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function getDedupCandidateProjectId(candidate: DedupCandidate) {
+  return candidate.projectId ?? candidate.recordA.projectId ?? candidate.recordB.projectId ?? "demo-review";
+}
+
+function isDedupCandidateForProject(candidate: DedupCandidate, projectId: string) {
+  return getDedupCandidateProjectId(candidate) === projectId;
+}
+
+function getConfirmedDuplicateStudyIds(state: PersistedState, projectId: string) {
+  return new Set(
+    state.dedupCandidates
+      .filter(
+        (candidate) =>
+          isDedupCandidateForProject(candidate, projectId) &&
+          (candidate.status === "confirmed" || candidate.status === "auto_confirmed")
+      )
+      .map((candidate) => candidate.recordB.id)
+  );
+}
+
+function syncDedupCandidatesForProject(state: PersistedState, projectId: string) {
+  const projectStudies = state.studies
+    .filter((study) => study.projectId === projectId)
+    .slice()
+    .sort(compareStudiesByImportItemId);
+  const existingByPair = new Map(
+    state.dedupCandidates
+      .filter((candidate) => isDedupCandidateForProject(candidate, projectId))
+      .map((candidate) => [dedupPairKey(candidate.recordA.id, candidate.recordB.id), candidate])
+  );
+  const pairKeys = collectDedupPairKeys(projectStudies);
+  const generatedCandidates = Array.from(pairKeys)
+    .map((pairKey) => {
+      const [leftId, rightId] = pairKey.split("|");
+      const left = projectStudies.find((study) => study.id === leftId);
+      const right = projectStudies.find((study) => study.id === rightId);
+      if (!left || !right) {
+        return null;
+      }
+      return buildDedupCandidate(projectId, left, right, existingByPair.get(pairKey));
+    })
+    .filter((candidate): candidate is DedupCandidate => Boolean(candidate));
+
+  state.dedupCandidates = [
+    ...state.dedupCandidates.filter((candidate) => !isDedupCandidateForProject(candidate, projectId)),
+    ...generatedCandidates
+  ];
+}
+
+function collectDedupPairKeys(studies: Study[]) {
+  const pairKeys = new Set<string>();
+  const addGroupPairs = (group: Study[]) => {
+    for (let leftIndex = 0; leftIndex < group.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < group.length; rightIndex += 1) {
+        pairKeys.add(dedupPairKey(group[leftIndex].id, group[rightIndex].id));
+      }
+    }
+  };
+
+  const doiGroups = new Map<string, Study[]>();
+  const exactTitleGroups = new Map<string, Study[]>();
+  const authorYearGroups = new Map<string, Study[]>();
+  for (const study of studies) {
+    const doi = normalizeDoi(study.doi);
+    if (doi) {
+      doiGroups.set(doi, [...(doiGroups.get(doi) ?? []), study]);
+    }
+    const titleKey = normalizeTitleTokens(study.title).join(" ");
+    if (titleKey) {
+      exactTitleGroups.set(titleKey, [...(exactTitleGroups.get(titleKey) ?? []), study]);
+    }
+    const authorYearKey = `${normalizeFirstAuthor(study)}:${study.year > 0 ? study.year : "unknown"}`;
+    if (authorYearKey.length > 9) {
+      authorYearGroups.set(authorYearKey, [...(authorYearGroups.get(authorYearKey) ?? []), study]);
+    }
+  }
+
+  for (const group of doiGroups.values()) {
+    addGroupPairs(group);
+  }
+  for (const group of exactTitleGroups.values()) {
+    addGroupPairs(group);
+  }
+
+  if (studies.length <= 1200) {
+    addGroupPairs(studies);
+  } else {
+    for (const group of authorYearGroups.values()) {
+      if (group.length <= 120) {
+        addGroupPairs(group);
+      }
+    }
+  }
+
+  return pairKeys;
+}
+
+function buildDedupCandidate(projectId: string, left: Study, right: Study, existingCandidate?: DedupCandidate): DedupCandidate | null {
+  const [recordA, recordB] = orderDedupRecords(left, right);
+  const doiA = normalizeDoi(recordA.doi);
+  const doiB = normalizeDoi(recordB.doi);
+  const titleScore = similarityFromTokens(normalizeTitleTokens(recordA.title), normalizeTitleTokens(recordB.title));
+  const authorScore = similarityFromTokens(normalizeAuthorTokens(recordA), normalizeAuthorTokens(recordB));
+  const yearScore = recordA.year > 0 && recordA.year === recordB.year ? 1 : 0;
+  const doiMatch = Boolean(doiA && doiB && doiA === doiB);
+  const exactMetadataMatch = doiMatch && titleScore === 1 && authorScore === 1 && yearScore === 1;
+  const weightedScore = doiMatch
+    ? exactMetadataMatch
+      ? 1
+      : Math.max(0.94, Math.min(0.995, 0.82 + titleScore * 0.1 + authorScore * 0.05 + yearScore * 0.025))
+    : titleScore * 0.7 + authorScore * 0.2 + yearScore * 0.1;
+
+  if (!doiMatch && (weightedScore < 0.82 || titleScore < 0.68)) {
+    return null;
+  }
+
+  const notes = [
+    doiMatch ? "Normalized DOI match" : "",
+    authorScore >= 0.95 ? "Same first author" : authorScore >= 0.55 ? "Similar first author" : "",
+    yearScore === 1 ? "Same year" : "",
+    titleScore === 1 ? "Exact title" : titleScore >= 0.95 ? "Near-identical title" : titleScore >= 0.68 ? "Similar title" : ""
+  ].filter(Boolean);
+
+  return {
+    id: existingCandidate?.id ?? createDedupCandidateId(projectId, recordA.id, recordB.id),
+    projectId,
+    recordA: cloneStudyForDedup(recordA),
+    recordB: cloneStudyForDedup(recordB),
+    score: Math.round(weightedScore * 1000) / 1000,
+    method: exactMetadataMatch ? "Exact DOI + citation metadata" : doiMatch ? "Normalized DOI + citation metadata" : "Fuzzy title + first author + year",
+    status: existingCandidate?.status ?? "pending",
+    explanation: {
+      title: Math.round(titleScore * 100) / 100,
+      author: Math.round(authorScore * 100) / 100,
+      year: yearScore,
+      doi: doiMatch ? "Normalized DOI match" : doiA || doiB ? "Different DOI values" : "No DOI on candidate records",
+      notes: notes.length > 0 ? notes : ["Metadata similarity exceeded duplicate-review threshold"]
+    }
+  };
+}
+
+function orderDedupRecords(left: Study, right: Study): [Study, Study] {
+  return compareStudiesByImportItemId(left, right) <= 0 ? [left, right] : [right, left];
+}
+
+function dedupPairKey(leftId: string, rightId: string) {
+  return [leftId, rightId].sort((left, right) => left.localeCompare(right)).join("|");
+}
+
+function createDedupCandidateId(projectId: string, leftId: string, rightId: string) {
+  const hash = crypto.createHash("sha1").update(`${projectId}:${dedupPairKey(leftId, rightId)}`).digest("hex").slice(0, 12);
+  return `dup-${hash}`;
+}
+
+function cloneStudyForDedup(study: Study): Study {
+  return {
+    ...study,
+    authors: [...study.authors],
+    keywords: [...study.keywords],
+    parserWarnings: study.parserWarnings ? [...study.parserWarnings] : undefined
+  };
+}
+
+function normalizeTitleTokens(title: string) {
+  return title
+    .toLowerCase()
+    .replace(/['']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !dedupStopWords.has(token));
+}
+
+function normalizeFirstAuthor(study: Study) {
+  return (study.authors[0] ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeAuthorTokens(study: Study) {
+  return normalizeFirstAuthor(study).split(/\s+/).filter(Boolean);
+}
+
+function similarityFromTokens(leftTokens: string[], rightTokens: string[]) {
+  if (leftTokens.length === 0 || rightTokens.length === 0) {
+    return 0;
+  }
+  const rightTokenCounts = new Map<string, number>();
+  for (const token of rightTokens) {
+    rightTokenCounts.set(token, (rightTokenCounts.get(token) ?? 0) + 1);
+  }
+  let overlap = 0;
+  for (const token of leftTokens) {
+    const count = rightTokenCounts.get(token) ?? 0;
+    if (count > 0) {
+      overlap += 1;
+      rightTokenCounts.set(token, count - 1);
+    }
+  }
+  return (2 * overlap) / (leftTokens.length + rightTokens.length);
+}
+
 function syncImportBatchAfterStudyChange(state: PersistedState, projectId: string, importId: string, refreshWarnings: boolean) {
   const batchStudies = state.studies.filter((study) => study.projectId === projectId && study.importBatchId === importId);
   state.imports = state.imports.map((batch) => {
@@ -3587,9 +3956,7 @@ function syncImportBatchAfterStudyChange(state: PersistedState, projectId: strin
       return batch;
     }
 
-    const parserWarningMessages = refreshWarnings
-      ? batchStudies.flatMap((study, index) => (study.parserWarnings ?? []).map((warning) => `Record ${index + 1}: ${warning}`))
-      : batch.parserWarningMessages ?? [];
+    const parserWarningMessages = refreshWarnings ? buildImportWarningMessages(batchStudies) : batch.parserWarningMessages ?? [];
     const parserWarnings = parserWarningMessages.length;
     const batchStudyIds = new Set(batchStudies.map((study) => study.id));
     const linkedReports = state.reports.filter((report) => report.projectId === projectId && batchStudyIds.has(report.studyId) && report.sourcePdfUrl);

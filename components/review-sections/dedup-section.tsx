@@ -1,9 +1,11 @@
+import { useEffect, useMemo, useState } from "react";
 import { Check, GitMerge, X } from "lucide-react";
 import type { DedupCandidate, Study } from "@/lib/prismaData";
 import { EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 
+type DedupStatusFilter = "pending" | "confirmed" | "rejected";
+
 type DedupSectionProps = {
-  latestPendingDedup: DedupCandidate | undefined;
   projectImportBatches: { records: number }[];
   projectScreeningStudies: Study[];
   recordsIdentified: number;
@@ -13,7 +15,6 @@ type DedupSectionProps = {
 };
 
 export function DedupSection({
-  latestPendingDedup,
   projectImportBatches,
   projectScreeningStudies,
   recordsIdentified,
@@ -21,9 +22,35 @@ export function DedupSection({
   pendingDedupAction,
   updateDedupCandidate
 }: DedupSectionProps) {
-  if (!latestPendingDedup) {
+  const [activeStatus, setActiveStatus] = useState<DedupStatusFilter>("pending");
+  const [selectedCandidateId, setSelectedCandidateId] = useState("");
+  const statusCounts = useMemo(
+    () => ({
+      pending: projectDedupCandidates.filter((candidate) => candidate.status === "pending").length,
+      confirmed: projectDedupCandidates.filter((candidate) => isConfirmedDedupStatus(candidate.status)).length,
+      rejected: projectDedupCandidates.filter((candidate) => candidate.status === "rejected").length
+    }),
+    [projectDedupCandidates]
+  );
+  const visibleCandidates = useMemo(
+    () => projectDedupCandidates.filter((candidate) => matchesStatusFilter(candidate, activeStatus)),
+    [activeStatus, projectDedupCandidates]
+  );
+
+  useEffect(() => {
+    if (visibleCandidates.length === 0) {
+      setSelectedCandidateId("");
+      return;
+    }
+    if (!visibleCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
+      setSelectedCandidateId(visibleCandidates[0].id);
+    }
+  }, [selectedCandidateId, visibleCandidates]);
+
+  const selectedCandidate = visibleCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? visibleCandidates[0];
+
+  if (projectDedupCandidates.length === 0) {
     const hasImportedRecords = projectImportBatches.some((batch) => batch.records > 0) || projectScreeningStudies.length > 0 || recordsIdentified > 0;
-    const hasResolvedDedupCandidates = projectDedupCandidates.length > 0;
     return (
       <div className="viewStack">
         <section className="overviewBand">
@@ -36,12 +63,10 @@ export function DedupSection({
         <section className="panel">
           <EmptyState
             icon={GitMerge}
-            title={hasResolvedDedupCandidates ? "Duplicate review complete" : "No duplicate candidates"}
+            title="No duplicate candidates"
             description={
               hasImportedRecords
-                ? hasResolvedDedupCandidates
-                  ? "All generated duplicate candidates have been resolved."
-                  : "No duplicate candidates were generated for the imported records. Screening can continue with the current citations."
+                ? "No duplicate candidates were generated for the imported records. Screening can continue with the current citations."
                 : "This review is waiting for imported records before deduplication can generate candidate pairs."
             }
           />
@@ -49,6 +74,10 @@ export function DedupSection({
       </div>
     );
   }
+
+  const matchScorePercent = selectedCandidate ? formatPercent(selectedCandidate.score) : "";
+  const activeStatusLabel = dedupStatusFilterLabels[activeStatus];
+  const selectedStatusLabel = selectedCandidate ? getCandidateStatusLabel(selectedCandidate.status) : "";
 
   return (
     <div className="viewStack">
@@ -59,49 +88,145 @@ export function DedupSection({
           <p className="subtle">Duplicate records are attached to canonical studies, never deleted.</p>
         </div>
         <div className="segmented">
-          <button className="active" type="button">
-            Pending {projectDedupCandidates.filter((candidate) => candidate.status === "pending").length}
+          <button className={activeStatus === "pending" ? "active" : ""} type="button" aria-pressed={activeStatus === "pending"} onClick={() => setActiveStatus("pending")}>
+            Pending {statusCounts.pending}
           </button>
-          <button type="button">Confirmed {projectDedupCandidates.filter((candidate) => candidate.status === "confirmed").length}</button>
-          <button type="button">Rejected {projectDedupCandidates.filter((candidate) => candidate.status === "rejected").length}</button>
+          <button className={activeStatus === "confirmed" ? "active" : ""} type="button" aria-pressed={activeStatus === "confirmed"} onClick={() => setActiveStatus("confirmed")}>
+            Confirmed {statusCounts.confirmed}
+          </button>
+          <button className={activeStatus === "rejected" ? "active" : ""} type="button" aria-pressed={activeStatus === "rejected"} onClick={() => setActiveStatus("rejected")}>
+            Rejected {statusCounts.rejected}
+          </button>
         </div>
       </section>
 
       <section className="dedupGrid">
-        <div className="panel">
-          <SectionTitle icon={GitMerge} title="Match Explanation" action={`${Math.round(latestPendingDedup.score * 100)} percent score`} />
-          <div className="scoreRing" aria-label="Duplicate score">
-            <strong>{latestPendingDedup.score.toFixed(3)}</strong>
-            <span>{latestPendingDedup.method}</span>
-          </div>
-          <div className="scoreBars">
-            <ScoreBar label="Title" value={latestPendingDedup.explanation.title} />
-            <ScoreBar label="First author" value={latestPendingDedup.explanation.author} />
-            <ScoreBar label="Year" value={latestPendingDedup.explanation.year} />
-          </div>
-          <p className="doiNote">{renderDoiLink(latestPendingDedup.explanation.doi, latestPendingDedup.explanation.doi)}</p>
-          <ul className="plainList">
-            {latestPendingDedup.explanation.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-          <div className="buttonRow">
-            <button className="primaryButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(latestPendingDedup.id, "confirmed")}>
-              {pendingDedupAction === "confirmed" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
-              {pendingDedupAction === "confirmed" ? "Confirming..." : "Confirm"}
-            </button>
-            <button className="dangerButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(latestPendingDedup.id, "rejected")}>
-              {pendingDedupAction === "rejected" ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
-              {pendingDedupAction === "rejected" ? "Rejecting..." : "Reject"}
-            </button>
-          </div>
+        <div className="panel dedupInspectorPanel">
+          <SectionTitle icon={GitMerge} title={`${activeStatusLabel} List`} action={`${visibleCandidates.length} shown`} />
+          {visibleCandidates.length > 0 ? (
+            <div className="dedupCandidateList" aria-label={`${activeStatusLabel} duplicate candidates`}>
+              {visibleCandidates.map((candidate) => {
+                const isSelected = selectedCandidate?.id === candidate.id;
+                return (
+                  <button
+                    className={`dedupCandidateButton${isSelected ? " active" : ""}`}
+                    key={candidate.id}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => setSelectedCandidateId(candidate.id)}
+                  >
+                    <span>
+                      <strong>{candidate.recordA.title}</strong>
+                      <small>
+                        {candidate.recordA.source} vs {candidate.recordB.source}
+                      </small>
+                    </span>
+                    <em>{formatPercent(candidate.score)}</em>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState
+              icon={GitMerge}
+              title={`No ${activeStatusLabel.toLowerCase()} candidates`}
+              description={`There are no duplicate candidates in the ${activeStatusLabel.toLowerCase()} list.`}
+            />
+          )}
+          {selectedCandidate ? (
+            <>
+              <SectionTitle icon={GitMerge} title="Match Explanation" action={`${matchScorePercent} score`} />
+              <div className="scoreRing" aria-label="Duplicate score">
+                <strong>{matchScorePercent}</strong>
+                <span>{selectedCandidate.method}</span>
+              </div>
+              <div className="scoreBars">
+                <ScoreBar label="Title" value={selectedCandidate.explanation.title} />
+                <ScoreBar label="First author" value={selectedCandidate.explanation.author} />
+                <ScoreBar label="Year" value={selectedCandidate.explanation.year} />
+              </div>
+              <p className="doiNote">{renderDoiLink(selectedCandidate.explanation.doi, selectedCandidate.explanation.doi)}</p>
+              <ul className="plainList">
+                {selectedCandidate.explanation.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+              {selectedCandidate.status === "pending" ? (
+                <div className="buttonRow">
+                  <button className="primaryButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "confirmed")}>
+                    {pendingDedupAction === "confirmed" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+                    {pendingDedupAction === "confirmed" ? "Confirming..." : "Confirm"}
+                  </button>
+                  <button className="dangerButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "rejected")}>
+                    {pendingDedupAction === "rejected" ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
+                    {pendingDedupAction === "rejected" ? "Rejecting..." : "Reject"}
+                  </button>
+                </div>
+              ) : (
+                <p className="dedupStatusNote">{selectedStatusLabel}</p>
+              )}
+            </>
+          ) : null}
         </div>
 
         <div className="comparisonGrid">
-          <RecordComparison title="Record A" source={latestPendingDedup.recordA.source} study={latestPendingDedup.recordA} />
-          <RecordComparison title="Record B" source={latestPendingDedup.recordB.source} study={latestPendingDedup.recordB} />
+          {selectedCandidate ? (
+            <>
+              <RecordComparison title="Record A" source={selectedCandidate.recordA.source} study={selectedCandidate.recordA} />
+              <RecordComparison title="Record B" source={selectedCandidate.recordB.source} study={selectedCandidate.recordB} />
+            </>
+          ) : (
+            <section className="panel">
+              <EmptyState
+                icon={GitMerge}
+                title={`No ${activeStatusLabel.toLowerCase()} candidates`}
+                description={`Choose another duplicate review status to inspect candidates.`}
+              />
+            </section>
+          )}
         </div>
       </section>
     </div>
   );
+}
+
+function formatPercent(value: number) {
+  const percent = Math.max(0, Math.min(100, value * 100));
+  if (percent === 100) {
+    return "100%";
+  }
+  if (percent > 99) {
+    return `${percent.toFixed(1)}%`;
+  }
+  return `${Math.round(percent)}%`;
+}
+
+function matchesStatusFilter(candidate: DedupCandidate, status: DedupStatusFilter) {
+  if (status === "confirmed") {
+    return isConfirmedDedupStatus(candidate.status);
+  }
+  return candidate.status === status;
+}
+
+function isConfirmedDedupStatus(status: DedupCandidate["status"]) {
+  return status === "confirmed" || status === "auto_confirmed";
+}
+
+const dedupStatusFilterLabels: Record<DedupStatusFilter, string> = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  rejected: "Rejected"
+};
+
+function getCandidateStatusLabel(status: DedupCandidate["status"]) {
+  if (status === "auto_confirmed") {
+    return "Auto-confirmed duplicate";
+  }
+  if (status === "confirmed") {
+    return "Confirmed duplicate";
+  }
+  if (status === "rejected") {
+    return "Rejected duplicate";
+  }
+  return "Pending duplicate review";
 }

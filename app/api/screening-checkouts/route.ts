@@ -11,6 +11,7 @@ export async function POST(request: Request) {
         studyId: String(body.studyId ?? ""),
         reportId: String(body.reportId ?? ""),
         templateId: String(body.templateId ?? ""),
+        checkoutId: String(body.checkoutId ?? ""),
         stage: typeof body.stage === "string" ? body.stage : undefined,
         action: typeof body.action === "string" ? body.action : undefined
       })

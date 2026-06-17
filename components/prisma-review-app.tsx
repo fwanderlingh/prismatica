@@ -557,6 +557,8 @@ export function PrismaReviewApp() {
   const [isSavingProjectSettings, setIsSavingProjectSettings] = useState(false);
   const [isSavingImportDetails, setIsSavingImportDetails] = useState(false);
   const [isSavingStudyEdit, setIsSavingStudyEdit] = useState(false);
+  const [isReviewingImportWarnings, setIsReviewingImportWarnings] = useState(false);
+  const [pendingReviewedStudyId, setPendingReviewedStudyId] = useState("");
   const [deleteProjectMessage, setDeleteProjectMessage] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
@@ -569,6 +571,7 @@ export function PrismaReviewApp() {
   const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
   const [isUndoingScreeningDecision, setIsUndoingScreeningDecision] = useState(false);
   const [screeningNote, setScreeningNote] = useState("");
+  const [screeningMessage, setScreeningMessage] = useState("");
   const [activeReportId, setActiveReportId] = useState("");
   const [auditPage, setAuditPage] = useState(1);
   const [activeExtractionReportId, setActiveExtractionReportId] = useState("");
@@ -691,9 +694,15 @@ export function PrismaReviewApp() {
   const isProjectView = isProjectScopedView(activeView);
   const hasProjectSeedData = selectedProject.id === "demo-review";
   const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
-  const projectDedupCandidates = hasProjectSeedData ? dedupCandidates : [];
   const importedProjectStudies = studies.filter((study) => study.projectId === selectedProject.id);
-  const projectScreeningStudies = hasProjectSeedData ? screeningStudies : importedProjectStudies;
+  const projectDedupCandidates = useMemo(
+    () => dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === selectedProject.id),
+    [dedupCandidates, selectedProject.id]
+  );
+  const confirmedDuplicateStudyIds = useMemo(() => getConfirmedDuplicateStudyIds(projectDedupCandidates), [projectDedupCandidates]);
+  const projectScreeningStudies = (hasProjectSeedData ? screeningStudies : importedProjectStudies).filter(
+    (study) => !confirmedDuplicateStudyIds.has(study.id)
+  );
   const reportOrderByStudyId = new Map(
     projectScreeningStudies.map((study, index) => [study.id, study.importItemId ?? index + 1])
   );
@@ -751,8 +760,8 @@ export function PrismaReviewApp() {
   const activeReport = activeFullTextReports.find((report) => report.id === activeReportId) ?? activeFullTextReports[0] ?? projectReportQueue[0] ?? reportQueue[0];
   const isActiveReportInActiveFullTextQueue = activeFullTextReports.some((report) => report.id === activeReport.id);
   const activeCounts = useMemo(
-    () => getCountsForProject(selectedProject, projectScreeningStudies, projectReportQueue, decisions, extractionResponses, extractionTemplates),
-    [decisions, extractionResponses, extractionTemplates, projectReportQueue, projectScreeningStudies, selectedProject]
+    () => getCountsForProject(selectedProject, projectScreeningStudies, projectReportQueue, decisions, extractionResponses, extractionTemplates, projectDedupCandidates),
+    [decisions, extractionResponses, extractionTemplates, projectDedupCandidates, projectReportQueue, projectScreeningStudies, selectedProject]
   );
   const titleAbstractEvaluations = useMemo(
     () =>
@@ -868,7 +877,6 @@ export function PrismaReviewApp() {
     return studyIds.size;
   }, [currentUser.id, decisions, selectedProject.id]);
 
-  const latestPendingDedup = projectDedupCandidates.find((candidate) => candidate.status === "pending") ?? projectDedupCandidates[0];
   const reportsExcludedTotal = sumObject(activeCounts.reportsExcludedWithReasons);
   const recordsIdentified =
     activeCounts.recordsIdentifiedDatabase + activeCounts.recordsIdentifiedRegisters + activeCounts.recordsIdentifiedOther;
@@ -1197,6 +1205,10 @@ export function PrismaReviewApp() {
   }, [activeScreeningStudies.length]);
 
   useEffect(() => {
+    setScreeningMessage("");
+  }, [currentStudy.id]);
+
+  useEffect(() => {
     if (!isAuthenticated || !isAuthResolved || activeView !== "screening" || !isCurrentStudyInActiveScreeningQueue) {
       return;
     }
@@ -1204,7 +1216,8 @@ export function PrismaReviewApp() {
     let isCancelled = false;
     const requestBody = {
       projectId: selectedProject.id,
-      studyId: currentStudy.id
+      studyId: currentStudy.id,
+      checkoutId: createClientId("title-abstract-checkout")
     };
 
     async function acquireCheckout() {
@@ -1215,9 +1228,12 @@ export function PrismaReviewApp() {
         });
         if (!isCancelled) {
           applyAppState(payload);
+          setScreeningMessage(payload.message ?? "");
         }
-      } catch {
-        // Checkout refresh failures should not interrupt an in-progress reading session.
+      } catch (error) {
+        if (!isCancelled) {
+          setScreeningMessage(getErrorMessage(error));
+        }
       }
     }
 
@@ -1254,6 +1270,7 @@ export function PrismaReviewApp() {
       projectId: selectedProject.id,
       studyId: activeReport.studyId,
       reportId: activeReport.id,
+      checkoutId: createClientId("full-text-checkout"),
       stage: "full_text"
     };
 
@@ -1313,6 +1330,7 @@ export function PrismaReviewApp() {
       studyId: activeExtractionReport.studyId,
       reportId: activeExtractionReport.id,
       templateId: activeExtractionTemplate.id,
+      checkoutId: createClientId("extraction-checkout"),
       stage: "extraction"
     };
 
@@ -1747,11 +1765,13 @@ export function PrismaReviewApp() {
     setStudyIndex(0);
     setActiveReportId("");
     setFullTextMessage("");
+    setScreeningMessage("");
   }
 
   function openConflict(conflict: WorkflowConflict) {
     setIsMobileNavOpen(false);
     setFullTextMessage("");
+    setScreeningMessage("");
     if (conflict.stage === "full_text" && conflict.reportId) {
       setActiveReportId(conflict.reportId);
       navigateToProjectView("fullText");
@@ -2319,6 +2339,7 @@ export function PrismaReviewApp() {
     setSelectedImportId(importId);
     setStudyEditId("");
     setStudyEditForm(emptyStudyEditForm);
+    setPendingReviewedStudyId("");
     setImportDetailMessage("");
     setIsImportEditorOpen(true);
   }
@@ -2327,6 +2348,7 @@ export function PrismaReviewApp() {
     setIsImportEditorOpen(false);
     setStudyEditId("");
     setStudyEditForm(emptyStudyEditForm);
+    setPendingReviewedStudyId("");
     setImportDetailMessage("");
   }
 
@@ -2352,14 +2374,42 @@ export function PrismaReviewApp() {
   }
 
   async function reviewImportWarnings(importId: string) {
+    setIsReviewingImportWarnings(true);
+    setImportDetailMessage("Saving review...");
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${importId}/review`, {
-        method: "POST"
+        method: "POST",
+        body: JSON.stringify(importDetailForm)
       });
       applyAppState(payload);
-      setImportDetailMessage("Parser warnings reviewed.");
+      setImportDetailMessage(payload.message ?? "Parser warnings reviewed.");
     } catch (error) {
       setImportDetailMessage(getErrorMessage(error));
+    } finally {
+      setIsReviewingImportWarnings(false);
+    }
+  }
+
+  async function markImportStudyReviewed(study: Study) {
+    if (!selectedImportId || pendingReviewedStudyId) {
+      return;
+    }
+
+    setPendingReviewedStudyId(study.id);
+    setImportDetailMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${study.id}`,
+        {
+          method: "POST"
+        }
+      );
+      applyAppState(payload);
+      setImportDetailMessage(payload.message ?? "Citation entry marked reviewed.");
+    } catch (error) {
+      setImportDetailMessage(getErrorMessage(error));
+    } finally {
+      setPendingReviewedStudyId("");
     }
   }
 
@@ -2427,7 +2477,9 @@ export function PrismaReviewApp() {
   }
 
   async function deleteImportBatch(importId: string) {
-    if (!window.confirm("Delete this import batch and all of its citation entries?")) {
+    const batch = imports.find((candidate) => candidate.id === importId && candidate.projectId === selectedProject.id);
+    const batchLabel = batch ? `"${batch.filename}" (${batch.records} citation ${batch.records === 1 ? "entry" : "entries"})` : "this import batch";
+    if (!window.confirm(`Delete ${batchLabel}? This removes its citation entries, reports, decisions, and duplicate candidates.`)) {
       return;
     }
 
@@ -2438,7 +2490,7 @@ export function PrismaReviewApp() {
       applyAppState(payload);
       setSelectedImportId("");
       closeImportEditor();
-      setImportMessage("Import batch deleted.");
+      setImportMessage(payload.message ?? "Import batch deleted.");
     } catch (error) {
       setImportDetailMessage(getErrorMessage(error));
     }
@@ -2587,6 +2639,7 @@ export function PrismaReviewApp() {
     }
 
     setPendingScreeningDecision(decisionValue);
+    setScreeningMessage("");
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/decisions", {
         method: "POST",
@@ -2601,6 +2654,7 @@ export function PrismaReviewApp() {
       if (payload.decisionAction) {
         setDecisionActions((previous) => [...previous, payload.decisionAction as DecisionAction]);
       }
+      setScreeningMessage(payload.message ?? `Saved ${formatDecision(decisionValue)} decision.`);
       setScreeningNote("");
       const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
       const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
@@ -2612,7 +2666,7 @@ export function PrismaReviewApp() {
           : Math.min(studyIndex, Math.max(nextActiveStudies.length - 1, 0));
       setStudyIndex(nextStudyIndex);
     } catch (error) {
-      setLoginError(getErrorMessage(error));
+      setScreeningMessage(getErrorMessage(error));
     } finally {
       setPendingScreeningDecision(null);
     }
@@ -2625,6 +2679,7 @@ export function PrismaReviewApp() {
     }
 
     setIsUndoingScreeningDecision(true);
+    setScreeningMessage("");
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/decisions/undo", {
         method: "POST",
@@ -2641,8 +2696,9 @@ export function PrismaReviewApp() {
       const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const restoredStudyIndex = nextActiveStudies.findIndex((study) => study.id === lastAction.studyId);
       setStudyIndex(restoredStudyIndex >= 0 ? restoredStudyIndex : 0);
+      setScreeningMessage("Latest screening decision undone.");
     } catch (error) {
-      setLoginError(getErrorMessage(error));
+      setScreeningMessage(getErrorMessage(error));
     } finally {
       setIsUndoingScreeningDecision(false);
     }
@@ -2776,11 +2832,15 @@ export function PrismaReviewApp() {
         users={users}
         dashboardMessage={dashboardMessage}
         getProjectPhaseProgress={(project) => {
-          const projectStudies = project.id === "demo-review" ? screeningStudies : studies.filter((study) => study.projectId === project.id);
+          const projectCandidates = dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === project.id);
+          const projectDuplicateStudyIds = getConfirmedDuplicateStudyIds(projectCandidates);
+          const projectStudies = (project.id === "demo-review" ? screeningStudies : studies.filter((study) => study.projectId === project.id)).filter(
+            (study) => !projectDuplicateStudyIds.has(study.id)
+          );
           const projectReports = project.id === "demo-review" ? reportQueue : getWorkflowReportsForProject(project, projectStudies, reports);
           return getProjectPhaseProgress(
             project,
-            getCountsForProject(project, projectStudies, projectReports, decisions, extractionResponses, extractionTemplates),
+            getCountsForProject(project, projectStudies, projectReports, decisions, extractionResponses, extractionTemplates, projectCandidates),
             projectReports,
             formatNumber
           );
@@ -2836,6 +2896,8 @@ export function PrismaReviewApp() {
         studyEditForm={studyEditForm}
         isSavingImportDetails={isSavingImportDetails}
         isSavingStudyEdit={isSavingStudyEdit}
+        isReviewingImportWarnings={isReviewingImportWarnings}
+        pendingReviewedStudyId={pendingReviewedStudyId}
         closeImportEditor={closeImportEditor}
         deleteImportBatch={deleteImportBatch}
         openScreening={() => navigateToProjectView("screening")}
@@ -2851,6 +2913,7 @@ export function PrismaReviewApp() {
         }}
         editImportStudy={editImportStudy}
         deleteImportStudy={deleteImportStudy}
+        markImportStudyReviewed={markImportStudyReviewed}
       />
     );
   }
@@ -2885,7 +2948,6 @@ export function PrismaReviewApp() {
   function renderDedup() {
     return (
       <DedupSection
-        latestPendingDedup={latestPendingDedup}
         projectImportBatches={projectImportBatches}
         projectScreeningStudies={projectScreeningStudies}
         recordsIdentified={recordsIdentified}
@@ -2913,6 +2975,8 @@ export function PrismaReviewApp() {
         stageEvaluation={titleAbstractConflictEvaluations.get(currentStudy.id) ?? stageEvaluation}
         screeningNote={screeningNote}
         setScreeningNote={setScreeningNote}
+        screeningMessage={screeningMessage}
+        canRecordScreeningDecision={Boolean(currentStudy.titleAbstractCheckedOutByCurrentUser || currentUserDecision)}
         currentUserDecision={currentUserDecision}
         currentStageDecisions={currentStageDecisions}
         formatDecision={formatDecision}
@@ -3407,7 +3471,8 @@ function getCountsForProject(
   projectReports: Report[] = [],
   decisions: Decision[] = [],
   extractionResponses: ExtractionResponse[] = [],
-  extractionTemplates: ExtractionTemplate[] = []
+  extractionTemplates: ExtractionTemplate[] = [],
+  projectDedupCandidates: DedupCandidate[] = []
 ): PrismaCounts {
   const fullTextCurrentDecisions = decisions.filter(
     (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
@@ -3456,7 +3521,7 @@ function getCountsForProject(
       recordsIdentifiedDatabase: project.recordsTotal,
       recordsIdentifiedRegisters: 0,
       recordsIdentifiedOther: 0,
-      duplicateRecordsRemoved: 0,
+      duplicateRecordsRemoved: projectDedupCandidates.filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed").length,
       automationRemoved: 0,
       removedOtherReasons: 0,
       recordsScreened: project.recordsScreened,
@@ -3573,6 +3638,18 @@ function escapeRegExp(value: string) {
 
 function sumObject(values: Record<string, number>) {
   return Object.values(values).reduce((total, value) => total + value, 0);
+}
+
+function getDedupCandidateProjectId(candidate: DedupCandidate) {
+  return candidate.projectId ?? candidate.recordA.projectId ?? candidate.recordB.projectId ?? "demo-review";
+}
+
+function getConfirmedDuplicateStudyIds(candidates: DedupCandidate[]) {
+  return new Set(
+    candidates
+      .filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed")
+      .map((candidate) => candidate.recordB.id)
+  );
 }
 
 function formatNumber(value: number) {

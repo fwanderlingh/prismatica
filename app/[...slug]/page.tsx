@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { PrismaReviewAppClient } from "@/components/prisma-review-app-client";
-import { ApiError, getAppStateForUser } from "@/lib/serverStore";
-import { requireSessionUserId } from "@/lib/serverRoute";
+import { canAccessProjectRoute } from "@/lib/serverStore";
+import { getSessionUserId } from "@/lib/serverAuth";
 
 type CatchAllPageProps = {
   params:
@@ -70,18 +70,9 @@ function getRequestedProjectId(slug: string[]) {
 }
 
 async function assertProjectAccessIfAuthenticated(projectId: string) {
-  try {
-    const userId = await requireSessionUserId();
-    const appState = getAppStateForUser(userId);
-    const canAccessProject = appState.projects.some((project) => project.id === projectId);
-    if (!canAccessProject) {
-      notFound();
-    }
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
-      return;
-    }
-    throw error;
+  const userId = await getSessionUserId();
+  if (!canAccessProjectRoute(projectId, userId)) {
+    notFound();
   }
 }
 

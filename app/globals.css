@@ -2100,6 +2100,39 @@ td span {
   gap: calc(12px * var(--ui-scale));
 }
 
+.importBatchGroups,
+.importEntryGroups {
+  display: grid;
+  gap: calc(16px * var(--ui-scale));
+}
+
+.importEntryGroup {
+  display: grid;
+  gap: calc(10px * var(--ui-scale));
+}
+
+.importEntryGroupHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(8px * var(--ui-scale));
+  padding-bottom: calc(4px * var(--ui-scale));
+  border-bottom: calc(1px * var(--ui-scale)) solid var(--border);
+}
+
+.importEntryGroupHeader strong {
+  color: var(--text-strong);
+  font-size: 0.92rem;
+}
+
+.importEntryGroupHeader span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .importEntryCard {
   display: grid;
   gap: calc(10px * var(--ui-scale));
@@ -2119,6 +2152,11 @@ td span {
   justify-content: space-between;
   gap: calc(12px * var(--ui-scale));
   align-items: flex-start;
+}
+
+.importEntryFooter {
+  justify-content: flex-start;
+  padding-top: calc(2px * var(--ui-scale));
 }
 
 .importEntryHeader strong,
@@ -2144,6 +2182,48 @@ td span {
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+.needsReviewText {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: calc(1px * var(--ui-scale)) calc(6px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--toast-warning-border);
+  border-radius: calc(999px * var(--ui-scale));
+  color: var(--toast-warning-text);
+  background: var(--toast-warning-bg);
+  font-weight: 800;
+}
+
+.needsReviewPill,
+.entryStatusOk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(6px * var(--ui-scale));
+  width: fit-content;
+  max-width: 100%;
+  min-height: calc(28px * var(--ui-scale));
+  padding: calc(3px * var(--ui-scale)) calc(9px * var(--ui-scale));
+  border-radius: calc(999px * var(--ui-scale));
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.needsReviewPill {
+  color: var(--toast-warning-text);
+  border: calc(1px * var(--ui-scale)) solid var(--toast-warning-border);
+  background: var(--toast-warning-bg);
+}
+
+.entryStatusOk {
+  color: var(--toast-success-text);
+  border: calc(1px * var(--ui-scale)) solid var(--toast-success-border);
+  background: var(--toast-success-bg);
 }
 
 .importAbstract {
@@ -2197,6 +2277,87 @@ td span {
 
 .dedupGrid {
   grid-template-columns: calc(340px * var(--ui-scale)) minmax(0, 1fr);
+}
+
+.dedupInspectorPanel {
+  display: grid;
+  align-content: start;
+  gap: calc(14px * var(--ui-scale));
+}
+
+.dedupInspectorPanel .sectionTitle {
+  margin-bottom: 0;
+}
+
+.dedupCandidateList {
+  display: grid;
+  gap: calc(8px * var(--ui-scale));
+  max-height: calc(320px * var(--ui-scale));
+  overflow-y: auto;
+  padding-right: calc(2px * var(--ui-scale));
+}
+
+.dedupCandidateButton {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: calc(10px * var(--ui-scale));
+  align-items: center;
+  width: 100%;
+  min-height: calc(64px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale));
+  color: var(--text);
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: calc(8px * var(--ui-scale));
+  background: var(--surface);
+  text-align: left;
+}
+
+.dedupCandidateButton:hover,
+.dedupCandidateButton:focus-visible,
+.dedupCandidateButton.active {
+  border-color: color-mix(in srgb, var(--teal) 52%, var(--border));
+  background: color-mix(in srgb, var(--surface) 72%, var(--teal-soft));
+}
+
+.dedupCandidateButton span {
+  display: grid;
+  gap: calc(4px * var(--ui-scale));
+  min-width: 0;
+}
+
+.dedupCandidateButton strong,
+.dedupCandidateButton small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dedupCandidateButton strong {
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.dedupCandidateButton small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+}
+
+.dedupCandidateButton em {
+  color: var(--teal);
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.dedupStatusNote {
+  margin: 0;
+  padding: calc(10px * var(--ui-scale));
+  color: var(--teal);
+  border: calc(1px * var(--ui-scale)) solid color-mix(in srgb, var(--teal) 36%, var(--border));
+  border-radius: calc(8px * var(--ui-scale));
+  background: color-mix(in srgb, var(--surface) 70%, var(--teal-soft));
+  font-weight: 820;
 }
 
 .comparisonGrid {
@@ -3470,44 +3631,57 @@ button:disabled {
 }
 
 .notFoundPage {
-  min-height: 100vh;
   display: grid;
+  min-height: 100vh;
   place-items: center;
   padding: calc(20px * var(--ui-scale));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-tint) 82%, #ffffff), var(--background)),
+    var(--background);
 }
 
 .notFoundCard {
-  width: min(calc(560px * var(--ui-scale)), 100%);
   display: grid;
   gap: calc(12px * var(--ui-scale));
+  width: min(calc(560px * var(--ui-scale)), 100%);
   padding: calc(28px * var(--ui-scale));
   border: calc(1px * var(--ui-scale)) solid var(--border);
-  border-radius: calc(14px * var(--ui-scale));
+  border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
 }
 
-.notFoundCode {
+.notFoundBrand {
+  margin-bottom: calc(10px * var(--ui-scale));
+}
+
+.notFoundCard .notFoundCode {
+  margin: 0;
   color: var(--teal);
   font-size: 0.82rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .notFoundCard p {
+  margin: 0;
   color: var(--muted);
   line-height: 1.5;
 }
 
 .notFoundCard .primaryButton {
+  margin-top: calc(4px * var(--ui-scale));
   width: fit-content;
+  color: #ffffff;
+  text-decoration: none;
 }
 
 .glitchTitle {
   position: relative;
   display: inline-block;
+  margin: 0;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .glitchTitle::before,

@@ -233,6 +233,7 @@ export type ExtractionConsensus = {
 
 export type DedupCandidate = {
   id: string;
+  projectId?: string;
   recordA: Study;
   recordB: Study;
   score: number;
@@ -466,27 +467,28 @@ export const initialDecisions: Decision[] = [
 export const dedupCandidates: DedupCandidate[] = [
   {
     id: "dup-001",
-    score: 0.962,
-    method: "Title fingerprint + first author + year",
+    projectId: "demo-review",
+    score: 1,
+    method: "Exact DOI + citation metadata",
     status: "pending",
     recordA: screeningStudies[0],
     recordB: {
       ...screeningStudies[0],
       id: "record-duplicate-001",
       source: "Scopus",
-      title: "Asynchronous reviewer handoff supported by structured prompts in distributed teams",
       doi: "https://doi.org/10.5555/jcs.2025.0142"
     },
     explanation: {
-      title: 0.94,
+      title: 1,
       author: 1,
       year: 1,
       doi: "Normalized DOI match",
-      notes: ["Same first author", "Same year", "Journal abbreviation differs"]
+      notes: ["Exact title", "Same first author", "Same year", "Normalized DOI match"]
     }
   },
   {
     id: "dup-002",
+    projectId: "demo-review",
     score: 0.887,
     method: "Fuzzy title + author similarity",
     status: "pending",
