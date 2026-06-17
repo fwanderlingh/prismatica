@@ -71,8 +71,7 @@ export function ScreeningSection({
   const isSubmittingDecision = pendingScreeningDecision !== null;
   const activeDecisionValue = currentUserDecision?.decisionValue;
   const isDecisionDisabled = isSubmittingDecision || isUndoingScreeningDecision || !canRecordScreeningDecision;
-  const visibleScreeningMessage =
-    screeningMessage || (!canRecordScreeningDecision ? "Waiting for this citation to be checked out before saving a vote." : "");
+  const visibleScreeningMessage = screeningMessage;
   const messageIsSuccess = /saved|undone/i.test(visibleScreeningMessage);
   const messageIsError = /already|cannot|denied|duplicate|error|failed|forbidden|invalid|no longer|not found|required|unauthorized/i.test(visibleScreeningMessage);
   const screeningMessageClassName = messageIsSuccess ? "validationItem ok" : messageIsError ? "validationItem blocked" : "validationItem warning";
@@ -252,7 +251,7 @@ export function ScreeningSection({
               {pendingScreeningDecision === "exclude" ? "Saving..." : "Exclude"}
             </button>
           </div>
-          <div className="buttonRow">
+          <div className="buttonRow bottomMargin">
             <button
               className="ghostButton iconOnly"
               type="button"
@@ -282,7 +281,7 @@ export function ScreeningSection({
               <ArrowRight size={17} />
             </button>
           </div>
-          <div className="secureBox">
+          <div className="validationItem muted">
             <Lock size={17} />
             <span>Other reviewer votes are hidden while blind mode is enabled.</span>
           </div>

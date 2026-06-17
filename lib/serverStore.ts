@@ -2378,13 +2378,16 @@ export function addScreeningDecisionForUser(
   if (!previousDecision && currentDecisions.length >= project.abstractRequiredVotes && !canAcceptAdditionalVote) {
     throw new ApiError("This citation already has the required independent votes.");
   }
-  const hasActiveCheckout = state.screeningCheckouts.some(
+  let hasActiveCheckout = state.screeningCheckouts.some(
     (checkout) =>
       getScreeningCheckoutStage(checkout) === "title_abstract" &&
       checkout.projectId === projectId &&
       checkout.studyId === studyId &&
       checkout.userId === userId
   );
+  if (!previousDecision && !hasActiveCheckout) {
+    hasActiveCheckout = acquireTitleAbstractCheckoutForUser(state, project, studyId, userId);
+  }
   if (!previousDecision && !hasActiveCheckout) {
     throw new ApiError("This citation is no longer checked out to you. Open the next active citation to continue.");
   }
@@ -2420,6 +2423,7 @@ export function addScreeningDecisionForUser(
   );
   appendEvent(state, currentUser.name, `Voted ${formatDecision(nextDecision.decisionValue)}`, studyId);
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
+  acquireNextTitleAbstractCheckoutForUser(state, project, userId, studyId);
   writeState(state);
 
   return {
@@ -2429,6 +2433,80 @@ export function addScreeningDecisionForUser(
       previousDecisionId: previousDecision?.id
     }
   };
+}
+
+function acquireTitleAbstractCheckoutForUser(state: PersistedState, project: ReviewProject, studyId: string, userId: string) {
+  const projectId = project.id;
+  const study = state.studies.find((candidate) => candidate.id === studyId && candidate.projectId === projectId);
+  if (!study || study.stage !== "title_abstract" || getConfirmedDuplicateStudyIds(state, projectId).has(studyId)) {
+    return false;
+  }
+
+  const previousDecision = state.decisions.find(
+    (decision) =>
+      decision.projectId === projectId &&
+      decision.studyId === studyId &&
+      decision.userId === userId &&
+      decision.stage === "title_abstract" &&
+      decision.isCurrent
+  );
+  const currentDecisions = getCurrentTitleAbstractDecisions(state.decisions, projectId, studyId);
+  const currentEvaluation = evaluateStage(
+    "title_abstract",
+    currentDecisions.map((decision) => decision.decisionValue),
+    project.abstractRequiredVotes,
+    project.maybePolicy
+  );
+  const isConflictCheckout = currentEvaluation.state === "conflict" || currentEvaluation.state === "needs_third_vote";
+  if (previousDecision && !isConflictCheckout) {
+    return false;
+  }
+
+  state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
+    (checkout) =>
+      !(
+        getScreeningCheckoutStage(checkout) === "title_abstract" &&
+        checkout.projectId === projectId &&
+        checkout.userId === userId
+      )
+  );
+
+  const capacity = getTitleAbstractCheckoutCapacity(project, studyId, state.decisions);
+  const activeStudyCheckouts = getEligibleStudyCheckouts(projectId, studyId, state.decisions, state.screeningCheckouts);
+  if (capacity <= 0 || activeStudyCheckouts.length >= capacity) {
+    return false;
+  }
+
+  const now = Date.now();
+  state.screeningCheckouts.push({
+    projectId,
+    stage: "title_abstract",
+    checkoutId: createId("checkout"),
+    studyId,
+    userId,
+    checkedOutAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.checkoutWindowSettings)).toISOString()
+  });
+  return true;
+}
+
+function acquireNextTitleAbstractCheckoutForUser(state: PersistedState, project: ReviewProject, userId: string, afterStudyId: string) {
+  const projectStudies = state.studies
+    .filter((study) => study.projectId === project.id && study.stage === "title_abstract")
+    .slice()
+    .sort(compareStudiesByImportItemId);
+  const currentIndex = projectStudies.findIndex((study) => study.id === afterStudyId);
+  const orderedCandidates =
+    currentIndex >= 0
+      ? [...projectStudies.slice(currentIndex + 1), ...projectStudies.slice(0, currentIndex)]
+      : projectStudies;
+
+  for (const study of orderedCandidates) {
+    if (acquireTitleAbstractCheckoutForUser(state, project, study.id, userId)) {
+      return study.id;
+    }
+  }
+  return null;
 }
 
 export function updateScreeningCheckoutForUser(
@@ -3111,11 +3189,58 @@ export function updateDedupCandidateForUser(
   appendEvent(
     state,
     currentUser.name,
-    status === "confirmed" ? "Confirmed duplicate candidate" : "Rejected duplicate candidate",
+    getDedupCandidateStatusEventLabel(status),
     candidateId
   );
   writeState(state);
   return buildPayload(state, userId);
+}
+
+function getDedupCandidateStatusEventLabel(status: DedupCandidate["status"]) {
+  if (status === "confirmed" || status === "auto_confirmed") {
+    return "Confirmed duplicate candidate";
+  }
+  if (status === "rejected") {
+    return "Rejected duplicate candidate";
+  }
+  return "Reopened duplicate candidate";
+}
+
+export function rejectPendingDedupCandidatesForUser(userId: string, projectId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const project = requireProjectMember(state, projectId, userId);
+  const pendingCandidates = state.dedupCandidates.filter(
+    (candidate) => isDedupCandidateForProject(candidate, projectId) && candidate.status === "pending"
+  );
+
+  if (pendingCandidates.length === 0) {
+    return {
+      ...buildPayload(state, userId),
+      message: "No pending duplicate candidates to reject."
+    };
+  }
+
+  const pendingCandidateIds = new Set(pendingCandidates.map((candidate) => candidate.id));
+  state.dedupCandidates = state.dedupCandidates.map((candidate) =>
+    pendingCandidateIds.has(candidate.id) ? { ...candidate, projectId, status: "rejected" } : candidate
+  );
+  syncProjectWorkflowCounts(state, project.id);
+  appendEvent(
+    state,
+    currentUser.name,
+    `Rejected ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "candidate" : "candidates"}`,
+    projectId
+  );
+  writeState(state);
+  return {
+    ...buildPayload(state, userId),
+    message: `Rejected ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "candidate" : "candidates"}.`
+  };
 }
 
 function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: ReviewProject, studyId: string, actor: string) {

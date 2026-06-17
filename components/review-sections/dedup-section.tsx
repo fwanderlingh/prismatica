@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, GitMerge, X } from "lucide-react";
+import { Check, GitMerge, RotateCcw, X } from "lucide-react";
 import type { DedupCandidate, Study } from "@/lib/prismaData";
 import { EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 
@@ -11,7 +11,9 @@ type DedupSectionProps = {
   recordsIdentified: number;
   projectDedupCandidates: DedupCandidate[];
   pendingDedupAction: DedupCandidate["status"] | null;
+  isRejectingAllDedupCandidates: boolean;
   updateDedupCandidate: (candidateId: string, status: DedupCandidate["status"]) => void;
+  rejectAllPendingDedupCandidates: () => void;
 };
 
 export function DedupSection({
@@ -20,7 +22,9 @@ export function DedupSection({
   recordsIdentified,
   projectDedupCandidates,
   pendingDedupAction,
-  updateDedupCandidate
+  isRejectingAllDedupCandidates,
+  updateDedupCandidate,
+  rejectAllPendingDedupCandidates
 }: DedupSectionProps) {
   const [activeStatus, setActiveStatus] = useState<DedupStatusFilter>("pending");
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
@@ -133,47 +137,59 @@ export function DedupSection({
               description={`There are no duplicate candidates in the ${activeStatusLabel.toLowerCase()} list.`}
             />
           )}
-          {selectedCandidate ? (
-            <>
-              <SectionTitle icon={GitMerge} title="Match Explanation" action={`${matchScorePercent} score`} />
-              <div className="scoreRing" aria-label="Duplicate score">
-                <strong>{matchScorePercent}</strong>
-                <span>{selectedCandidate.method}</span>
-              </div>
-              <div className="scoreBars">
-                <ScoreBar label="Title" value={selectedCandidate.explanation.title} />
-                <ScoreBar label="First author" value={selectedCandidate.explanation.author} />
-                <ScoreBar label="Year" value={selectedCandidate.explanation.year} />
-              </div>
-              <p className="doiNote">{renderDoiLink(selectedCandidate.explanation.doi, selectedCandidate.explanation.doi)}</p>
-              <ul className="plainList">
-                {selectedCandidate.explanation.notes.map((note) => (
-                  <li key={note}>{note}</li>
-                ))}
-              </ul>
-              {selectedCandidate.status === "pending" ? (
-                <div className="buttonRow">
-                  <button className="primaryButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "confirmed")}>
-                    {pendingDedupAction === "confirmed" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
-                    {pendingDedupAction === "confirmed" ? "Confirming..." : "Confirm"}
-                  </button>
-                  <button className="dangerButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "rejected")}>
-                    {pendingDedupAction === "rejected" ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
-                    {pendingDedupAction === "rejected" ? "Rejecting..." : "Reject"}
-                  </button>
-                </div>
-              ) : (
-                <p className="dedupStatusNote">{selectedStatusLabel}</p>
-              )}
-            </>
-          ) : null}
         </div>
 
-        <div className="comparisonGrid">
+        <div className="dedupDetailColumn">
           {selectedCandidate ? (
             <>
-              <RecordComparison title="Record A" source={selectedCandidate.recordA.source} study={selectedCandidate.recordA} />
-              <RecordComparison title="Record B" source={selectedCandidate.recordB.source} study={selectedCandidate.recordB} />
+              <section className="panel dedupMatchPanel">
+                <SectionTitle icon={GitMerge} title="Match Explanation" action={`${matchScorePercent} score`} />
+                <div className="dedupMatchLayout">
+                  <div className="scoreRing" aria-label="Duplicate score">
+                    <strong>{matchScorePercent}</strong>
+                    <span>{selectedCandidate.method}</span>
+                  </div>
+                  <div className="scoreBars">
+                    <ScoreBar label="Title" value={selectedCandidate.explanation.title} />
+                    <ScoreBar label="First author" value={selectedCandidate.explanation.author} />
+                    <ScoreBar label="Year" value={selectedCandidate.explanation.year} />
+                  </div>
+                  <div className="dedupMatchNotes">
+                    <p className="doiNote">{renderDoiLink(selectedCandidate.explanation.doi, selectedCandidate.explanation.doi)}</p>
+                    <ul className="plainList">
+                      {selectedCandidate.explanation.notes.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                    {selectedCandidate.status === "pending" ? (
+                      <div className="buttonRow">
+                        <button className="primaryButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "confirmed")}>
+                          {pendingDedupAction === "confirmed" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+                          {pendingDedupAction === "confirmed" ? "Confirming..." : "Confirm"}
+                        </button>
+                        <button className="dangerButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "rejected")}>
+                          {pendingDedupAction === "rejected" ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
+                          {pendingDedupAction === "rejected" ? "Rejecting..." : "Reject"}
+                        </button>
+                      </div>
+                    ) : selectedCandidate.status === "rejected" ? (
+                      <div className="buttonRow">
+                        <p className="dedupStatusNote">{selectedStatusLabel}</p>
+                        <button className="ghostButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "pending")}>
+                          {pendingDedupAction === "pending" ? <span className="inlineSpinner" aria-hidden="true" /> : <RotateCcw size={17} />}
+                          {pendingDedupAction === "pending" ? "Undoing..." : "Undo"}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="dedupStatusNote">{selectedStatusLabel}</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+              <div className="comparisonGrid">
+                <RecordComparison title="Record A" source={selectedCandidate.recordA.source} study={selectedCandidate.recordA} />
+                <RecordComparison title="Record B" source={selectedCandidate.recordB.source} study={selectedCandidate.recordB} />
+              </div>
             </>
           ) : (
             <section className="panel">
@@ -184,6 +200,21 @@ export function DedupSection({
               />
             </section>
           )}
+        </div>
+      </section>
+
+      <section className="panel dedupBulkPanel">
+        <SectionTitle icon={X} title="Bulk Decisions" action={`${statusCounts.pending} pending`} />
+        <div className="buttonRow">
+          <button
+            className="dangerButton"
+            type="button"
+            disabled={statusCounts.pending === 0 || pendingDedupAction !== null || isRejectingAllDedupCandidates}
+            onClick={rejectAllPendingDedupCandidates}
+          >
+            {isRejectingAllDedupCandidates ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
+            {isRejectingAllDedupCandidates ? "Rejecting all..." : "Reject all pending"}
+          </button>
         </div>
       </section>
     </div>

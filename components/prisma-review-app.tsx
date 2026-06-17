@@ -566,6 +566,7 @@ export function PrismaReviewApp() {
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>(seedDedupCandidates);
   const [pendingDedupAction, setPendingDedupAction] = useState<DedupCandidate["status"] | null>(null);
+  const [isRejectingAllDedupCandidates, setIsRejectingAllDedupCandidates] = useState(false);
   const [studyIndex, setStudyIndex] = useState(0);
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
@@ -2719,6 +2720,33 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function rejectAllPendingDedupCandidates() {
+    const pendingCount = projectDedupCandidates.filter((candidate) => candidate.status === "pending").length;
+    if (pendingCount === 0 || isRejectingAllDedupCandidates) {
+      return;
+    }
+    if (!window.confirm(`Reject all ${pendingCount} pending duplicate ${pendingCount === 1 ? "candidate" : "candidates"}?`)) {
+      return;
+    }
+
+    setIsRejectingAllDedupCandidates(true);
+    setPendingDedupAction("rejected");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${selectedProject.id}/dedup-candidates/reject-pending`,
+        {
+          method: "POST"
+        }
+      );
+      applyAppState(payload);
+    } catch (error) {
+      setLoginError(getErrorMessage(error));
+    } finally {
+      setPendingDedupAction(null);
+      setIsRejectingAllDedupCandidates(false);
+    }
+  }
+
   async function updateFullTextReport(input: {
     retrievalStatus?: Report["retrievalStatus"];
     decisionValue?: DecisionValue;
@@ -2953,7 +2981,9 @@ export function PrismaReviewApp() {
         recordsIdentified={recordsIdentified}
         projectDedupCandidates={projectDedupCandidates}
         pendingDedupAction={pendingDedupAction}
+        isRejectingAllDedupCandidates={isRejectingAllDedupCandidates}
         updateDedupCandidate={updateDedupCandidate}
+        rejectAllPendingDedupCandidates={rejectAllPendingDedupCandidates}
       />
     );
   }

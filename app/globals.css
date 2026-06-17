@@ -2276,7 +2276,7 @@ td span {
 }
 
 .dedupGrid {
-  grid-template-columns: calc(340px * var(--ui-scale)) minmax(0, 1fr);
+  grid-template-columns: calc(360px * var(--ui-scale)) minmax(0, 1fr);
 }
 
 .dedupInspectorPanel {
@@ -2292,7 +2292,7 @@ td span {
 .dedupCandidateList {
   display: grid;
   gap: calc(8px * var(--ui-scale));
-  max-height: calc(320px * var(--ui-scale));
+  max-height: calc(620px * var(--ui-scale));
   overflow-y: auto;
   padding-right: calc(2px * var(--ui-scale));
 }
@@ -2360,6 +2360,59 @@ td span {
   font-weight: 820;
 }
 
+.dedupDetailColumn {
+  display: grid;
+  align-content: start;
+  gap: calc(16px * var(--ui-scale));
+  min-width: 0;
+}
+
+.dedupMatchPanel {
+  display: grid;
+  gap: calc(14px * var(--ui-scale));
+}
+
+.dedupMatchPanel .sectionTitle {
+  margin-bottom: 0;
+}
+
+.dedupMatchLayout {
+  display: grid;
+  grid-template-columns: minmax(calc(150px * var(--ui-scale)), calc(190px * var(--ui-scale))) minmax(calc(220px * var(--ui-scale)), 0.9fr) minmax(calc(260px * var(--ui-scale)), 1.1fr);
+  gap: calc(18px * var(--ui-scale));
+  align-items: center;
+}
+
+.dedupMatchPanel .scoreRing {
+  min-height: calc(132px * var(--ui-scale));
+  margin-bottom: 0;
+}
+
+.dedupMatchNotes {
+  display: grid;
+  align-content: center;
+  gap: calc(10px * var(--ui-scale));
+  min-width: 0;
+}
+
+.dedupMatchNotes .doiNote,
+.dedupMatchNotes .plainList {
+  margin: 0;
+}
+
+.dedupMatchNotes .buttonRow {
+  margin-top: calc(2px * var(--ui-scale));
+}
+
+.dedupBulkPanel {
+  display: grid;
+  gap: calc(12px * var(--ui-scale));
+}
+
+.dedupBulkPanel .sectionTitle {
+  margin-bottom: 0;
+}
+
 .comparisonGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2373,7 +2426,7 @@ td span {
   margin-bottom: calc(14px * var(--ui-scale));
   padding: calc(16px * var(--ui-scale));
   border: calc(12px * var(--ui-scale)) solid var(--teal-soft);
-  border-top-color: var(--teal);
+  /*border-top-color: var(--teal);*/
   border-radius: calc(999px * var(--ui-scale));
   text-align: center;
 }
@@ -2701,6 +2754,10 @@ textarea {
   display: grid;
   gap: calc(10px * var(--ui-scale));
   margin: calc(14px * var(--ui-scale)) 0;
+}
+
+.bottomMargin {
+  margin-bottom: calc(14px * var(--ui-scale));
 }
 
 .includeButton,
@@ -3757,6 +3814,16 @@ button:disabled {
 
   .comparisonGrid {
     grid-template-columns: 1fr;
+  }
+
+  .dedupMatchLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .dedupCandidateList {
+    max-height: none;
+    overflow-y: visible;
+    padding-right: 0;
   }
 
   .queuePanel {
