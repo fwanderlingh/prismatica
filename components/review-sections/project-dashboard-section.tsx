@@ -103,12 +103,12 @@ export function ProjectDashboardSection({
         </div>
       </section>
 
-      <section className="metricGrid" aria-label="Project metrics">
+      {/*<section className="metricGrid" aria-label="Project metrics">
         <Metric label="Records identified" value={formatNumber(recordsIdentified)} tone="blue" detail="Database, register, and manual sources" />
         <Metric label="Duplicates removed" value={activeCounts.duplicateRecordsRemoved.toString()} tone="teal" detail="Preserved for PRISMA provenance" />
         <Metric label="Records screened" value={activeCounts.recordsScreened.toString()} tone="amber" detail={`${activeCounts.recordsExcluded} excluded at title/abstract`} />
         <Metric label="Studies included" value={activeCounts.studiesIncluded.toString()} tone="green" detail={`${activeCounts.studiesExtracted} extracted`} />
-      </section>
+      </section>*/}
 
       {workflowConflicts.length > 0 ? (
         <section className="panel">

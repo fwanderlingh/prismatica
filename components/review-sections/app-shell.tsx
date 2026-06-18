@@ -13,6 +13,8 @@ type AppShellProps = {
   isSidebarCollapsed: boolean;
   isMobileNavOpen: boolean;
   brandLogoAlt: string;
+  isMainPending?: boolean;
+  mainPendingLabel?: string;
   currentUser: {
     name: string;
     initials: string;
@@ -31,6 +33,8 @@ export function AppShell({
   isSidebarCollapsed,
   isMobileNavOpen,
   brandLogoAlt,
+  isMainPending = false,
+  mainPendingLabel = "Loading workspace",
   currentUser,
   breadcrumbItems,
   sidebar,
@@ -142,7 +146,20 @@ export function AppShell({
         </div>
       </header>
       {sidebar}
-      <main className="mainArea">{children}</main>
+      <main className={isMainPending ? "mainArea mainAreaPending" : "mainArea"} aria-busy={isMainPending}>
+        {children}
+        {isMainPending ? (
+          <div className="mainLoadingOverlay" role="status" aria-live="polite">
+            <div className="mainLoadingPanel">
+              <span className="mainLoadingSpinner" aria-hidden="true" />
+              {/*<div>
+                <strong>{mainPendingLabel}</strong>
+                <span>Preparing the next view</span>
+              </div>*/}
+            </div>
+          </div>
+        ) : null}
+      </main>
     </div>
   );
 }

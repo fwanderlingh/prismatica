@@ -136,7 +136,7 @@ export function ExportsSection({
         <div className="viewStack">
           <div className="panel">
             <SectionTitle icon={FileText} title="Consensus Dataset Export" action={canExportExtractionCsv ? "Ready" : "Blocked"} />
-            <p className="subtle">
+            <p className="subtle bottomMargin">
               Export the finalized consensus dataset used for downstream analysis. The CSV includes one row per included study with consensus-approved fields only.
             </p>
             <div className={canExportExtractionCsv && exportConsistency.failedCount === 0 ? "validationItem ok" : "validationItem muted"}>

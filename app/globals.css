@@ -649,8 +649,73 @@ h3 {
 
 .mainArea {
   grid-area: main;
+  position: relative;
   min-width: 0;
   padding: calc(10px * var(--ui-scale)) calc(22px * var(--ui-scale)) calc(34px * var(--ui-scale));
+}
+
+.mainAreaPending > :not(.mainLoadingOverlay) {
+  pointer-events: none;
+}
+
+.mainLoadingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  min-height: calc(320px * var(--ui-scale));
+  padding-top: clamp(calc(76px * var(--ui-scale)), 18vh, calc(170px * var(--ui-scale)));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 74%, transparent), color-mix(in srgb, var(--bg) 50%, transparent));
+  backdrop-filter: blur(calc(2px * var(--ui-scale)));
+}
+
+.mainLoadingPanel {
+  display: flex;
+  align-items: center;
+  gap: calc(13px * var(--ui-scale));
+  /*min-width: min(100%, calc(280px * var(--ui-scale)));*/
+  padding: calc(14px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, var(--teal-soft) 8%);
+  box-shadow: var(--shadow);
+}
+
+.mainLoadingPanel > div {
+  display: grid;
+  gap: calc(3px * var(--ui-scale));
+  min-width: 0;
+}
+
+.mainLoadingPanel > div strong,
+.mainLoadingPanel > div span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mainLoadingPanel > div strong {
+  color: var(--heading);
+  font-size: 0.95rem;
+  font-weight: 780;
+}
+
+.mainLoadingPanel > div span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.mainLoadingSpinner {
+  flex: 0 0 auto;
+  width: calc(24px * var(--ui-scale));
+  height: calc(24px * var(--ui-scale));
+  border: calc(3px * var(--ui-scale)) solid color-mix(in srgb, var(--teal) 22%, transparent);
+  border-top-color: var(--teal);
+  border-radius: calc(999px * var(--ui-scale));
+  animation: authSpin 0.9s linear infinite;
 }
 
 .appFrame.sidebar-collapsed {
@@ -2773,7 +2838,7 @@ textarea {
 }
 
 .bottomMargin {
-  margin-bottom: calc(14px * var(--ui-scale));
+  margin-bottom: calc(8px * var(--ui-scale));
 }
 
 .includeButton,

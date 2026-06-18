@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -529,6 +529,8 @@ export function PrismaReviewApp() {
   const requestedProjectId = routeState.projectId ?? null;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [pendingRoutePath, setPendingRoutePath] = useState<string | null>(null);
+  const [pendingRouteLabel, setPendingRouteLabel] = useState("");
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pendingAuthAction, setPendingAuthAction] = useState<"login" | "register" | null>(null);
@@ -1022,6 +1024,19 @@ export function PrismaReviewApp() {
     return sequentialPhaseAccess[view] ?? true;
   }
 
+  function getPendingRouteLabel(view: ViewKey, projectId: string) {
+    if (view === "dashboard") {
+      return "Opening All Reviews";
+    }
+
+    if (isProjectScopedView(view)) {
+      const project = projects.find((candidate) => candidate.id === projectId);
+      return project ? `Opening ${project.title}` : "Opening review";
+    }
+
+    return `Opening ${getViewLabel(view)}`;
+  }
+
   function setActiveView(view: ViewKey, options: { projectId?: string; replace?: boolean } = {}) {
     const nextProjectId = options.projectId ?? selectedProjectId;
     const nextPath = normalizePathname(buildPathForState(view, nextProjectId));
@@ -1031,12 +1046,16 @@ export function PrismaReviewApp() {
       return;
     }
 
-    if (options.replace) {
-      router.replace(nextPath);
-      return;
-    }
+    setPendingRoutePath(nextPath);
+    setPendingRouteLabel(getPendingRouteLabel(view, nextProjectId));
+    startTransition(() => {
+      if (options.replace) {
+        router.replace(nextPath);
+        return;
+      }
 
-    router.push(nextPath);
+      router.push(nextPath);
+    });
   }
 
   function navigateToProjectView(view: ViewKey) {
@@ -1137,6 +1156,18 @@ export function PrismaReviewApp() {
       applyPostAuthRedirect();
     }
   }, [isAuthResolved, isAuthenticated, pathname, routeSearch]);
+
+  useEffect(() => {
+    if (!pendingRoutePath) {
+      return;
+    }
+
+    const currentPath = normalizePathname(pathname ?? window.location.pathname);
+    if (currentPath === pendingRoutePath) {
+      setPendingRoutePath(null);
+      setPendingRouteLabel("");
+    }
+  }, [pathname, pendingRoutePath]);
 
   useEffect(() => {
     if (!isAuthenticated || !isAuthResolved) {
@@ -3418,6 +3449,8 @@ export function PrismaReviewApp() {
       isSidebarCollapsed={isSidebarCollapsed}
       isMobileNavOpen={isMobileNavOpen}
       brandLogoAlt={BRAND_LOGO_ALT}
+      isMainPending={Boolean(pendingRoutePath)}
+      mainPendingLabel={pendingRouteLabel}
       currentUser={currentUser}
       breadcrumbItems={breadcrumbItems}
       sidebar={

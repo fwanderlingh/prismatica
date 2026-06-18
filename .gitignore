@@ -8,3 +8,5 @@ tsconfig.tsbuildinfo
 .env
 .env.local
 .vscode/
+.codex/
+.agents/
