@@ -18,10 +18,7 @@ Most sensitive API routes call `requireSessionUserId()` before returning app dat
 1. **No visible CSRF/origin guard**
    Cookie auth is used, but mutations do not appear to validate `Origin`/`Referer` or use CSRF tokens. `SameSite=Lax` helps, but I would still harden this.
 
-2. **No login/register rate limiting**
-   [loginUser](/home/graal/public_html/prismatica/lib/serverStore.ts:1210) and registration have no throttling. That leaves password guessing and signup abuse too open.
-
-3. **SSRF risk from imported PDF URLs**
+2. **SSRF risk from imported PDF URLs**
    Imported citations can trigger server-side PDF fetches. [normalizeRemoteUrl](/home/graal/public_html/prismatica/lib/serverStore.ts:4765) only checks `http/https`, not private IPs, localhost, metadata IPs, or DNS rebinding.
 
 
