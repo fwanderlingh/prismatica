@@ -15,16 +15,13 @@ Most sensitive API routes call `requireSessionUserId()` before returning app dat
 
 **Main Risks**
 
-1. **Unauthenticated project pages return shell HTML**
-   [serverStore.ts](/home/graal/public_html/prismatica/lib/serverStore.ts:1099) returns `true` when no user is logged in. APIs still protect data, but `/projects/:id` can reveal that a project route exists before the client redirects.
-
-2. **No visible CSRF/origin guard**
+1. **No visible CSRF/origin guard**
    Cookie auth is used, but mutations do not appear to validate `Origin`/`Referer` or use CSRF tokens. `SameSite=Lax` helps, but I would still harden this.
 
-3. **No login/register rate limiting**
+2. **No login/register rate limiting**
    [loginUser](/home/graal/public_html/prismatica/lib/serverStore.ts:1210) and registration have no throttling. That leaves password guessing and signup abuse too open.
 
-4. **SSRF risk from imported PDF URLs**
+3. **SSRF risk from imported PDF URLs**
    Imported citations can trigger server-side PDF fetches. [normalizeRemoteUrl](/home/graal/public_html/prismatica/lib/serverStore.ts:4765) only checks `http/https`, not private IPs, localhost, metadata IPs, or DNS rebinding.
 
 

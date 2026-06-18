@@ -1,14 +1,16 @@
 import { setSessionCookie } from "@/lib/serverAuth";
 import { syncUserByIdToPostgres } from "@/lib/postgresUsersSync";
-import { jsonError, jsonOk, readJsonBody } from "@/lib/serverRoute";
+import { enforceAuthRateLimit, jsonError, jsonOk, readJsonBody } from "@/lib/serverRoute";
 import { registerUser } from "@/lib/serverStore";
 
 export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
+    const email = String(body.email ?? "");
+    enforceAuthRateLimit(request, "register", email);
     const payload = registerUser({
       name: String(body.name ?? ""),
-      email: String(body.email ?? ""),
+      email,
       organization: String(body.organization ?? ""),
       title: String(body.title ?? ""),
       password: String(body.password ?? ""),

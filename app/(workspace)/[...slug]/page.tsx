@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { canAccessProjectRoute } from "@/lib/serverStore";
 import { getSessionUserId } from "@/lib/serverAuth";
 
@@ -68,8 +68,16 @@ function getRequestedProjectId(slug: string[]) {
   return decodeURIComponent(slug[1]);
 }
 
-async function assertProjectAccessIfAuthenticated(projectId: string) {
+function buildRedirectPath(slug: string[]) {
+  return `/${slug.map((part) => encodeURIComponent(part)).join("/")}`;
+}
+
+async function assertProjectRouteAccess(projectId: string, slug: string[]) {
   const userId = await getSessionUserId();
+  if (!userId) {
+    redirect(`/sign-in?redirect=${encodeURIComponent(buildRedirectPath(slug))}`);
+  }
+
   if (!canAccessProjectRoute(projectId, userId)) {
     notFound();
   }
@@ -84,7 +92,7 @@ export default async function CatchAllPage({ params }: CatchAllPageProps) {
 
   const requestedProjectId = getRequestedProjectId(slug);
   if (requestedProjectId) {
-    await assertProjectAccessIfAuthenticated(requestedProjectId);
+    await assertProjectRouteAccess(requestedProjectId, slug);
   }
 
   return null;

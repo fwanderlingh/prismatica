@@ -1091,13 +1091,14 @@ export function getAppStateForUser(userId: string): AppStatePayload {
 }
 
 export function canAccessProjectRoute(projectId: string, userId: string | null) {
+  if (!userId) {
+    return false;
+  }
+
   const state = readState();
   const project = getProject(state, projectId);
   if (!project) {
     return reviewProjects.some((seedProject) => seedProject.id === projectId);
-  }
-  if (!userId) {
-    return true;
   }
   const user = getUser(state, userId);
   return Boolean(user?.isAdmin || isProjectMember(project, userId));
