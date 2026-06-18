@@ -25,8 +25,6 @@ Most sensitive API routes call `requireSessionUserId()` before returning app dat
 **Verdict**
 For casual unauthenticated API access: **mostly protected**.
 
-For production security against real attacks: **not yet**. I’d prioritize: require strong env secrets at startup, block unauthenticated workspace/project SSR routes, add rate limiting, add CSRF/origin checks and restrict remote PDF fetching.
-
 ### Optional: Migrate To Prisma ORM
 
 If desired, PostgreSQL access can later move from custom SQL/state-IO helpers to Prisma ORM.
