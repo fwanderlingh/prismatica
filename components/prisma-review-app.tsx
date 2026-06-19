@@ -1039,12 +1039,18 @@ export function PrismaReviewApp() {
     return `Opening ${getViewLabel(view)}`;
   }
 
+  function clearPendingRoute() {
+    setPendingRoutePath(null);
+    setPendingRouteLabel("");
+  }
+
   function setActiveView(view: ViewKey, options: { projectId?: string; replace?: boolean } = {}) {
     const nextProjectId = options.projectId ?? selectedProjectId;
     const nextPath = normalizePathname(buildPathForState(view, nextProjectId));
     const currentPath = normalizePathname(pathname ?? window.location.pathname);
 
     if (nextPath === currentPath) {
+      clearPendingRoute();
       return;
     }
 
@@ -1097,12 +1103,17 @@ export function PrismaReviewApp() {
 
     const redirectUrl = new URL(target, window.location.origin);
     const routeState = parseRouteState(redirectUrl.pathname, redirectUrl.search);
-    const nextUrl = `${normalizePathname(redirectUrl.pathname)}${redirectUrl.search}${redirectUrl.hash}`;
+    const nextPath = normalizePathname(redirectUrl.pathname);
+    const nextUrl = `${nextPath}${redirectUrl.search}${redirectUrl.hash}`;
 
     if (routeState.projectId) {
       setSelectedProjectId(routeState.projectId);
     }
-    router.replace(nextUrl);
+    setPendingRoutePath(nextPath);
+    setPendingRouteLabel(getPendingRouteLabel(routeState.view, routeState.projectId ?? selectedProjectId));
+    startTransition(() => {
+      router.replace(nextUrl);
+    });
   }
 
   useEffect(() => {
@@ -1134,6 +1145,12 @@ export function PrismaReviewApp() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      clearPendingRoute();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthResolved) {
@@ -1703,7 +1720,6 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setIsAuthenticated(true);
-      applyPostAuthRedirect();
     } catch (error) {
       setLoginError(getErrorMessage(error));
     } finally {
@@ -1756,7 +1772,6 @@ export function PrismaReviewApp() {
       applySuccessfulRegistration(payload.currentUser.email, registerForm.password);
       resetNewProjectForm(payload.currentUser);
       setIsAuthenticated(true);
-      applyPostAuthRedirect();
     } catch (error) {
       setLoginError(getErrorMessage(error));
       loadAuthConfig().catch(() => undefined);
