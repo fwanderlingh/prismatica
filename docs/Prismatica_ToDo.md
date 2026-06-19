@@ -7,9 +7,6 @@ PRISMATICA
 
 ## Security
 
-API data is mostly protected from unauthenticated requests, but I would not call the website production-secure against attacks yet.
-
-**What Looks Good**
 Most sensitive API routes call `requireSessionUserId()` before returning app data or mutating state, and project/admin actions also go through member, owner, or admin checks. For example, [serverRoute.ts](/home/graal/public_html/prismatica/lib/serverRoute.ts:5) rejects missing sessions, and routes like project creation use it before touching data.
 
 **Main Risks**
