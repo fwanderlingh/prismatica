@@ -18,6 +18,7 @@ type AdminCreateUserForm = {
 export type CheckoutWindowSettingsForm = {
   screeningCheckoutWindowMinutes: number;
   extractionCheckoutWindowMinutes: number;
+  pdfUploadMaxSizeMb: number;
 };
 
 type RegisteredUsersSectionProps = {
@@ -44,6 +45,7 @@ type RegisteredUsersSectionProps = {
   updateRegistrationSetting: (enabled: boolean) => void;
   onScreeningCheckoutWindowChange: (value: number) => void;
   onExtractionCheckoutWindowChange: (value: number) => void;
+  onPdfUploadMaxSizeMbChange: (value: number) => void;
   updateCheckoutWindowSettings: (event: FormSubmitEvent) => void;
 };
 
@@ -73,6 +75,7 @@ export function RegisteredUsersSection({
   updateRegistrationSetting,
   onScreeningCheckoutWindowChange,
   onExtractionCheckoutWindowChange,
+  onPdfUploadMaxSizeMbChange,
   updateCheckoutWindowSettings
 }: RegisteredUsersSectionProps) {
   const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
@@ -222,8 +225,8 @@ export function RegisteredUsersSection({
         </div>
 
         <div className="panel">
-          <SectionTitle icon={Clock} title="Queue Checkout Windows" action="Global" />
-          <p className="subtle">Set how long screening, full-text, and extraction checkouts stay active.</p>
+          <SectionTitle icon={Clock} title="Review Settings" action="Global" />
+          <p className="subtle">Set review checkout windows and the maximum PDF upload size.</p>
           <form className="inviteForm" onSubmit={updateCheckoutWindowSettings}>
             <label>
               <span>Screening/full-text minutes</span>
@@ -247,16 +250,27 @@ export function RegisteredUsersSection({
                 onChange={(event) => onExtractionCheckoutWindowChange(Number(event.target.value))}
               />
             </label>
+            <label>
+              <span>PDF upload limit (MB)</span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={checkoutWindowSettingsForm.pdfUploadMaxSizeMb}
+                disabled={isUpdatingCheckoutWindowSettings}
+                onChange={(event) => onPdfUploadMaxSizeMbChange(Number(event.target.value))}
+              />
+            </label>
             <button className="ghostButton" type="submit" disabled={isUpdatingCheckoutWindowSettings}>
               {isUpdatingCheckoutWindowSettings ? (
                 <>
                   <span className="inlineSpinner" aria-hidden="true" />
-                  Saving checkout windows...
+                  Saving settings...
                 </>
               ) : (
                 <>
                   <Check size={17} />
-                  Save checkout windows
+                  Save settings
                 </>
               )}
             </button>
@@ -264,6 +278,7 @@ export function RegisteredUsersSection({
           <div className="stateRows">
             <StatusRow label="Screening/full text" value={`${checkoutWindowSettings.screeningCheckoutWindowMinutes} min`} tone="info" />
             <StatusRow label="Extraction" value={`${checkoutWindowSettings.extractionCheckoutWindowMinutes} min`} tone="info" />
+            <StatusRow label="PDF upload limit" value={`${checkoutWindowSettings.pdfUploadMaxSizeMb} MB`} tone="info" />
           </div>
           {checkoutWindowSettingsMessage ? (
             <div className={checkoutWindowSettingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>

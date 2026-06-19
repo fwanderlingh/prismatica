@@ -26,6 +26,7 @@ type StoredState = {
   checkoutWindowSettings?: {
     screeningCheckoutWindowMinutes?: number;
     extractionCheckoutWindowMinutes?: number;
+    pdfUploadMaxSizeMb?: number;
   };
   users?: StoredUserRecord[];
 };
@@ -76,6 +77,14 @@ function parseIsoOrNow(value: string | undefined) {
     return new Date().toISOString();
   }
   return new Date(parsed).toISOString();
+}
+
+function clampPdfUploadMaxSizeMb(value: unknown, fallback: number) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(500, Math.round(numericValue)));
 }
 
 async function ensureSchema(client: Pool) {
@@ -154,22 +163,24 @@ async function upsertAuthSettings(
 async function upsertCheckoutWindowSettings(
   client: Pool,
   screeningCheckoutWindowMinutes: number,
-  extractionCheckoutWindowMinutes: number
+  extractionCheckoutWindowMinutes: number,
+  pdfUploadMaxSizeMb: number
 ) {
   await client.query(
     `
       INSERT INTO checkout_window_settings (
         id, screening_checkout_window_minutes,
-        extraction_checkout_window_minutes, updated_at
+        extraction_checkout_window_minutes, pdf_upload_max_size_mb, updated_at
       )
-      VALUES (1, $1, $2, NOW())
+      VALUES (1, $1, $2, $3, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
         extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
+        pdf_upload_max_size_mb = EXCLUDED.pdf_upload_max_size_mb,
         updated_at = NOW()
     `,
-    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes]
+    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes, pdfUploadMaxSizeMb]
   );
 }
 
@@ -214,13 +225,18 @@ export async function syncCheckoutWindowSettingsToPostgres() {
     state.checkoutWindowSettings?.screeningCheckoutWindowMinutes ?? 60;
   const extractionCheckoutWindowMinutes =
     state.checkoutWindowSettings?.extractionCheckoutWindowMinutes ?? 120;
+  const pdfUploadMaxSizeMb = clampPdfUploadMaxSizeMb(
+    state.checkoutWindowSettings?.pdfUploadMaxSizeMb,
+    50
+  );
 
   const client = getPool();
   await ensureSchema(client);
   await upsertCheckoutWindowSettings(
     client,
     screeningCheckoutWindowMinutes,
-    extractionCheckoutWindowMinutes
+    extractionCheckoutWindowMinutes,
+    pdfUploadMaxSizeMb
   );
 }
 

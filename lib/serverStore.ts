@@ -131,7 +131,7 @@ type ParsedCitation = {
 const demoUserIds = new Set(["user-rivera", "user-chen", "user-patel", "user-okafor"]);
 const adminUserId = "admin-root";
 const captchaTtlMs = 10 * 60 * 1000;
-const maxPdfSize = 25 * 1024 * 1024;
+const defaultPdfUploadMaxSizeMb = 50;
 const pdfRetrievalTimeoutMs = 15_000;
 const pdfRetrievalConcurrency = 3;
 
@@ -187,7 +187,8 @@ function defaultAuthSettings(): AppAuthSettings {
 function defaultCheckoutWindowSettings(): AppCheckoutWindowSettings {
   return {
     screeningCheckoutWindowMinutes: defaultScreeningCheckoutWindowMinutes,
-    extractionCheckoutWindowMinutes: defaultExtractionCheckoutWindowMinutes
+    extractionCheckoutWindowMinutes: defaultExtractionCheckoutWindowMinutes,
+    pdfUploadMaxSizeMb: defaultPdfUploadMaxSizeMb
   };
 }
 
@@ -210,7 +211,8 @@ function normalizeCheckoutWindowSettings(settings: Partial<AppCheckoutWindowSett
     extractionCheckoutWindowMinutes: clampCheckoutWindowMinutes(
       settings?.extractionCheckoutWindowMinutes,
       defaults.extractionCheckoutWindowMinutes
-    )
+    ),
+    pdfUploadMaxSizeMb: clampPdfUploadMaxSizeMb(settings?.pdfUploadMaxSizeMb, defaults.pdfUploadMaxSizeMb)
   };
 }
 
@@ -220,6 +222,18 @@ function clampCheckoutWindowMinutes(value: unknown, fallback: number) {
     return fallback;
   }
   return Math.max(1, Math.min(600, Math.round(numericValue)));
+}
+
+function clampPdfUploadMaxSizeMb(value: unknown, fallback: number) {
+  const numericValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(500, Math.round(numericValue)));
+}
+
+function pdfUploadMaxSizeBytes(settings: AppCheckoutWindowSettings) {
+  return settings.pdfUploadMaxSizeMb * 1024 * 1024;
 }
 
 function normalizeExclusionReasons(value: unknown): string[] {
@@ -1194,9 +1208,10 @@ export function updateCheckoutWindowSettingsForUser(
 
   const checkoutWindowChanged =
     previousSettings.screeningCheckoutWindowMinutes !== state.checkoutWindowSettings.screeningCheckoutWindowMinutes ||
-    previousSettings.extractionCheckoutWindowMinutes !== state.checkoutWindowSettings.extractionCheckoutWindowMinutes;
+    previousSettings.extractionCheckoutWindowMinutes !== state.checkoutWindowSettings.extractionCheckoutWindowMinutes ||
+    previousSettings.pdfUploadMaxSizeMb !== state.checkoutWindowSettings.pdfUploadMaxSizeMb;
 
-  const eventMessage = checkoutWindowChanged ? "Updated checkout windows" : "";
+  const eventMessage = checkoutWindowChanged ? "Updated global review settings" : "";
 
   if (eventMessage) {
     appendEvent(state, adminUser.name, eventMessage, adminUser.id);
@@ -1204,7 +1219,7 @@ export function updateCheckoutWindowSettingsForUser(
   writeState(state);
   return {
     ...buildPayload(state, adminUser.id),
-    message: checkoutWindowChanged ? "Checkout windows saved." : ""
+    message: checkoutWindowChanged ? "Global review settings saved." : ""
   };
 }
 
@@ -3028,6 +3043,7 @@ export async function uploadReportPdfForUser(
     throw new ApiError("Upload a PDF file.");
   }
 
+  assertPdfInputWithinSizeLimit(input.contentBase64 ?? "", state.checkoutWindowSettings, input.size);
   const buffer = Buffer.from(input.contentBase64 ?? "", "base64");
   await storeReportPdfBuffer(state, projectId, reportId, {
     buffer,
@@ -3625,7 +3641,7 @@ async function retrievePdfForReportFromUrl(
   }
 
   try {
-    const remotePdf = await fetchRemotePdf(pdfUrl, report.title);
+    const remotePdf = await fetchRemotePdf(pdfUrl, report.title, state.checkoutWindowSettings);
     await storeReportPdfBuffer(state, projectId, reportId, {
       buffer: remotePdf.buffer,
       fileName: remotePdf.fileName,
@@ -3668,7 +3684,7 @@ async function storeReportPdfBuffer(
 ) {
   const fileName = sanitizePdfFileName(input.fileName);
   const mimeType = input.mimeType || "application/pdf";
-  validatePdfBuffer(input.buffer, input.declaredSize);
+  validatePdfBuffer(input.buffer, state.checkoutWindowSettings, input.declaredSize);
   const checksum = crypto.createHash("sha256").update(input.buffer).digest("hex");
   const storagePath = pdfStorage.buildStoragePath({ projectId, reportId, checksum, fileName });
   await pdfStorage.writePdf(storagePath, input.buffer, { checksum, fileName, projectId, reportId });
@@ -4342,12 +4358,13 @@ function formatStudyCitation(study: Study) {
   return `${authors}. ${study.journal}. ${year}.`;
 }
 
-function validatePdfBuffer(buffer: Buffer, declaredSize?: number) {
+function validatePdfBuffer(buffer: Buffer, settings: AppCheckoutWindowSettings, declaredSize?: number) {
+  const maxPdfSize = pdfUploadMaxSizeBytes(settings);
   if (buffer.length === 0) {
     throw new ApiError("PDF file is empty.");
   }
   if (buffer.length > maxPdfSize) {
-    throw new ApiError("PDF file must be 25 MB or smaller.");
+    throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
   }
   if (typeof declaredSize === "number" && declaredSize > 0 && declaredSize !== buffer.length) {
     throw new ApiError("PDF upload size does not match the received file.");
@@ -4357,7 +4374,55 @@ function validatePdfBuffer(buffer: Buffer, declaredSize?: number) {
   }
 }
 
-async function fetchRemotePdf(pdfUrl: string, fallbackTitle: string) {
+function assertPdfInputWithinSizeLimit(contentBase64: string, settings: AppCheckoutWindowSettings, declaredSize?: number) {
+  const maxPdfSize = pdfUploadMaxSizeBytes(settings);
+  if (typeof declaredSize === "number" && declaredSize > maxPdfSize) {
+    throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
+  }
+
+  const maxBase64Length = Math.ceil(maxPdfSize / 3) * 4 + 4;
+  if (contentBase64.length > maxBase64Length) {
+    throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
+  }
+}
+
+async function readResponseBufferWithinLimit(response: Response, settings: AppCheckoutWindowSettings) {
+  const maxPdfSize = pdfUploadMaxSizeBytes(settings);
+  if (!response.body) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxPdfSize) {
+      throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
+    }
+    return buffer;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  let completed = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        completed = true;
+        break;
+      }
+      totalBytes += value.byteLength;
+      if (totalBytes > maxPdfSize) {
+        throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    if (!completed) {
+      await reader.cancel().catch(() => undefined);
+    }
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, totalBytes);
+}
+
+async function fetchRemotePdf(pdfUrl: string, fallbackTitle: string, settings: AppCheckoutWindowSettings) {
   const url = normalizeRemoteUrl(pdfUrl);
   if (!url) {
     throw new ApiError("PDF link must be an HTTP or HTTPS URL.");
@@ -4375,12 +4440,12 @@ async function fetchRemotePdf(pdfUrl: string, fallbackTitle: string) {
     }
 
     const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (Number.isFinite(contentLength) && contentLength > maxPdfSize) {
-      throw new ApiError("PDF file must be 25 MB or smaller.");
+    if (Number.isFinite(contentLength) && contentLength > pdfUploadMaxSizeBytes(settings)) {
+      throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    validatePdfBuffer(buffer);
+    const buffer = await readResponseBufferWithinLimit(response, settings);
+    validatePdfBuffer(buffer, settings);
     return {
       buffer,
       fileName: inferPdfFileName(url, response.headers.get("content-disposition") ?? "", fallbackTitle),

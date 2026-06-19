@@ -99,6 +99,7 @@ async function ensureSchema(client) {
       id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
       screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 60,
       extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 120,
+      pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -263,6 +264,8 @@ async function ensureSchema(client) {
     );
 
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE checkout_window_settings ADD COLUMN IF NOT EXISTS pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50;
+
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS organization TEXT;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS protocol_id TEXT;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS blind_mode BOOLEAN;
@@ -339,16 +342,27 @@ function clampCheckoutWindowMinutes(value, fallback) {
   if (!Number.isFinite(numericValue)) {
     return fallback;
   }
-  return Math.max(1, Math.min(120, Math.round(numericValue)));
+  return Math.max(1, Math.min(600, Math.round(numericValue)));
+}
+
+function clampPdfUploadMaxSizeMb(value, fallback) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(500, Math.round(numericValue)));
 }
 
 function defaultState() {
   return {
     version: stateVersion,
     authSettings: {
-      registrationEnabled: true,
+      registrationEnabled: true
+    },
+    checkoutWindowSettings: {
       screeningCheckoutWindowMinutes: 60,
-      extractionCheckoutWindowMinutes: 120
+      extractionCheckoutWindowMinutes: 120,
+      pdfUploadMaxSizeMb: 50
     },
     users: [],
     projects: [],
@@ -533,7 +547,8 @@ async function readRelationalState(client) {
     `
       SELECT
         screening_checkout_window_minutes,
-        extraction_checkout_window_minutes
+        extraction_checkout_window_minutes,
+        pdf_upload_max_size_mb
       FROM checkout_window_settings
       WHERE id = 1
     `
@@ -553,6 +568,7 @@ async function readRelationalState(client) {
   const hasRelationalState =
     usersResult.rowCount > 0 ||
     authSettingsResult.rowCount > 0 ||
+    checkoutWindowSettingsResult.rowCount > 0 ||
     projects.length > 0 ||
     imports.length > 0 ||
     studies.length > 0 ||
@@ -574,8 +590,9 @@ async function readRelationalState(client) {
       registrationEnabled: authSettingsResult.rows[0]?.registration_enabled ?? true,
     },
     checkoutWindowSettings: {
-      screeningCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.screening_checkout_window_minutes ?? 2,
-      extractionCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.extraction_checkout_window_minutes ?? 15
+      screeningCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.screening_checkout_window_minutes ?? 60,
+      extractionCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.extraction_checkout_window_minutes ?? 120,
+      pdfUploadMaxSizeMb: checkoutWindowSettingsResult.rows[0]?.pdf_upload_max_size_mb ?? 50
     },
     users: usersResult.rows.map((row) => ({
       id: row.id,
@@ -683,18 +700,20 @@ async function writeCheckoutWindowSettings(client, state) {
     `
       INSERT INTO checkout_window_settings (
         id, screening_checkout_window_minutes,
-        extraction_checkout_window_minutes, updated_at
+        extraction_checkout_window_minutes, pdf_upload_max_size_mb, updated_at
       )
-      VALUES (1, $1, $2, NOW())
+      VALUES (1, $1, $2, $3, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
         extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
+        pdf_upload_max_size_mb = EXCLUDED.pdf_upload_max_size_mb,
         updated_at = NOW()
     `,
     [
       clampCheckoutWindowMinutes(state.checkoutWindowSettings?.screeningCheckoutWindowMinutes, 60),
-      clampCheckoutWindowMinutes(state.checkoutWindowSettings?.extractionCheckoutWindowMinutes, 120)
+      clampCheckoutWindowMinutes(state.checkoutWindowSettings?.extractionCheckoutWindowMinutes, 120),
+      clampPdfUploadMaxSizeMb(state.checkoutWindowSettings?.pdfUploadMaxSizeMb, 50)
     ]
   );
 }

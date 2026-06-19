@@ -47,7 +47,7 @@ This uses Next.js experimental local HTTPS support.
 
 - Dashboard with PRISMA counts, audit trail, and progress indicators
 - Sign-in, optional captcha-protected registration, and server-managed sessions
-- Admin controls for password reset, account deletion, registration policy, and checkout windows
+- Admin controls for password reset, account deletion, registration policy, checkout windows, and PDF upload size
 - Multi-project workspace with per-project navigation
 - Team membership management with owner safeguards
 - RIS and BibTeX import with provenance and review flow
@@ -175,6 +175,7 @@ export PRISMATICA_ADMIN_PASSWORD="replace-this-default-admin-password"
 export PRISMATICA_REGISTRATION_ENABLED="false"
 export PRISMATICA_CAPTCHA_SECRET="replace-with-a-long-random-string"
 export PRISMATICA_SECURE_COOKIES="true"
+export PRISMATICA_ALLOWED_ORIGINS="https://prismatica.example.org"
 export PRISMATICA_USERS_SYNC_POSTGRES="true"
 export PRISMATICA_STORAGE_MODE="postgres"
 export PRISMATICA_OBJECT_STORAGE_PROVIDER="minio"
@@ -211,6 +212,19 @@ Notes:
 - Use `PRISMATICA_SECURE_COOKIES=true` only when serving over HTTPS.
 - `PRISMATICA_REGISTRATION_ENABLED=false` disables public registration for new data files.
 - Uploaded PDFs are stored under a sibling `pdfs/` folder near `PRISMATICA_DATA_FILE` unless `PRISMATICA_OBJECT_STORAGE_PROVIDER=minio` is enabled.
+
+## Security Features
+
+Prismatica uses server-side checks for the main web and API security boundaries:
+
+- Sessions are signed with `PRISMATICA_SESSION_SECRET` and stored in HTTP-only cookies.
+- `PRISMATICA_SECURE_COOKIES=true` marks session cookies as secure when the app is served over HTTPS.
+- Project pages are guarded before the workspace shell renders; unauthenticated `/projects/*` requests redirect to sign-in, and unauthorized authenticated users receive a not-found response.
+- API routes that read or mutate review data require an authenticated session and enforce project member, project owner, or admin permissions server-side.
+- Login and registration attempts are rate-limited to 10 attempts per minute by submitted email and client IP. The current limiter is in-memory, so use a shared store such as Redis or PostgreSQL if you run multiple app instances.
+- Registration can be disabled with `PRISMATICA_REGISTRATION_ENABLED=false`; when enabled, registration uses a signed captcha challenge.
+- Unsafe API methods (`POST`, `PUT`, `PATCH`, `DELETE`) are protected by a same-origin `Origin`/`Referer` check in `proxy.ts`. Extra trusted origins can be added with comma-separated `PRISMATICA_ALLOWED_ORIGINS`.
+- PDF uploads are restricted to PDF content, validated by an admin-configurable size limit (25 MB by default) and header, and served with private no-store caching and `X-Content-Type-Options: nosniff`.
 
 ### PDF Object Storage: MinIO
 
@@ -399,6 +413,7 @@ sudo systemctl reload caddy
 - Set a strong `PRISMATICA_SESSION_SECRET`
 - Set a strong `PRISMATICA_ADMIN_PASSWORD`
 - Enable `PRISMATICA_SECURE_COOKIES=true` when using HTTPS
+- Set `PRISMATICA_ALLOWED_ORIGINS` if the public browser origin differs from the app server origin behind a proxy
 - Keep Next.js behind localhost and reverse proxy through Caddy
 - Restrict filesystem permissions on data and PDF storage
 - Open only required firewall ports (`443`; optionally `80` for ACME HTTP challenge)

@@ -3,7 +3,6 @@ PRISMATICA
 
 ## To DO:
 
-
 1. Add a flow diagram generator: https://github.com/prisma-flowdiagram/PRISMA2020
 
 ## Security
@@ -15,17 +14,16 @@ Most sensitive API routes call `requireSessionUserId()` before returning app dat
 
 **Main Risks**
 
-1. **No visible CSRF/origin guard**
-   Cookie auth is used, but mutations do not appear to validate `Origin`/`Referer` or use CSRF tokens. `SameSite=Lax` helps, but I would still harden this.
-
-2. **SSRF risk from imported PDF URLs**
+1. **SSRF risk from imported PDF URLs**
    Imported citations can trigger server-side PDF fetches. [normalizeRemoteUrl](/home/graal/public_html/prismatica/lib/serverStore.ts:4765) only checks `http/https`, not private IPs, localhost, metadata IPs, or DNS rebinding.
 
 
 **Verdict**
 For casual unauthenticated API access: **mostly protected**.
 
-### Optional: Migrate To Prisma ORM
+## Optional
+
+### Migrate To Prisma ORM
 
 If desired, PostgreSQL access can later move from custom SQL/state-IO helpers to Prisma ORM.
 

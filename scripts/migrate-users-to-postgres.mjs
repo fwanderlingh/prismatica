@@ -17,7 +17,8 @@ function readStateFile(filePath) {
 
   const users = Array.isArray(parsed.users) ? parsed.users : [];
   const authSettings = parsed.authSettings && typeof parsed.authSettings === "object" ? parsed.authSettings : {};
-  return { users, authSettings, absolutePath };
+  const checkoutWindowSettings = parsed.checkoutWindowSettings && typeof parsed.checkoutWindowSettings === "object" ? parsed.checkoutWindowSettings : authSettings;
+  return { users, authSettings, checkoutWindowSettings, absolutePath };
 }
 
 function parseIsoOrNow(value) {
@@ -30,6 +31,22 @@ function parseIsoOrNow(value) {
 
 function normalizeTheme(value) {
   return value === "light" || value === "dark" ? value : "system";
+}
+
+function clampCheckoutWindowMinutes(value, fallback) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(600, Math.round(numericValue)));
+}
+
+function clampPdfUploadMaxSizeMb(value, fallback) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(500, Math.round(numericValue)));
 }
 
 function normalizeUser(user, index) {
@@ -80,34 +97,30 @@ async function migrateAuthSettings(client, authSettings) {
         registration_enabled = EXCLUDED.registration_enabled,
         updated_at = NOW()
     `,
-    [registrationEnabled, screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes]
+    [registrationEnabled]
   );
 }
 
-async function migrateCheckoutWindowSettings(client, authSettings) {
-  const screeningCheckoutWindowMinutes = Number.isFinite(Number(authSettings.screeningCheckoutWindowMinutes))
-    ? Math.max(1, Math.min(600, Math.round(Number(authSettings.screeningCheckoutWindowMinutes))))
-    : 60;
-  const extractionCheckoutWindowMinutes = Number.isFinite(Number(authSettings.extractionCheckoutWindowMinutes))
-    ? Math.max(1, Math.min(600, Math.round(Number(authSettings.extractionCheckoutWindowMinutes))))
-    : 120;
+async function migrateCheckoutWindowSettings(client, checkoutWindowSettings) {
+  const screeningCheckoutWindowMinutes = clampCheckoutWindowMinutes(checkoutWindowSettings.screeningCheckoutWindowMinutes, 60);
+  const extractionCheckoutWindowMinutes = clampCheckoutWindowMinutes(checkoutWindowSettings.extractionCheckoutWindowMinutes, 120);
+  const pdfUploadMaxSizeMb = clampPdfUploadMaxSizeMb(checkoutWindowSettings.pdfUploadMaxSizeMb, 50);
   await client.query(
     `
       INSERT INTO checkout_window_settings (
         id, screening_checkout_window_minutes,
-        extraction_checkout_window_minutes, updated_at
+        extraction_checkout_window_minutes, pdf_upload_max_size_mb, updated_at
       )
-      VALUES (1, $1, $2, NOW())
+      VALUES (1, $1, $2, $3, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
         extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
+        pdf_upload_max_size_mb = EXCLUDED.pdf_upload_max_size_mb,
         updated_at = NOW()
     `,
-    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes]
+    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes, pdfUploadMaxSizeMb]
   );
-
-
 }
 
 async function migrateUsers(client, users) {
@@ -173,7 +186,7 @@ async function run() {
     throw new Error("DATABASE_URL is required.");
   }
 
-  const { users, authSettings, absolutePath } = readStateFile(sourceFile);
+  const { users, authSettings, checkoutWindowSettings, absolutePath } = readStateFile(sourceFile);
 
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
@@ -182,10 +195,11 @@ async function run() {
     await client.query("BEGIN");
     await ensureSchema(client);
     await migrateAuthSettings(client, authSettings);
+    await migrateCheckoutWindowSettings(client, checkoutWindowSettings);
     const importedUsers = await migrateUsers(client, users);
     await client.query("COMMIT");
 
-    console.log(`Imported auth settings and ${importedUsers} users from ${absolutePath}`);
+    console.log(`Imported auth settings, review settings, and ${importedUsers} users from ${absolutePath}`);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

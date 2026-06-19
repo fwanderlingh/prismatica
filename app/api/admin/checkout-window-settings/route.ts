@@ -12,6 +12,9 @@ export async function PATCH(request: Request) {
         : {}),
       ...(Object.prototype.hasOwnProperty.call(body, "extractionCheckoutWindowMinutes")
         ? { extractionCheckoutWindowMinutes: Number(body.extractionCheckoutWindowMinutes) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(body, "pdfUploadMaxSizeMb")
+        ? { pdfUploadMaxSizeMb: Number(body.pdfUploadMaxSizeMb) }
         : {})
     };
     const payload = updateCheckoutWindowSettingsForUser(adminUserId, settings);

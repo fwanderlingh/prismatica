@@ -164,7 +164,8 @@ const defaultAuthSettings: AppAuthSettings = {
 
 const defaultCheckoutWindowSettings = {
   screeningCheckoutWindowMinutes: 60,
-  extractionCheckoutWindowMinutes: 120
+  extractionCheckoutWindowMinutes: 120,
+  pdfUploadMaxSizeMb: 25
 };
 
 const globalNavItems: NavItem[] = [
@@ -541,7 +542,8 @@ export function PrismaReviewApp() {
   const [checkoutWindowSettingsMessage, setCheckoutWindowSettingsMessage] = useState("");
   const [checkoutWindowSettingsForm, setCheckoutWindowSettingsForm] = useState({
     screeningCheckoutWindowMinutes: defaultCheckoutWindowSettings.screeningCheckoutWindowMinutes,
-    extractionCheckoutWindowMinutes: defaultCheckoutWindowSettings.extractionCheckoutWindowMinutes
+    extractionCheckoutWindowMinutes: defaultCheckoutWindowSettings.extractionCheckoutWindowMinutes,
+    pdfUploadMaxSizeMb: defaultCheckoutWindowSettings.pdfUploadMaxSizeMb
   });
   const [captchaChallenge, setCaptchaChallenge] = useState<PublicAuthConfigPayload["captcha"] | null>(null);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
@@ -1443,10 +1445,12 @@ export function PrismaReviewApp() {
   useEffect(() => {
     setCheckoutWindowSettingsForm({
       screeningCheckoutWindowMinutes: checkoutWindowSettings.screeningCheckoutWindowMinutes,
-      extractionCheckoutWindowMinutes: checkoutWindowSettings.extractionCheckoutWindowMinutes
+      extractionCheckoutWindowMinutes: checkoutWindowSettings.extractionCheckoutWindowMinutes,
+      pdfUploadMaxSizeMb: checkoutWindowSettings.pdfUploadMaxSizeMb
     });
   }, [
     checkoutWindowSettings.extractionCheckoutWindowMinutes,
+    checkoutWindowSettings.pdfUploadMaxSizeMb,
     checkoutWindowSettings.screeningCheckoutWindowMinutes
   ]);
 
@@ -1642,7 +1646,8 @@ export function PrismaReviewApp() {
     setCheckoutWindowSettings(nextCheckoutWindowSettings);
     setCheckoutWindowSettingsForm({
       screeningCheckoutWindowMinutes: nextCheckoutWindowSettings.screeningCheckoutWindowMinutes,
-      extractionCheckoutWindowMinutes: nextCheckoutWindowSettings.extractionCheckoutWindowMinutes
+      extractionCheckoutWindowMinutes: nextCheckoutWindowSettings.extractionCheckoutWindowMinutes,
+      pdfUploadMaxSizeMb: nextCheckoutWindowSettings.pdfUploadMaxSizeMb
     });
     setUsers(payload.users);
     setProjects(payload.projects);
@@ -2631,11 +2636,12 @@ export function PrismaReviewApp() {
         method: "PATCH",
         body: JSON.stringify({
           screeningCheckoutWindowMinutes: checkoutWindowSettingsForm.screeningCheckoutWindowMinutes,
-          extractionCheckoutWindowMinutes: checkoutWindowSettingsForm.extractionCheckoutWindowMinutes
+          extractionCheckoutWindowMinutes: checkoutWindowSettingsForm.extractionCheckoutWindowMinutes,
+          pdfUploadMaxSizeMb: checkoutWindowSettingsForm.pdfUploadMaxSizeMb
         })
       });
       applyAppState(payload);
-      setCheckoutWindowSettingsMessage(payload.message ?? "Checkout windows saved.");
+      setCheckoutWindowSettingsMessage(payload.message ?? "Global review settings saved.");
     } catch (error) {
       setCheckoutWindowSettingsMessage(getErrorMessage(error));
     } finally {
@@ -2795,6 +2801,12 @@ export function PrismaReviewApp() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || !activeReport?.id) {
+      return;
+    }
+
+    const maxPdfSizeBytes = checkoutWindowSettings.pdfUploadMaxSizeMb * 1024 * 1024;
+    if (file.size > maxPdfSizeBytes) {
+      setFullTextMessage(`PDF file must be ${checkoutWindowSettings.pdfUploadMaxSizeMb} MB or smaller.`);
       return;
     }
 
@@ -3310,6 +3322,12 @@ export function PrismaReviewApp() {
           setCheckoutWindowSettingsForm((previous) => ({
             ...previous,
             extractionCheckoutWindowMinutes: value
+          }))
+        }
+        onPdfUploadMaxSizeMbChange={(value) =>
+          setCheckoutWindowSettingsForm((previous) => ({
+            ...previous,
+            pdfUploadMaxSizeMb: value
           }))
         }
         updateCheckoutWindowSettings={updateCheckoutWindowSettings}
