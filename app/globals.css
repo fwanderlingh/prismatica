@@ -3933,6 +3933,12 @@ button:disabled {
     padding: calc(14px * var(--ui-scale));
   }
 
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
   .appFrame {
     display: block;
   }

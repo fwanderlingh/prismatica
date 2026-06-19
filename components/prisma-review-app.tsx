@@ -1044,6 +1044,12 @@ export function PrismaReviewApp() {
     setPendingRouteLabel("");
   }
 
+  function blurActiveFormControl() {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }
+
   function setActiveView(view: ViewKey, options: { projectId?: string; replace?: boolean } = {}) {
     const nextProjectId = options.projectId ?? selectedProjectId;
     const nextPath = normalizePathname(buildPathForState(view, nextProjectId));
@@ -1718,6 +1724,7 @@ export function PrismaReviewApp() {
           password: loginPassword
         })
       });
+      blurActiveFormControl();
       applyAppState(payload);
       setIsAuthenticated(true);
     } catch (error) {
@@ -1768,6 +1775,7 @@ export function PrismaReviewApp() {
           captchaAnswer: registerForm.captchaAnswer
         })
       });
+      blurActiveFormControl();
       applyAppState(payload);
       applySuccessfulRegistration(payload.currentUser.email, registerForm.password);
       resetNewProjectForm(payload.currentUser);
