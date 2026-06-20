@@ -2699,11 +2699,7 @@ export function PrismaReviewApp() {
       const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
       const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const currentStudyNextIndex = nextActiveStudies.findIndex((study) => study.id === currentStudy.id);
-      const nextStudyIndex =
-        currentStudyNextIndex >= 0
-          ? Math.min(currentStudyNextIndex + 1, Math.max(nextActiveStudies.length - 1, 0))
-          : Math.min(studyIndex, Math.max(nextActiveStudies.length - 1, 0));
-      setStudyIndex(nextStudyIndex);
+      setStudyIndex(currentStudyNextIndex >= 0 ? currentStudyNextIndex : 0);
     } catch (error) {
       setScreeningMessage(getErrorMessage(error));
     } finally {

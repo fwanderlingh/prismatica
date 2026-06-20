@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import type { AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
+import { randomizeReviewQueueItems } from "./workflowSelectors";
 import {
   type AppUser,
   type Decision,
@@ -2439,7 +2440,7 @@ export function addScreeningDecisionForUser(
   );
   appendEvent(state, currentUser.name, `Voted ${formatDecision(nextDecision.decisionValue)}`, studyId);
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
-  acquireNextTitleAbstractCheckoutForUser(state, project, userId, studyId);
+  acquireNextTitleAbstractCheckoutForUser(state, project, userId);
   writeState(state);
 
   return {
@@ -2506,16 +2507,16 @@ function acquireTitleAbstractCheckoutForUser(state: PersistedState, project: Rev
   return true;
 }
 
-function acquireNextTitleAbstractCheckoutForUser(state: PersistedState, project: ReviewProject, userId: string, afterStudyId: string) {
+function acquireNextTitleAbstractCheckoutForUser(state: PersistedState, project: ReviewProject, userId: string) {
   const projectStudies = state.studies
     .filter((study) => study.projectId === project.id && study.stage === "title_abstract")
     .slice()
     .sort(compareStudiesByImportItemId);
-  const currentIndex = projectStudies.findIndex((study) => study.id === afterStudyId);
-  const orderedCandidates =
-    currentIndex >= 0
-      ? [...projectStudies.slice(currentIndex + 1), ...projectStudies.slice(0, currentIndex)]
-      : projectStudies;
+  const orderedCandidates = randomizeReviewQueueItems(projectStudies, {
+    projectId: project.id,
+    currentUserId: userId,
+    phase: "title_abstract"
+  });
 
   for (const study of orderedCandidates) {
     if (acquireTitleAbstractCheckoutForUser(state, project, study.id, userId)) {

@@ -174,6 +174,44 @@ export function getCheckoutRefreshIntervalMs(windowMinutes: number) {
   return Math.max(30_000, Math.min(Math.floor(ttlMs / 2), ttlMs - 5_000));
 }
 
+type ReviewQueuePhase = "title_abstract" | "full_text" | "extraction";
+
+function reviewQueueHash(value: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+export function randomizeReviewQueueItems<T extends { id: string }>(
+  items: T[],
+  options: {
+    projectId: string;
+    currentUserId: string;
+    phase: ReviewQueuePhase;
+    isPinned?: (item: T) => boolean;
+    salt?: string;
+  }
+) {
+  const { projectId, currentUserId, phase, isPinned, salt = "" } = options;
+  return items.slice().sort((left, right) => {
+    const leftPinned = isPinned?.(left) ? 1 : 0;
+    const rightPinned = isPinned?.(right) ? 1 : 0;
+    if (leftPinned !== rightPinned) {
+      return rightPinned - leftPinned;
+    }
+
+    const leftKey = reviewQueueHash(`${projectId}:${currentUserId}:${phase}:${salt}:${left.id}`);
+    const rightKey = reviewQueueHash(`${projectId}:${currentUserId}:${phase}:${salt}:${right.id}`);
+    if (leftKey !== rightKey) {
+      return leftKey - rightKey;
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function isFullTextReportComplete(report: Report, project: ReviewProject) {
   if (report.fullTextStatus === "advance_extraction" || report.fullTextStatus === "excluded_full_text") {
     return true;
@@ -204,7 +242,7 @@ export function isFullTextEvaluationComplete(evaluation: StageEvaluation | undef
 }
 
 export function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {
-  return studies.filter((study) => {
+  const activeStudies = studies.filter((study) => {
     const currentDecisions = decisions.filter(
       (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
     );
@@ -230,10 +268,17 @@ export function getActiveTitleAbstractStudies(project: ReviewProject, studies: S
     }
     return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
   });
+
+  return randomizeReviewQueueItems(activeStudies, {
+    projectId: project.id,
+    currentUserId,
+    phase: "title_abstract",
+    isPinned: (study) => Boolean(study.titleAbstractCheckedOutByCurrentUser)
+  });
 }
 
 export function getActiveFullTextReports(project: ReviewProject, reports: Report[], decisions: Decision[], currentUserId: string) {
-  return reports.filter((report) => {
+  const activeReports = reports.filter((report) => {
     const currentDecisions = decisions.filter(
       (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
     );
@@ -265,6 +310,13 @@ export function getActiveFullTextReports(project: ReviewProject, reports: Report
     }
     return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
   });
+
+  return randomizeReviewQueueItems(activeReports, {
+    projectId: project.id,
+    currentUserId,
+    phase: "full_text",
+    isPinned: (report) => Boolean(report.fullTextCheckedOutByCurrentUser)
+  });
 }
 
 export function getActiveExtractionReports(
@@ -274,7 +326,7 @@ export function getActiveExtractionReports(
   templateId: string,
   currentUserId: string
 ) {
-  return reports.filter((report) => {
+  const activeReports = reports.filter((report) => {
     const submittedResponses = extractionResponses.filter(
       (response) =>
         response.projectId === project.id &&
@@ -293,6 +345,14 @@ export function getActiveExtractionReports(
       return false;
     }
     return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - submittedCount, 1);
+  });
+
+  return randomizeReviewQueueItems(activeReports, {
+    projectId: project.id,
+    currentUserId,
+    phase: "extraction",
+    isPinned: (report) => Boolean(report.extractionCheckedOutByCurrentUser),
+    salt: templateId
   });
 }
 
