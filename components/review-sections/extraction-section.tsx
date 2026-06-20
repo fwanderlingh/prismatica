@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, History, Plus, Trash2 } from "lucide-react";
 import {
   type AppUser,
   type ExtractionFieldType,
@@ -59,6 +59,8 @@ type ExtractionSectionProps = {
   extractionFormValues: Record<string, ExtractionResponseValue | undefined>;
   updateExtractionValue: (fieldId: string, value: ExtractionResponseValue) => void;
   toggleExtractionChoice: (fieldId: string, option: string, checked: boolean) => void;
+  reviewedCount: number;
+  onOpenReviewed: () => void;
 };
 
 const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
@@ -91,7 +93,9 @@ export function ExtractionSection({
   isSubmittingExtractionResponse,
   extractionFormValues,
   updateExtractionValue,
-  toggleExtractionChoice
+  toggleExtractionChoice,
+  reviewedCount,
+  onOpenReviewed
 }: ExtractionSectionProps) {
   const uploadedPdfCount = projectReportQueue.filter((report) => report.fileName).length;
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
@@ -106,6 +110,10 @@ export function ExtractionSection({
             <h1>Dual Independent Extraction</h1>
             <p className="subtle">Extraction forms and assignments become available after studies are included.</p>
           </div>
+          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+            <History size={16} />
+            Reviewed {reviewedCount}
+          </button>
         </section>
         <section className="settingsGrid">
           <div className="panel">
@@ -161,6 +169,10 @@ export function ExtractionSection({
             <h1>Data Template</h1>
             <p className="subtle">Project owners define the extraction fields before reviewers extract data from included reports.</p>
           </div>
+          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+            <History size={16} />
+            Reviewed {reviewedCount}
+          </button>
         </section>
 
         {extractionMessage ? (
@@ -266,12 +278,18 @@ export function ExtractionSection({
             <h1>Dual Independent Extraction</h1>
             <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
           </div>
-          {totalExtractionReportCount > 0 ? (
-            <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
-              <GitMerge size={16} />
-              Resolve Conflicts
+          <div className="buttonRow">
+            {totalExtractionReportCount > 0 ? (
+              <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
+                <GitMerge size={16} />
+                Resolve Conflicts
+              </button>
+            ) : null}
+            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+              <History size={16} />
+              Reviewed {reviewedCount}
             </button>
-          ) : null}
+          </div>
         </section>
         <section className="panel">
           <EmptyState
@@ -321,10 +339,16 @@ export function ExtractionSection({
         </div>
         <ReportPicker
           action={
-            <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
-              <GitMerge size={16} />
-              Resolve Conflicts
-            </button>
+            <div className="buttonRow">
+              <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
+                <GitMerge size={16} />
+                Resolve Conflicts
+              </button>
+              <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+                <History size={16} />
+                Reviewed {reviewedCount}
+              </button>
+            </div>
           }
           activeFallbackId={activeExtractionFallbackId}
           activeStudy={activeStudyForExtraction}

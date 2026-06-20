@@ -4,6 +4,7 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  History,
   Upload,
   XCircle
 } from "lucide-react";
@@ -43,6 +44,8 @@ type FullTextSectionProps = {
   setFullTextReason: (reason: string) => void;
   exclusionReasons: string[];
   studies: Study[];
+  reviewedCount: number;
+  onOpenReviewed: () => void;
 };
 
 type PdfLoadState = "idle" | "loading" | "ready" | "error";
@@ -72,7 +75,9 @@ export function FullTextSection({
   fullTextReason,
   setFullTextReason,
   exclusionReasons,
-  studies
+  studies,
+  reviewedCount,
+  onOpenReviewed
 }: FullTextSectionProps) {
   const [now, setNow] = useState(Date.now());
   const pdfViewerUrl = activeReport.fileName
@@ -114,6 +119,10 @@ export function FullTextSection({
             <h1>Report Review</h1>
             <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
           </div>
+          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+            <History size={16} />
+            Reviewed {reviewedCount}
+          </button>
         </section>
         <section className="panel">
           <EmptyState
@@ -216,6 +225,12 @@ export function FullTextSection({
           </div>
         </div>
         <ReportPicker
+          action={
+            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+              <History size={16} />
+              Reviewed {reviewedCount}
+            </button>
+          }
           activeFallbackId={activeReportFallbackId}
           activeStudy={matchedCurrentReportStudy}
           detail={`Active report: ${activeReport.title}`}

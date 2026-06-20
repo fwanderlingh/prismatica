@@ -34,6 +34,8 @@ type ScreeningSectionProps = {
   currentStageDecisions: Decision[];
   pendingScreeningDecision: Exclude<DecisionValue, "not_retrieved"> | null;
   isUndoingScreeningDecision: boolean;
+  reviewedCount: number;
+  onOpenReviewed: () => void;
   formatConflictResolutionHint: (requiredVotes: number) => string;
   selectedProjectAbstractRequiredVotes: number;
   addScreeningDecision: (value: Exclude<DecisionValue, "not_retrieved">) => void;
@@ -64,6 +66,8 @@ export function ScreeningSection({
   currentStageDecisions,
   pendingScreeningDecision,
   isUndoingScreeningDecision,
+  reviewedCount,
+  onOpenReviewed,
   formatConflictResolutionHint,
   selectedProjectAbstractRequiredVotes,
   addScreeningDecision,
@@ -103,6 +107,10 @@ export function ScreeningSection({
             <h1>Reviewer Queue</h1>
             <p className="subtle">Screening starts after imports are committed and canonical studies are created.</p>
           </div>
+          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+            <History size={16} />
+            Reviewed {reviewedCount}
+          </button>
         </section>
         <section className="panel">
           <EmptyState
@@ -133,6 +141,10 @@ export function ScreeningSection({
             <i style={{ width: `${screeningProgress}%` }} />
           </div>
         </div>
+        <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+          <History size={16} />
+          Reviewed {reviewedCount}
+        </button>
       </section>
 
       <section className="screeningLayout">

@@ -58,6 +58,7 @@ export function AppSidebar({
   onToggleMobileNav
 }: AppSidebarProps) {
   const homeItem = globalNavItems.find((item) => item.key === "dashboard");
+  const activeProjectNavKey = getProjectNavKey(activeView);
 
   return (
     <aside className={["sidebar", isMobileNavOpen ? "open" : "", isSidebarCollapsed ? "collapsed" : ""].filter(Boolean).join(" ")} aria-label="Project navigation">
@@ -117,7 +118,7 @@ export function AppSidebar({
                   const phaseState = getPhaseNavState(key, selectedProject.stage);
                   const isLocked = !canNavigateToProjectView(key);
                   const effectivePhaseState = isLocked ? "pending" : phaseState;
-                  const navClassName = ["navItem", "navItemPhase", activeView === key ? "active" : "", effectivePhaseState ? `phase-${effectivePhaseState}` : "", isLocked ? "phase-locked" : ""]
+                  const navClassName = ["navItem", "navItemPhase", activeProjectNavKey === key ? "active" : "", effectivePhaseState ? `phase-${effectivePhaseState}` : "", isLocked ? "phase-locked" : ""]
                     .filter(Boolean)
                     .join(" ");
                   return (
@@ -126,7 +127,7 @@ export function AppSidebar({
                       type="button"
                       key={key}
                       data-tooltip={label}
-                      aria-current={activeView === key ? "page" : undefined}
+                      aria-current={activeProjectNavKey === key ? "page" : undefined}
                       aria-disabled={isLocked || undefined}
                       disabled={isLocked}
                       onClick={() => onNavigate(key)}
@@ -146,7 +147,7 @@ export function AppSidebar({
                 .filter((item) => !reviewPhaseNavKeys.has(item.key))
                 .map(({ key, label, path, Icon }) => {
                   const phaseState = getPhaseNavState(key, selectedProject.stage);
-                  const navClassName = ["navItem", "navItemUtility", activeView === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
+                  const navClassName = ["navItem", "navItemUtility", activeProjectNavKey === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
                     .filter(Boolean)
                     .join(" ");
                   return (
@@ -155,7 +156,7 @@ export function AppSidebar({
                       type="button"
                       key={key}
                       data-tooltip={label}
-                      aria-current={activeView === key ? "page" : undefined}
+                      aria-current={activeProjectNavKey === key ? "page" : undefined}
                       onClick={() => onNavigate(key)}
                       title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
                     >
@@ -193,4 +194,17 @@ export function AppSidebar({
       </nav>
     </aside>
   );
+}
+
+function getProjectNavKey(view: ViewKey) {
+  if (view === "screeningReviewed") {
+    return "screening";
+  }
+  if (view === "fullTextReviewed") {
+    return "fullText";
+  }
+  if (view === "extractionReviewed") {
+    return "extraction";
+  }
+  return view;
 }

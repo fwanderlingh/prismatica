@@ -123,6 +123,7 @@ import { ImportEditorSection } from "./review-sections/import-editor-section";
 import { ImportsSection } from "./review-sections/imports-section";
 import { DedupSection } from "./review-sections/dedup-section";
 import { ScreeningSection } from "./review-sections/screening-section";
+import { ReviewedItemsSection, type ReviewedQueueItem } from "./review-sections/reviewed-items-section";
 import { RiskSection } from "./review-sections/risk-section";
 import { LoginShell } from "./review-sections/login-shell";
 import { AppSidebar } from "./review-sections/app-sidebar";
@@ -144,6 +145,13 @@ type DecisionAction = {
   studyId: string;
   previousDecisionId?: string;
 };
+
+type ReopenPhase = "screening" | "fullText" | "extraction";
+
+type PendingReopenItem = {
+  phase: ReopenPhase;
+  id: string;
+} | null;
 
 type FormSubmitEvent = {
   preventDefault: () => void;
@@ -192,15 +200,28 @@ const projectNavItems: NavItem[] = [
 ];
 
 const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "profile"];
-const reviewPhaseNavKeys = new Set<ViewKey>(["imports", "dedup", "screening", "fullText", "extraction", "consensus"]);
+const reviewPhaseNavKeys = new Set<ViewKey>([
+  "imports",
+  "dedup",
+  "screening",
+  "screeningReviewed",
+  "fullText",
+  "fullTextReviewed",
+  "extraction",
+  "extractionReviewed",
+  "consensus"
+]);
 const viewKeySet = new Set<ViewKey>([
   "dashboard",
   "projectDashboard",
   "imports",
   "dedup",
   "screening",
+  "screeningReviewed",
   "fullText",
+  "fullTextReviewed",
   "extraction",
+  "extractionReviewed",
   "consensus",
   "risk",
   "exports",
@@ -250,10 +271,16 @@ function buildPathForState(view: ViewKey, projectId: string) {
       return `/projects/${encodeURIComponent(projectId)}/dedup`;
     case "screening":
       return `/projects/${encodeURIComponent(projectId)}/screening`;
+    case "screeningReviewed":
+      return `/projects/${encodeURIComponent(projectId)}/screening/reviewed`;
     case "fullText":
       return `/projects/${encodeURIComponent(projectId)}/full-text`;
+    case "fullTextReviewed":
+      return `/projects/${encodeURIComponent(projectId)}/full-text/reviewed`;
     case "extraction":
       return `/projects/${encodeURIComponent(projectId)}/extraction`;
+    case "extractionReviewed":
+      return `/projects/${encodeURIComponent(projectId)}/extraction/reviewed`;
     case "consensus":
       return `/projects/${encodeURIComponent(projectId)}/extraction/consensus`;
     case "risk":
@@ -270,7 +297,12 @@ function buildPathForState(view: ViewKey, projectId: string) {
 }
 
 function getViewLabel(view: ViewKey) {
-  return globalNavItems.find((item) => item.key === view)?.label ?? projectNavItems.find((item) => item.key === view)?.label ?? "Review";
+  const subpageLabels: Partial<Record<ViewKey, string>> = {
+    screeningReviewed: "Screening Reviewed",
+    fullTextReviewed: "Full Text Reviewed",
+    extractionReviewed: "Extraction Reviewed"
+  };
+  return subpageLabels[view] ?? globalNavItems.find((item) => item.key === view)?.label ?? projectNavItems.find((item) => item.key === view)?.label ?? "Review";
 }
 
 function parseRouteState(pathname: string, search: string): { view: ViewKey; projectId?: string; isKnownRoute: boolean } {
@@ -306,9 +338,12 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
       imports: "imports",
       dedup: "dedup",
       screening: "screening",
+      "screening/reviewed": "screeningReviewed",
       "screen/title-abstract": "screening",
       "full-text": "fullText",
+      "full-text/reviewed": "fullTextReviewed",
       extraction: "extraction",
+      "extraction/reviewed": "extractionReviewed",
       "extraction/consensus": "consensus",
       risk: "risk",
       exports: "exports",
@@ -595,6 +630,7 @@ export function PrismaReviewApp() {
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
   const [isUndoingScreeningDecision, setIsUndoingScreeningDecision] = useState(false);
+  const [pendingReopenItem, setPendingReopenItem] = useState<PendingReopenItem>(null);
   const [screeningNote, setScreeningNote] = useState("");
   const [screeningMessage, setScreeningMessage] = useState("");
   const [activeReportId, setActiveReportId] = useState("");
@@ -893,6 +929,101 @@ export function PrismaReviewApp() {
     return studyIds.size;
   }, [currentUser.id, decisions, selectedProject.id]);
 
+  const reviewedScreeningItems = useMemo<ReviewedQueueItem[]>(() => {
+    const currentDecisionsByStudyId = new Map(
+      decisions
+        .filter(
+          (decision) =>
+            decision.projectId === selectedProject.id &&
+            decision.userId === currentUser.id &&
+            decision.stage === "title_abstract" &&
+            decision.isCurrent
+        )
+        .map((decision) => [decision.studyId, decision])
+    );
+
+    return projectScreeningStudies
+      .filter((study) => currentDecisionsByStudyId.has(study.id))
+      .map((study) => {
+        const decision = currentDecisionsByStudyId.get(study.id);
+        return {
+          id: study.id,
+          title: study.title,
+          subtitle: formatStudySubtitle(study),
+          detail: study.titleAbstractStatusLabel ? `Queue state: ${study.titleAbstractStatusLabel}` : undefined,
+          statusLabel: decision ? formatDecision(decision.decisionValue) : "Reviewed",
+          statusTone: decision ? decisionTone(decision.decisionValue) : "neutral",
+          completedAt: decision?.createdAt
+        };
+      });
+  }, [currentUser.id, decisions, projectScreeningStudies, selectedProject.id]);
+
+  const reviewedFullTextItems = useMemo<ReviewedQueueItem[]>(() => {
+    const currentDecisionsByReportId = new Map(
+      decisions
+        .filter(
+          (decision) =>
+            decision.projectId === selectedProject.id &&
+            decision.userId === currentUser.id &&
+            decision.stage === "full_text" &&
+            decision.reportId &&
+            decision.isCurrent
+        )
+        .map((decision) => [decision.reportId ?? "", decision])
+    );
+
+    return projectReportQueue
+      .filter((report) => currentDecisionsByReportId.has(report.id))
+      .map((report) => {
+        const decision = currentDecisionsByReportId.get(report.id);
+        const study = projectScreeningStudies.find((candidate) => candidate.id === report.studyId);
+        return {
+          id: report.id,
+          title: report.title,
+          subtitle: study ? formatStudySubtitle(study) : report.citation,
+          detail: report.fullTextStatusLabel ? `Queue state: ${report.fullTextStatusLabel}` : undefined,
+          statusLabel: decision ? formatDecision(decision.decisionValue) : "Reviewed",
+          statusTone: decision ? decisionTone(decision.decisionValue) : "neutral",
+          completedAt: decision?.createdAt
+        };
+      });
+  }, [currentUser.id, decisions, projectReportQueue, projectScreeningStudies, selectedProject.id]);
+
+  const reviewedExtractionItems = useMemo<ReviewedQueueItem[]>(() => {
+    if (!activeExtractionTemplate) {
+      return [];
+    }
+
+    const submittedResponsesByReportId = new Map(
+      extractionResponses
+        .filter(
+          (response) =>
+            response.projectId === selectedProject.id &&
+            response.userId === currentUser.id &&
+            response.templateId === activeExtractionTemplate.id &&
+            response.isSubmitted
+        )
+        .map((response) => [response.reportId, response])
+    );
+
+    return projectExtractionReports
+      .filter((report) => submittedResponsesByReportId.has(report.id))
+      .map((report) => {
+        const response = submittedResponsesByReportId.get(report.id);
+        const study = projectScreeningStudies.find((candidate) => candidate.id === report.studyId);
+        const filledFieldCount = response ? countFilledExtractionFields(response.values) : 0;
+        return {
+          id: report.id,
+          title: report.title,
+          subtitle: study ? formatStudySubtitle(study) : report.citation,
+          detail: `${filledFieldCount}/${activeExtractionTemplate.fields.length} fields completed`,
+          statusLabel: "Submitted",
+          statusTone: "success",
+          completedAt: response?.submittedAt ? formatAuditTime(response.submittedAt) : undefined
+        };
+      });
+  }, [activeExtractionTemplate, currentUser.id, extractionResponses, projectExtractionReports, projectScreeningStudies, selectedProject.id]);
+
   const reportsExcludedTotal = sumObject(activeCounts.reportsExcludedWithReasons);
   const recordsIdentified =
     activeCounts.recordsIdentifiedDatabase + activeCounts.recordsIdentifiedRegisters + activeCounts.recordsIdentifiedOther;
@@ -1023,7 +1154,7 @@ export function PrismaReviewApp() {
     if (!selectedProject.requireSequentialPhases || !reviewPhaseNavKeys.has(view)) {
       return true;
     }
-    return sequentialPhaseAccess[view] ?? true;
+    return sequentialPhaseAccess[getProjectPhaseAccessView(view)] ?? true;
   }
 
   function getPendingRouteLabel(view: ViewKey, projectId: string) {
@@ -2739,6 +2870,83 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function returnScreeningStudyToQueue(studyId: string) {
+    if (pendingReopenItem) {
+      return;
+    }
+
+    setPendingReopenItem({ phase: "screening", id: studyId });
+    setScreeningMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${encodeURIComponent(selectedProject.id)}/studies/${encodeURIComponent(studyId)}/screening/reopen`,
+        {
+          method: "POST"
+        }
+      );
+      applyAppState(payload);
+      setDecisionActions((previous) => previous.filter((action) => action.studyId !== studyId));
+      const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
+      const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
+      const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
+      const restoredStudyIndex = nextActiveStudies.findIndex((study) => study.id === studyId);
+      setStudyIndex(restoredStudyIndex >= 0 ? restoredStudyIndex : 0);
+      setScreeningMessage(payload.message ?? "Citation returned to the title/abstract queue.");
+    } catch (error) {
+      setScreeningMessage(getErrorMessage(error));
+    } finally {
+      setPendingReopenItem(null);
+    }
+  }
+
+  async function returnFullTextReportToQueue(reportId: string) {
+    if (pendingReopenItem) {
+      return;
+    }
+
+    setPendingReopenItem({ phase: "fullText", id: reportId });
+    setFullTextMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${encodeURIComponent(selectedProject.id)}/reports/${encodeURIComponent(reportId)}/full-text/reopen`,
+        {
+          method: "POST"
+        }
+      );
+      applyAppState(payload);
+      setActiveReportId(reportId);
+      setFullTextMessage(payload.message ?? "Report returned to the full-text queue.");
+    } catch (error) {
+      setFullTextMessage(getErrorMessage(error));
+    } finally {
+      setPendingReopenItem(null);
+    }
+  }
+
+  async function returnExtractionReportToQueue(reportId: string) {
+    if (pendingReopenItem) {
+      return;
+    }
+
+    setPendingReopenItem({ phase: "extraction", id: reportId });
+    setExtractionMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${encodeURIComponent(selectedProject.id)}/reports/${encodeURIComponent(reportId)}/extraction/reopen`,
+        {
+          method: "POST"
+        }
+      );
+      applyAppState(payload);
+      setActiveExtractionReportId(reportId);
+      setExtractionMessage(payload.message ?? "Extraction returned to the queue.");
+    } catch (error) {
+      setExtractionMessage(getErrorMessage(error));
+    } finally {
+      setPendingReopenItem(null);
+    }
+  }
+
   async function updateDedupCandidate(candidateId: string, status: DedupCandidate["status"]) {
     setPendingDedupAction(status);
     try {
@@ -2863,10 +3071,16 @@ export function PrismaReviewApp() {
         return renderDedup();
       case "screening":
         return renderScreening();
+      case "screeningReviewed":
+        return renderScreeningReviewed();
       case "fullText":
         return renderFullText();
+      case "fullTextReviewed":
+        return renderFullTextReviewed();
       case "extraction":
         return renderExtraction();
+      case "extractionReviewed":
+        return renderExtractionReviewed();
       case "consensus":
         return renderConsensus();
       case "risk":
@@ -3057,10 +3271,32 @@ export function PrismaReviewApp() {
         highlightText={highlightText}
         pendingScreeningDecision={pendingScreeningDecision}
         isUndoingScreeningDecision={isUndoingScreeningDecision}
+        reviewedCount={reviewedScreeningItems.length}
+        onOpenReviewed={() => navigateToProjectView("screeningReviewed")}
         formatConflictResolutionHint={formatConflictResolutionHint}
         selectedProjectAbstractRequiredVotes={selectedProject.abstractRequiredVotes}
         addScreeningDecision={addScreeningDecision}
         undoLastDecision={undoLastDecision}
+      />
+    );
+  }
+
+  function renderScreeningReviewed() {
+    return (
+      <ReviewedItemsSection
+        icon={FileSearch}
+        eyebrow="Title and abstract screening"
+        title="Reviewed Citations"
+        description="Completed title/abstract decisions you can reopen for another pass."
+        queueLabel="Screening Queue"
+        emptyTitle="No reviewed citations"
+        emptyDescription="Items appear here after you record a title/abstract decision."
+        items={reviewedScreeningItems}
+        message={screeningMessage}
+        pendingItemId={pendingReopenItem?.phase === "screening" ? pendingReopenItem.id : ""}
+        actionLabel="Return"
+        onOpenQueue={() => navigateToProjectView("screening")}
+        onReturnToQueue={returnScreeningStudyToQueue}
       />
     );
   }
@@ -3091,6 +3327,28 @@ export function PrismaReviewApp() {
         setFullTextReason={setFullTextReason}
         exclusionReasons={selectedProject.exclusionReasons}
         studies={studies}
+        reviewedCount={reviewedFullTextItems.length}
+        onOpenReviewed={() => navigateToProjectView("fullTextReviewed")}
+      />
+    );
+  }
+
+  function renderFullTextReviewed() {
+    return (
+      <ReviewedItemsSection
+        icon={BookOpen}
+        eyebrow="Full-text screening"
+        title="Reviewed Reports"
+        description="Completed full-text decisions you can send back to the active report queue."
+        queueLabel="Full-Text Queue"
+        emptyTitle="No reviewed reports"
+        emptyDescription="Reports appear here after you record a full-text include or exclude decision."
+        items={reviewedFullTextItems}
+        message={fullTextMessage}
+        pendingItemId={pendingReopenItem?.phase === "fullText" ? pendingReopenItem.id : ""}
+        actionLabel="Return"
+        onOpenQueue={() => navigateToProjectView("fullText")}
+        onReturnToQueue={returnFullTextReportToQueue}
       />
     );
   }
@@ -3128,6 +3386,28 @@ export function PrismaReviewApp() {
         extractionFormValues={extractionFormValues}
         updateExtractionValue={updateExtractionValue}
         toggleExtractionChoice={toggleExtractionChoice}
+        reviewedCount={reviewedExtractionItems.length}
+        onOpenReviewed={() => navigateToProjectView("extractionReviewed")}
+      />
+    );
+  }
+
+  function renderExtractionReviewed() {
+    return (
+      <ReviewedItemsSection
+        icon={ClipboardCheck}
+        eyebrow="Data extraction"
+        title="Submitted Extractions"
+        description="Submitted extraction responses you can reopen as drafts and return to the queue."
+        queueLabel="Extraction Queue"
+        emptyTitle="No submitted extractions"
+        emptyDescription="Reports appear here after you submit data extraction for the active template."
+        items={reviewedExtractionItems}
+        message={extractionMessage}
+        pendingItemId={pendingReopenItem?.phase === "extraction" ? pendingReopenItem.id : ""}
+        actionLabel="Return"
+        onOpenQueue={() => navigateToProjectView("extraction")}
+        onReturnToQueue={returnExtractionReportToQueue}
       />
     );
   }
@@ -3644,6 +3924,19 @@ function getProjectPhaseIndex(stage: ReviewProject["stage"]) {
   return 4;
 }
 
+function getProjectPhaseAccessView(view: ViewKey): ViewKey {
+  if (view === "screeningReviewed") {
+    return "screening";
+  }
+  if (view === "fullTextReviewed") {
+    return "fullText";
+  }
+  if (view === "extractionReviewed") {
+    return "extraction";
+  }
+  return view;
+}
+
 function getPhaseNavState(key: ViewKey, stage: ReviewProject["stage"]): PhaseNavState | null {
   const navPhaseIndex: Partial<Record<ViewKey, number>> = {
     imports: 0,
@@ -3726,6 +4019,21 @@ function formatDecision(value: DecisionValue) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatStudySubtitle(study: Study) {
+  const authors = study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed";
+  const year = study.year > 0 ? study.year : "Year needs review";
+  return `${authors} · ${study.journal || "Journal missing"} · ${year}`;
+}
+
+function countFilledExtractionFields(values: Record<string, ExtractionResponseValue>) {
+  return Object.values(values).filter((value) => {
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+    return value.trim().length > 0;
+  }).length;
 }
 
 function formatConflictStage(stage: WorkflowConflict["stage"]) {

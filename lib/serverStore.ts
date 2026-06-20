@@ -3170,6 +3170,163 @@ export function undoScreeningDecisionForUser(
   return buildPayload(state, userId);
 }
 
+export function reopenTitleAbstractDecisionForUser(userId: string, projectId: string, studyId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const project = requireProjectMember(state, projectId, userId);
+  const study = state.studies.find((candidate) => candidate.id === studyId && candidate.projectId === projectId);
+  if (!study) {
+    throw new ApiError("Citation entry not found.", 404);
+  }
+
+  const currentDecision = state.decisions.find(
+    (decision) =>
+      decision.projectId === projectId &&
+      decision.studyId === studyId &&
+      decision.userId === userId &&
+      decision.stage === "title_abstract" &&
+      decision.isCurrent
+  );
+  if (!currentDecision) {
+    throw new ApiError("No current screening decision was found for this citation.");
+  }
+
+  state.decisions = state.decisions.map((decision) =>
+    decision.id === currentDecision.id ? { ...decision, isCurrent: false } : decision
+  );
+  state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
+    (checkout) =>
+      !(
+        getScreeningCheckoutStage(checkout) === "title_abstract" &&
+        checkout.projectId === projectId &&
+        checkout.studyId === studyId &&
+        checkout.userId === userId
+      )
+  );
+
+  appendEvent(state, currentUser.name, "Returned citation to title/abstract queue", studyId);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
+  writeState(state);
+  return {
+    ...buildPayload(state, userId),
+    message: "Citation returned to the title/abstract queue."
+  };
+}
+
+export function reopenFullTextDecisionForUser(userId: string, projectId: string, reportId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  const project = requireProjectMember(state, projectId, userId);
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) {
+    throw new ApiError("Report not found.", 404);
+  }
+
+  const currentDecision = state.decisions.find(
+    (decision) =>
+      decision.projectId === projectId &&
+      decision.reportId === reportId &&
+      decision.userId === userId &&
+      decision.stage === "full_text" &&
+      decision.isCurrent
+  );
+  if (!currentDecision) {
+    throw new ApiError("No current full-text decision was found for this report.");
+  }
+
+  state.decisions = state.decisions.map((decision) =>
+    decision.id === currentDecision.id ? { ...decision, isCurrent: false } : decision
+  );
+  state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
+    (checkout) =>
+      !(
+        getScreeningCheckoutStage(checkout) === "full_text" &&
+        checkout.projectId === projectId &&
+        checkout.reportId === reportId &&
+        checkout.userId === userId
+      )
+  );
+
+  appendEvent(state, currentUser.name, "Returned report to full-text queue", reportId);
+  syncStudyAfterFullTextDecision(state, project, reportId);
+  syncProjectWorkflowCounts(state, projectId);
+  writeState(state);
+  return {
+    ...buildPayload(state, userId),
+    message: "Report returned to the full-text queue."
+  };
+}
+
+export function reopenExtractionResponseForUser(userId: string, projectId: string, reportId: string): AppMutationPayload {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  if (!currentUser) {
+    throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  }
+
+  requireProjectMember(state, projectId, userId);
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) {
+    throw new ApiError("Report not found.", 404);
+  }
+
+  const template = state.extractionTemplates.find((candidate) => candidate.projectId === projectId && candidate.isActive);
+  if (!template) {
+    throw new ApiError("No active data extraction template was found for this project.", 404);
+  }
+
+  const currentResponse = state.extractionResponses.find(
+    (response) =>
+      response.projectId === projectId &&
+      response.reportId === reportId &&
+      response.templateId === template.id &&
+      response.userId === userId &&
+      response.isSubmitted
+  );
+  if (!currentResponse) {
+    throw new ApiError("No submitted extraction response was found for this report.");
+  }
+
+  const now = new Date().toISOString();
+  state.extractionResponses = state.extractionResponses.map((response) =>
+    response.id === currentResponse.id
+      ? {
+          ...response,
+          isSubmitted: false,
+          updatedAt: now,
+          submittedAt: undefined
+        }
+      : response
+  );
+  state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
+    (checkout) =>
+      !(
+        getScreeningCheckoutStage(checkout) === "extraction" &&
+        checkout.projectId === projectId &&
+        checkout.reportId === reportId &&
+        checkout.templateId === template.id &&
+        checkout.userId === userId
+      )
+  );
+
+  syncExtractionConsensusForReport(state, projectId, reportId, template.id);
+  appendEvent(state, currentUser.name, "Returned extraction to queue", reportId);
+  syncProjectWorkflowCounts(state, projectId);
+  writeState(state);
+  return {
+    ...buildPayload(state, userId),
+    message: "Extraction returned to the queue."
+  };
+}
+
 export function updateDedupCandidateForUser(
   userId: string,
   candidateId: string,
