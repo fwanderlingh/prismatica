@@ -441,11 +441,11 @@ export function FullTextSection({
           </select>
           {!hasConfiguredExclusionReasons ? <p className="subtle">No reasons set.</p> : null}
 
-          <div className={canRecordFullTextDecision && !hasFullTextConflict ? "validationBox ok" : "validationBox"}>
+          <div className={canRecordFullTextDecision && !hasFullTextConflict ? "validationBox muted" : "validationBox"}>
             {canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
               {!hasUploadedPdf
-                ? "PDF upload is optional for full-text decisions."
+                ? "PDF upload is optional."
                 : !hasConfiguredExclusionReasons
                 ? "Set project exclusion reasons before recording an exclusion."
                 : hasFullTextConflict

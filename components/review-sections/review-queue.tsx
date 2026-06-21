@@ -77,7 +77,7 @@ export function ReportPicker({
         <p className="eyebrow">{eyebrow}</p>
         <strong>{summary}</strong>
         {detail ? <p className="subtle">{detail}</p> : null}
-        <ArticleIdLabel study={activeStudy} fallbackId={activeFallbackId} />
+        {/* <ArticleIdLabel study={activeStudy} fallbackId={activeFallbackId} /> */}
       </div>
       {action}
       <label className="fieldLabel" htmlFor={id}>

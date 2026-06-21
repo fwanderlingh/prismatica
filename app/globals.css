@@ -1076,8 +1076,18 @@ h3 {
 
 .reportPicker {
   display: grid;
+  /* 1. Define a 2-column layout: left column takes up space, right column fits the button */
+  grid-template-columns: 1fr auto;
   gap: calc(8px * var(--ui-scale));
   min-width: min(100%, calc(420px * var(--ui-scale)));
+  align-items: start; /* Prevents the button from stretching vertically */
+}
+
+/* 2. Force full-width elements to span across both columns */
+.reportPicker > label,
+.reportPicker > select,
+.reportPicker > .navigationContainer { /* Replace with your actual navigation class if wrapped */
+  grid-column: span 2;
 }
 
 .reportPicker strong {
@@ -1360,6 +1370,11 @@ a.primaryButton[target="_blank"]:focus-visible {
   margin-top: calc(8px * var(--ui-scale));
   color: var(--muted);
   line-height: 1.45;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  overflow: hidden;
 }
 
 .projectMeta {

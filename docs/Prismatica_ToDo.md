@@ -5,6 +5,8 @@ PRISMATICA
 
 1. Add a flow diagram generator: https://github.com/prisma-flowdiagram/PRISMA2020
 
+2. Something strange happens on page reload: a completely different review is presented
+
 ## Security
 
 All sensitive API routes call `requireSessionUserId()` before returning app data or mutating state, and project/admin actions also go through member, owner, or admin checks. For example, [serverRoute.ts](/home/graal/public_html/prismatica/lib/serverRoute.ts:5) rejects missing sessions, and routes like project creation use it before touching data.

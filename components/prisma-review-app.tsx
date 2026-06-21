@@ -589,7 +589,7 @@ export function PrismaReviewApp() {
   const [extractionResponses, setExtractionResponses] = useState<ExtractionResponse[]>([]);
   const [extractionConsensus, setExtractionConsensus] = useState<ExtractionConsensus[]>([]);
   const [currentUserId, setCurrentUserId] = useState(guestUser.id);
-  const [selectedProjectId, setSelectedProjectId] = useState(reviewProjects[0].id);
+  const [selectedProjectId, setSelectedProjectId] = useState(() => requestedProjectId ?? reviewProjects[0].id);
   const [teamUserSearch, setTeamUserSearch] = useState("");
   const [inviteForm, setInviteForm] = useState({
     name: "",
@@ -734,9 +734,10 @@ export function PrismaReviewApp() {
     () => (currentUser.isAdmin ? projects : projects.filter((project) => project.memberIds.includes(currentUser.id) || project.ownerIds.includes(currentUser.id) || project.ownerId === currentUser.id)),
     [currentUser.id, currentUser.isAdmin, projects]
   );
+  const requestedProject = requestedProjectId ? userProjects.find((project) => project.id === requestedProjectId) : undefined;
   const hasRequestedProject = Boolean(requestedProjectId);
-  const canAccessRequestedProject = hasRequestedProject ? userProjects.some((project) => project.id === requestedProjectId) : true;
-  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
+  const canAccessRequestedProject = hasRequestedProject ? Boolean(requestedProject) : true;
+  const selectedProject = requestedProject ?? projects.find((project) => project.id === selectedProjectId) ?? userProjects[0] ?? projects[0] ?? reviewProjects[0];
   const teamUserSearchResults = useMemo(
     () => {
       if (normalizedTeamUserSearch.length < 2) {
@@ -1818,10 +1819,14 @@ export function PrismaReviewApp() {
     setCurrentUserId(payload.currentUser.id);
     syncNewProjectUserContext(payload.currentUser);
     setSelectedProjectId((previousProjectId) => {
-      if ("selectedProjectId" in payload && payload.selectedProjectId) {
+      const visibleProjectIds = new Set(payload.projects.map((project) => project.id));
+      if (requestedProjectId && visibleProjectIds.has(requestedProjectId)) {
+        return requestedProjectId;
+      }
+      if ("selectedProjectId" in payload && payload.selectedProjectId && visibleProjectIds.has(payload.selectedProjectId)) {
         return payload.selectedProjectId;
       }
-      if (payload.projects.some((project) => project.id === previousProjectId)) {
+      if (visibleProjectIds.has(previousProjectId)) {
         return previousProjectId;
       }
       return payload.projects[0]?.id ?? reviewProjects[0].id;
