@@ -3201,6 +3201,12 @@ input[type="checkbox"] {
   padding: 0;
 }
 
+input[type="radio"] {
+  width: auto;
+  min-height: auto;
+  padding: 0;
+}
+
 input:disabled,
 select:disabled,
 textarea:disabled {

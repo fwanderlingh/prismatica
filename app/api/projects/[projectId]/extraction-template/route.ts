@@ -1,12 +1,12 @@
 import { jsonError, jsonOk, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
-import { createExtractionTemplateForUser } from "@/lib/serverStore";
+import { saveExtractionTemplateForUser } from "@/lib/serverStore";
 
 export async function POST(request: Request, context: { params: Promise<{ projectId: string }> }) {
   try {
     const userId = await requireSessionUserId();
     const { projectId } = await context.params;
     const body = await readJsonBody(request);
-    return jsonOk(createExtractionTemplateForUser(userId, projectId, body));
+    return jsonOk(saveExtractionTemplateForUser(userId, projectId, body));
   } catch (error) {
     return jsonError(error);
   }

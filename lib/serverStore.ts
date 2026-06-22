@@ -697,9 +697,10 @@ function withReportWorkflowState(
   const extractionSubmittedResponses = activeExtractionTemplate
     ? getCurrentExtractionResponses(extractionResponses, project.id, report.id, activeExtractionTemplate.id)
     : [];
-  const extractionCheckedOutUserIds = activeExtractionTemplate
-    ? getEligibleExtractionCheckouts(project.id, report.id, activeExtractionTemplate.id, extractionResponses, screeningCheckouts).map((checkout) => checkout.userId)
+  const activeExtractionCheckouts = activeExtractionTemplate
+    ? getEligibleExtractionCheckouts(project.id, report.id, activeExtractionTemplate.id, extractionResponses, screeningCheckouts)
     : [];
+  const currentUserExtractionCheckout = activeExtractionCheckouts.find((checkout) => checkout.userId === currentUserId);
   return {
     ...report,
     fullTextStatus: evaluation.state,
@@ -712,8 +713,9 @@ function withReportWorkflowState(
     extractionTemplateId: activeExtractionTemplate?.id,
     extractionVoteCount: extractionSubmittedResponses.length,
     extractionRequiredVotes: project.extractionRequiredVotes,
-    extractionActiveViewerCount: extractionCheckedOutUserIds.length,
-    extractionCheckedOutByCurrentUser: extractionCheckedOutUserIds.includes(currentUserId)
+    extractionActiveViewerCount: activeExtractionCheckouts.length,
+    extractionCheckedOutByCurrentUser: Boolean(currentUserExtractionCheckout),
+    extractionCheckoutExpiresAt: currentUserExtractionCheckout?.expiresAt
   };
 }
 
@@ -1769,7 +1771,7 @@ export function removeProjectMemberForUser(userId: string, projectId: string, me
   return buildPayload(state, userId);
 }
 
-export function createExtractionTemplateForUser(userId: string, projectId: string, input: ExtractionTemplateInput): AppMutationPayload {
+export function saveExtractionTemplateForUser(userId: string, projectId: string, input: ExtractionTemplateInput): AppMutationPayload {
   const state = readState();
   const currentUser = getUser(state, userId);
   requireProjectOwner(state, projectId, userId);
@@ -1784,32 +1786,67 @@ export function createExtractionTemplateForUser(userId: string, projectId: strin
   }
 
   const now = new Date().toISOString();
-  const version =
-    state.extractionTemplates.filter((template) => template.projectId === projectId).reduce((highest, template) => Math.max(highest, template.version), 0) + 1;
-  const template: ExtractionTemplate = {
-    id: createId("template"),
-    projectId,
-    title,
-    version,
-    fields,
-    createdByUserId: currentUser.id,
-    createdByUserName: currentUser.name,
-    createdAt: now,
-    updatedAt: now,
-    isActive: true
-  };
+  const existingTemplate =
+    state.extractionTemplates.find((template) => template.projectId === projectId && template.isActive) ??
+    state.extractionTemplates.find((template) => template.projectId === projectId);
+  const fieldsChanged = existingTemplate ? !areExtractionTemplateFieldsCompatible(existingTemplate.fields, fields) : false;
+  const template: ExtractionTemplate = existingTemplate
+    ? {
+        ...existingTemplate,
+        title,
+        fields,
+        updatedAt: now,
+        isActive: true
+      }
+    : {
+        id: createId("template"),
+        projectId,
+        title,
+        version: 1,
+        fields,
+        createdByUserId: currentUser.id,
+        createdByUserName: currentUser.name,
+        createdAt: now,
+        updatedAt: now,
+        isActive: true
+      };
 
   state.extractionTemplates = [
     template,
-    ...state.extractionTemplates.map((candidate) =>
-      candidate.projectId === projectId && candidate.isActive ? { ...candidate, isActive: false, updatedAt: now } : candidate
-    )
+    ...state.extractionTemplates.filter((candidate) => candidate.projectId !== projectId)
   ];
-  state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.projectId !== projectId);
-  state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
-    (checkout) => !(getScreeningCheckoutStage(checkout) === "extraction" && checkout.projectId === projectId)
+  if (fieldsChanged) {
+    state.extractionResponses = state.extractionResponses.filter((response) => response.projectId !== projectId);
+    state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.projectId !== projectId);
+    state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
+      (checkout) => !(getScreeningCheckoutStage(checkout) === "extraction" && checkout.projectId === projectId)
+    );
+  } else {
+    state.extractionResponses = state.extractionResponses.filter(
+      (response) => response.projectId !== projectId || response.templateId === template.id
+    );
+    state.extractionConsensus = state.extractionConsensus.filter(
+      (consensus) => consensus.projectId !== projectId || consensus.templateId === template.id
+    );
+    state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
+      (checkout) =>
+        !(
+          getScreeningCheckoutStage(checkout) === "extraction" &&
+          checkout.projectId === projectId &&
+          checkout.templateId !== template.id
+        )
+    );
+  }
+  appendEvent(
+    state,
+    currentUser.name,
+    existingTemplate
+      ? fieldsChanged
+        ? `Updated data extraction schema ${title} and reset extraction responses`
+        : `Updated data extraction schema ${title}`
+      : `Created data extraction schema ${title}`,
+    projectId
   );
-  appendEvent(state, currentUser.name, `Created data template ${title}`, projectId);
   writeState(state);
   return buildPayload(state, userId);
 }
@@ -1862,7 +1899,31 @@ export function saveExtractionResponseForUser(userId: string, projectId: string,
         checkout.userId === userId
     );
     if (!hasActiveCheckout) {
-      throw new ApiError("This report is no longer checked out to you. Open the next active extraction report to continue.");
+      const checkoutCapacity = getExtractionCheckoutCapacity(project, report.id, template.id, state.extractionResponses);
+      const activeExtractionCheckouts = getEligibleExtractionCheckouts(
+        projectId,
+        report.id,
+        template.id,
+        state.extractionResponses,
+        state.screeningCheckouts
+      );
+      if (checkoutCapacity <= 0 || activeExtractionCheckouts.length >= checkoutCapacity) {
+        throw new ApiError("This report is no longer checked out to you. Open the next active extraction report to continue.");
+      }
+
+      // Re-acquire checkout atomically here so immediate submissions after page open do not fail on timing races.
+      const checkoutTime = Date.now();
+      state.screeningCheckouts.push({
+        projectId,
+        stage: "extraction",
+        checkoutId: createId("checkout"),
+        studyId: report.studyId,
+        reportId: report.id,
+        templateId: template.id,
+        userId,
+        checkedOutAt: new Date(checkoutTime).toISOString(),
+        expiresAt: new Date(checkoutTime + getCheckoutTtlMs("extraction", state.checkoutWindowSettings)).toISOString()
+      });
     }
   }
   const nextResponse: ExtractionResponse = {
@@ -4679,6 +4740,23 @@ function sanitizeExtractionTemplateFields(inputFields: ExtractionTemplateInput["
       type,
       options
     };
+  });
+}
+
+function areExtractionTemplateFieldsCompatible(leftFields: ExtractionTemplateField[], rightFields: ExtractionTemplateField[]) {
+  if (leftFields.length !== rightFields.length) {
+    return false;
+  }
+
+  return leftFields.every((leftField, index) => {
+    const rightField = rightFields[index];
+    return (
+      Boolean(rightField) &&
+      leftField.id === rightField.id &&
+      leftField.type === rightField.type &&
+      leftField.options.length === rightField.options.length &&
+      leftField.options.every((option, optionIndex) => option === rightField.options[optionIndex])
+    );
   });
 }
 

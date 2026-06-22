@@ -491,6 +491,18 @@ function createBlankExtractionField(type: ExtractionFieldType = "multiline_text"
   };
 }
 
+function createExtractionTemplateFormFromTemplate(template: ExtractionTemplate): ExtractionTemplateForm {
+  return {
+    title: template.title,
+    fields: template.fields.map((field) => ({
+      id: field.id,
+      title: field.title,
+      type: field.type,
+      optionsText: field.options.join("\n")
+    }))
+  };
+}
+
 const emptyExtractionTemplateForm: ExtractionTemplateForm = {
   title: "Data Template",
   fields: [
@@ -637,6 +649,7 @@ export function PrismaReviewApp() {
   const [auditPage, setAuditPage] = useState(1);
   const [activeExtractionReportId, setActiveExtractionReportId] = useState("");
   const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
+  const [isEditingExtractionTemplate, setIsEditingExtractionTemplate] = useState(false);
   const [extractionFormValues, setExtractionFormValues] = useState<Record<string, ExtractionResponseValue>>({});
   const [extractionMessage, setExtractionMessage] = useState("");
   const [isCreatingExtractionTemplate, setIsCreatingExtractionTemplate] = useState(false);
@@ -1659,6 +1672,7 @@ export function PrismaReviewApp() {
 
   useEffect(() => {
     setExtractionTemplateForm({ title: "Data Template", fields: [createBlankExtractionField()] });
+    setIsEditingExtractionTemplate(false);
     setExtractionFormValues({});
     setConsensusFormValues({});
     setExtractionMessage("");
@@ -1666,6 +1680,14 @@ export function PrismaReviewApp() {
     setExportMessage("");
     setAuditPage(1);
   }, [selectedProject.id]);
+
+  useEffect(() => {
+    if (!activeExtractionTemplate || isEditingExtractionTemplate) {
+      return;
+    }
+
+    setExtractionTemplateForm(createExtractionTemplateFormFromTemplate(activeExtractionTemplate));
+  }, [activeExtractionTemplate?.id, activeExtractionTemplate?.updatedAt, isEditingExtractionTemplate]);
 
   useEffect(() => {
     if (auditPage > auditPageCount) {
@@ -2335,10 +2357,29 @@ export function PrismaReviewApp() {
     }));
   }
 
-  async function createExtractionTemplate(event: FormSubmitEvent) {
+  function startEditingExtractionTemplate() {
+    if (!activeExtractionTemplate) {
+      return;
+    }
+
+    setExtractionTemplateForm(createExtractionTemplateFormFromTemplate(activeExtractionTemplate));
+    setExtractionMessage("");
+    setIsEditingExtractionTemplate(true);
+  }
+
+  function cancelEditingExtractionTemplate() {
+    if (activeExtractionTemplate) {
+      setExtractionTemplateForm(createExtractionTemplateFormFromTemplate(activeExtractionTemplate));
+    }
+    setExtractionMessage("");
+    setIsEditingExtractionTemplate(false);
+  }
+
+  async function saveExtractionTemplate(event: FormSubmitEvent) {
     event.preventDefault();
     setExtractionMessage("");
     setIsCreatingExtractionTemplate(true);
+    const isUpdatingSchema = Boolean(activeExtractionTemplate);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/extraction-template`, {
         method: "POST",
@@ -2356,7 +2397,8 @@ export function PrismaReviewApp() {
         })
       });
       applyAppState(payload);
-      setExtractionMessage("Data template created.");
+      setIsEditingExtractionTemplate(false);
+      setExtractionMessage(isUpdatingSchema ? "Extraction schema updated." : "Extraction schema created.");
     } catch (error) {
       setExtractionMessage(getErrorMessage(error));
     } finally {
@@ -3368,8 +3410,9 @@ export function PrismaReviewApp() {
         currentUser={currentUser}
         extractionMessage={extractionMessage}
         activeExtractionTemplate={activeExtractionTemplate}
-        createExtractionTemplate={createExtractionTemplate}
+        saveExtractionTemplate={saveExtractionTemplate}
         isCreatingExtractionTemplate={isCreatingExtractionTemplate}
+        isEditingExtractionTemplate={isEditingExtractionTemplate}
         extractionTemplateForm={extractionTemplateForm}
         setExtractionTemplateTitle={(title) =>
           setExtractionTemplateForm((previous) => ({ ...previous, title }))
@@ -3377,6 +3420,8 @@ export function PrismaReviewApp() {
         removeExtractionTemplateField={removeExtractionTemplateField}
         updateExtractionTemplateField={updateExtractionTemplateField}
         addExtractionTemplateField={addExtractionTemplateField}
+        startEditingExtractionTemplate={startEditingExtractionTemplate}
+        cancelEditingExtractionTemplate={cancelEditingExtractionTemplate}
         activeExtractionReport={activeExtractionReport}
         projectExtractionReports={activeExtractionReports}
         totalExtractionReportCount={projectExtractionReports.length}

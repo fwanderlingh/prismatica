@@ -12,6 +12,7 @@ import {
   type ViewKey
 } from "@/lib/prismaData";
 import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
+import { formatReportQueueOption } from "@/lib/reviewDisplay";
 
 type FormSubmitEvent = {
   preventDefault: () => void;
@@ -180,7 +181,7 @@ export function ConsensusSection({
             value={activeReportForConsensus?.id ?? ""}
             onChange={(event) => setActiveExtractionReportId(event.target.value)}
           >
-            {projectExtractionReports.map((report) => {
+            {projectExtractionReports.map((report, index) => {
               const item = consensusQueue.find((candidate) => candidate.report.id === report.id);
               const statusLabel =
                 item && item.submittedVotes >= requiredVotes
@@ -190,7 +191,7 @@ export function ConsensusSection({
                   : "collecting votes";
               return (
                 <option key={report.id} value={report.id}>
-                  {report.title} ({statusLabel})
+                  {formatReportQueueOption(report, projectScreeningStudies, index + 1)} ({statusLabel})
                 </option>
               );
             })}

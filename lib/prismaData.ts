@@ -141,6 +141,7 @@ export type Report = {
   extractionRequiredVotes?: number;
   extractionActiveViewerCount?: number;
   extractionCheckedOutByCurrentUser?: boolean;
+  extractionCheckoutExpiresAt?: string;
   isPdfValidated: boolean;
   validationNotes: string[];
   notes: number;

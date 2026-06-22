@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, History, Plus, Trash2 } from "lucide-react";
 import {
   type AppUser,
@@ -38,13 +39,16 @@ type ExtractionSectionProps = {
   currentUser: AppUser;
   extractionMessage: string;
   activeExtractionTemplate?: ExtractionTemplate;
-  createExtractionTemplate: (event: FormSubmitEvent) => void;
+  saveExtractionTemplate: (event: FormSubmitEvent) => void;
   isCreatingExtractionTemplate: boolean;
+  isEditingExtractionTemplate: boolean;
   extractionTemplateForm: ExtractionTemplateForm;
   setExtractionTemplateTitle: (title: string) => void;
   removeExtractionTemplateField: (fieldId: string) => void;
   updateExtractionTemplateField: (fieldId: string, updates: Partial<ExtractionTemplateFieldForm>) => void;
   addExtractionTemplateField: (type: ExtractionFieldType) => void;
+  startEditingExtractionTemplate: () => void;
+  cancelEditingExtractionTemplate: () => void;
   activeExtractionReport?: Report;
   projectExtractionReports: Report[];
   totalExtractionReportCount: number;
@@ -73,13 +77,16 @@ export function ExtractionSection({
   currentUser,
   extractionMessage,
   activeExtractionTemplate,
-  createExtractionTemplate,
+  saveExtractionTemplate,
   isCreatingExtractionTemplate,
+  isEditingExtractionTemplate,
   extractionTemplateForm,
   setExtractionTemplateTitle,
   removeExtractionTemplateField,
   updateExtractionTemplateField,
   addExtractionTemplateField,
+  startEditingExtractionTemplate,
+  cancelEditingExtractionTemplate,
   activeExtractionReport,
   projectExtractionReports,
   totalExtractionReportCount,
@@ -97,9 +104,133 @@ export function ExtractionSection({
   reviewedCount,
   onOpenReviewed
 }: ExtractionSectionProps) {
+  const [now, setNow] = useState(Date.now());
   const uploadedPdfCount = projectReportQueue.filter((report) => report.fileName).length;
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
   const extractionMessageIsSuccess = /created|submitted|saved/i.test(extractionMessage);
+
+  useEffect(() => {
+    if (!activeExtractionReport?.extractionCheckedOutByCurrentUser || !activeExtractionReport.extractionCheckoutExpiresAt) {
+      return;
+    }
+
+    setNow(Date.now());
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [activeExtractionReport?.extractionCheckedOutByCurrentUser, activeExtractionReport?.extractionCheckoutExpiresAt]);
+
+  function renderTemplateBuilder(mode: "create" | "edit") {
+    const isEditMode = mode === "edit";
+    return (
+      <form className="panel templateBuilder" onSubmit={saveExtractionTemplate}>
+        <SectionTitle
+          icon={ClipboardCheck}
+          title={isEditMode ? "Edit Extraction Schema" : "Create Extraction Schema"}
+          action={`${extractionTemplateForm.fields.length} fields`}
+        />
+        <label>
+          <span>Schema title</span>
+          <input
+            value={extractionTemplateForm.title}
+            disabled={isCreatingExtractionTemplate}
+            onChange={(event) => setExtractionTemplateTitle(event.target.value)}
+          />
+        </label>
+
+        <div className="templateFieldList">
+          {extractionTemplateForm.fields.map((field, index) => (
+            <div className="templateFieldEditor" key={field.id}>
+              <div className="templateFieldHeader">
+                <strong>Field {index + 1}</strong>
+                <button
+                  className="ghostButton iconOnly"
+                  type="button"
+                  title="Remove field"
+                  disabled={isCreatingExtractionTemplate || extractionTemplateForm.fields.length <= 1}
+                  onClick={() => removeExtractionTemplateField(field.id)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              <div className="formGrid compactFormGrid">
+                <label>
+                  <span>Title</span>
+                  <input
+                    value={field.title}
+                    disabled={isCreatingExtractionTemplate}
+                    onChange={(event) => updateExtractionTemplateField(field.id, { title: event.target.value })}
+                    placeholder="Population characteristics"
+                  />
+                </label>
+                <label>
+                  <span>Type</span>
+                  <select
+                    value={field.type}
+                    disabled={isCreatingExtractionTemplate}
+                    onChange={(event) => updateExtractionTemplateField(field.id, { type: event.target.value as ExtractionFieldType })}
+                  >
+                    <option value="multiline_text">Multiline Text</option>
+                    <option value="single_choice">Single Choice</option>
+                    <option value="multiple_choice">Multiple Choice</option>
+                  </select>
+                </label>
+              </div>
+              {field.type !== "multiline_text" ? (
+                <label>
+                  <span>Choices</span>
+                  <textarea
+                    value={field.optionsText}
+                    disabled={isCreatingExtractionTemplate}
+                    onChange={(event) => updateExtractionTemplateField(field.id, { optionsText: event.target.value })}
+                    placeholder={"Option A\nOption B"}
+                  />
+                </label>
+              ) : null}
+            </div>
+          ))}
+        </div>
+
+        <div className="buttonRow">
+          <button
+            className="ghostButton"
+            type="button"
+            disabled={isCreatingExtractionTemplate}
+            onClick={() => addExtractionTemplateField("multiline_text")}
+          >
+            <Plus size={17} />
+            Text
+          </button>
+          <button
+            className="ghostButton"
+            type="button"
+            disabled={isCreatingExtractionTemplate}
+            onClick={() => addExtractionTemplateField("single_choice")}
+          >
+            <Plus size={17} />
+            Single Choice
+          </button>
+          <button
+            className="ghostButton"
+            type="button"
+            disabled={isCreatingExtractionTemplate}
+            onClick={() => addExtractionTemplateField("multiple_choice")}
+          >
+            <Plus size={17} />
+            Multiple Choice
+          </button>
+          {isEditMode ? (
+            <button className="ghostButton" type="button" disabled={isCreatingExtractionTemplate} onClick={cancelEditingExtractionTemplate}>
+              Cancel
+            </button>
+          ) : null}
+          <button className="primaryButton" type="submit" disabled={isCreatingExtractionTemplate}>
+            {isCreatingExtractionTemplate ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+            {isCreatingExtractionTemplate ? "Saving..." : isEditMode ? "Save Schema" : "Create Schema"}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   if (activeCounts.studiesIncluded === 0) {
     return (
@@ -166,7 +297,7 @@ export function ExtractionSection({
         <section className="overviewBand">
           <div>
             <p className="eyebrow">Data extraction</p>
-            <h1>Data Template</h1>
+            <h1>Extraction Schema</h1>
             <p className="subtle">Project owners define the extraction fields before reviewers extract data from included reports.</p>
           </div>
           <button className="ghostButton" type="button" onClick={onOpenReviewed}>
@@ -182,89 +313,47 @@ export function ExtractionSection({
           </div>
         ) : null}
 
-        {canManageProject ? (
-          <form className="panel templateBuilder" onSubmit={createExtractionTemplate}>
-            <SectionTitle icon={ClipboardCheck} title="Create Data Template" action={`${extractionTemplateForm.fields.length} fields`} />
-            <label>
-              <span>Template title</span>
-              <input
-                value={extractionTemplateForm.title}
-                onChange={(event) => setExtractionTemplateTitle(event.target.value)}
-              />
-            </label>
-
-            <div className="templateFieldList">
-              {extractionTemplateForm.fields.map((field, index) => (
-                <div className="templateFieldEditor" key={field.id}>
-                  <div className="templateFieldHeader">
-                    <strong>Field {index + 1}</strong>
-                    <button className="ghostButton iconOnly" type="button" title="Remove field" onClick={() => removeExtractionTemplateField(field.id)}>
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                  <div className="formGrid compactFormGrid">
-                    <label>
-                      <span>Title</span>
-                      <input
-                        value={field.title}
-                        onChange={(event) => updateExtractionTemplateField(field.id, { title: event.target.value })}
-                        placeholder="Population characteristics"
-                      />
-                    </label>
-                    <label>
-                      <span>Type</span>
-                      <select
-                        value={field.type}
-                        onChange={(event) => updateExtractionTemplateField(field.id, { type: event.target.value as ExtractionFieldType })}
-                      >
-                        <option value="multiline_text">Multiline Text</option>
-                        <option value="single_choice">Single Choice</option>
-                        <option value="multiple_choice">Multiple Choice</option>
-                      </select>
-                    </label>
-                  </div>
-                  {field.type !== "multiline_text" ? (
-                    <label>
-                      <span>Choices</span>
-                      <textarea
-                        value={field.optionsText}
-                        onChange={(event) => updateExtractionTemplateField(field.id, { optionsText: event.target.value })}
-                        placeholder={"Option A\nOption B"}
-                      />
-                    </label>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-
-            <div className="buttonRow">
-              <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("multiline_text")}>
-                <Plus size={17} />
-                Text
-              </button>
-              <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("single_choice")}>
-                <Plus size={17} />
-                Single Choice
-              </button>
-              <button className="ghostButton" type="button" onClick={() => addExtractionTemplateField("multiple_choice")}>
-                <Plus size={17} />
-                Multiple Choice
-              </button>
-              <button className="primaryButton" type="submit" disabled={isCreatingExtractionTemplate}>
-                {isCreatingExtractionTemplate ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
-                {isCreatingExtractionTemplate ? "Creating..." : "Create Template"}
-              </button>
-            </div>
-          </form>
-        ) : (
+        {canManageProject ? renderTemplateBuilder("create") : (
           <section className="panel">
             <EmptyState
               icon={ClipboardCheck}
-              title="No data template"
+              title="No extraction schema"
               description="A project owner needs to create the extraction template before reviewers can extract data."
             />
           </section>
         )}
+      </div>
+    );
+  }
+
+  if (isEditingExtractionTemplate && canManageProject) {
+    return (
+      <div className="viewStack">
+        <section className="overviewBand compactBand">
+          <div>
+            <p className="eyebrow">Data extraction</p>
+            <h1>Edit Extraction Schema</h1>
+            <p className="subtle">{activeExtractionTemplate.title} · {activeExtractionTemplate.fields.length} fields</p>
+          </div>
+          <div className="buttonRow">
+            <button className="ghostButton" type="button" onClick={cancelEditingExtractionTemplate}>
+              Cancel
+            </button>
+            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+              <History size={16} />
+              Reviewed {reviewedCount}
+            </button>
+          </div>
+        </section>
+
+        {extractionMessage ? (
+          <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+            {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+            <span>{extractionMessage}</span>
+          </div>
+        ) : null}
+
+        {renderTemplateBuilder("edit")}
       </div>
     );
   }
@@ -276,9 +365,15 @@ export function ExtractionSection({
           <div>
             <p className="eyebrow">Data extraction</p>
             <h1>Dual Independent Extraction</h1>
-            <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
+            <p className="subtle">{activeExtractionTemplate.title} · {activeExtractionTemplate.fields.length} fields</p>
           </div>
           <div className="buttonRow">
+            {canManageProject ? (
+              <button className="ghostButton" type="button" onClick={startEditingExtractionTemplate}>
+                <ClipboardCheck size={16} />
+                Edit Schema
+              </button>
+            ) : null}
             {totalExtractionReportCount > 0 ? (
               <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
                 <GitMerge size={16} />
@@ -328,6 +423,15 @@ export function ExtractionSection({
   const hasMyExtraction = Boolean(activeExtractionResponse?.isSubmitted);
   const hasExtractionCheckout = Boolean(activeReportForExtraction?.extractionCheckedOutByCurrentUser);
   const canSubmitExtraction = Boolean(activeReportForExtraction && (hasExtractionCheckout || hasMyExtraction));
+  const extractionCheckoutTimer =
+    activeReportForExtraction?.extractionCheckedOutByCurrentUser && activeReportForExtraction.extractionCheckoutExpiresAt
+      ? formatCheckoutTimer(activeReportForExtraction.extractionCheckoutExpiresAt, now)
+      : "Acquiring checkout...";
+  const extractionFormAction = hasMyExtraction
+    ? "Submitted"
+    : hasExtractionCheckout
+      ? `${submittedResponsesForActiveReport.length}/${requiredExtractionVotes} submitted · ${extractionCheckoutTimer}`
+      : `${submittedResponsesForActiveReport.length}/${requiredExtractionVotes} submitted`;
 
   return (
     <div className="viewStack">
@@ -335,11 +439,17 @@ export function ExtractionSection({
         <div>
           <p className="eyebrow">Data extraction</p>
           <h1>Dual Independent Extraction</h1>
-          <p className="subtle">{activeExtractionTemplate.title} · version {activeExtractionTemplate.version}</p>
+          <p className="subtle">{activeExtractionTemplate.title} · {activeExtractionTemplate.fields.length} fields</p>
         </div>
         <ReportPicker
           action={
             <div className="buttonRow">
+              {canManageProject ? (
+                <button className="ghostButton" type="button" onClick={startEditingExtractionTemplate}>
+                  <ClipboardCheck size={16} />
+                  Edit Schema
+                </button>
+              ) : null}
               <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
                 <GitMerge size={16} />
                 Resolve Conflicts
@@ -410,7 +520,7 @@ export function ExtractionSection({
           <SectionTitle
             icon={ClipboardCheck}
             title="Extraction Form"
-            action={`${submittedResponsesForActiveReport.length}/${requiredExtractionVotes} submitted`}
+            action={extractionFormAction}
           />
           <h2>{activeReportForExtraction?.title ?? "Included report"}</h2>
           <p className="subtle">
@@ -434,7 +544,7 @@ export function ExtractionSection({
             <StatusRow label="My extraction" value={hasMyExtraction ? "Submitted" : "Open"} tone={hasMyExtraction ? "secure" : "warning"} />
             <StatusRow
               label="Reviewer slot"
-              value={hasExtractionCheckout || hasMyExtraction ? "Checked out" : "Waiting"}
+              value={hasMyExtraction ? "Submitted" : hasExtractionCheckout ? `Checked out · ${extractionCheckoutTimer}` : "Waiting"}
               tone={hasExtractionCheckout || hasMyExtraction ? "secure" : "warning"}
             />
           </div>
@@ -506,4 +616,12 @@ export function ExtractionSection({
       </section>
     </div>
   );
+}
+
+function formatCheckoutTimer(expiresAt: string, now: number) {
+  const remainingMs = Math.max(0, Date.parse(expiresAt) - now);
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
