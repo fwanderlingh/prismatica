@@ -2499,6 +2499,46 @@ td span {
   gap: calc(16px * var(--ui-scale));
 }
 
+.dedupRecordDecision {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: calc(10px * var(--ui-scale));
+  min-width: 0;
+}
+
+.dedupRecordDecision.excluded .recordCard {
+  border-color: var(--toast-error-border);
+}
+
+.dedupRecordAction {
+  justify-self: stretch;
+}
+
+.dedupRecordStatus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(38px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+  font-weight: 820;
+  text-align: center;
+}
+
+.dedupRecordStatus.included {
+  color: var(--toast-success-text);
+  border-color: var(--toast-success-border);
+  background: var(--toast-success-bg);
+}
+
+.dedupRecordStatus.excluded {
+  color: var(--toast-error-text);
+  border-color: var(--toast-error-border);
+  background: var(--toast-error-bg);
+}
+
 .scoreRing {
   display: grid;
   place-items: center;

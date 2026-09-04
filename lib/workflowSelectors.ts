@@ -229,7 +229,7 @@ export function getConfirmedDuplicateStudyIds(candidates: DedupCandidate[]) {
   return new Set(
     candidates
       .filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed")
-      .map((candidate) => candidate.recordB.id)
+      .map((candidate) => candidate.excludedStudyId ?? candidate.recordB.id)
   );
 }
 

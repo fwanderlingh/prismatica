@@ -36,6 +36,7 @@ type ImportEditorSectionProps = {
   isSavingStudyEdit: boolean;
   isReviewingImportWarnings: boolean;
   pendingReviewedStudyId: string;
+  pendingDeleteStudyId: string;
   updateImportDetails: (event: FormSubmitEvent) => void;
   onImportSourceNameChange: (value: string) => void;
   onImportFilenameChange: (value: string) => void;
@@ -72,7 +73,8 @@ export function ImportEditorSection({
   editImportStudy,
   deleteImportStudy,
   markImportStudyReviewed,
-  pendingReviewedStudyId
+  pendingReviewedStudyId,
+  pendingDeleteStudyId
 }: ImportEditorSectionProps) {
   const messageIsSuccess = /imported|updated|deleted|reviewed/i.test(importDetailMessage);
   const entryFallbackIndexes = new Map(batchStudies.map((study, index) => [study.id, index + 1]));
@@ -189,9 +191,9 @@ export function ImportEditorSection({
                 <PenLine size={17} />
                 Edit
               </button>
-              <button className="dangerButton" type="button" onClick={() => deleteImportStudy(study)}>
-                <Trash2 size={17} />
-                Delete
+              <button className="dangerButton" type="button" disabled={Boolean(pendingDeleteStudyId)} onClick={() => deleteImportStudy(study)}>
+                {pendingDeleteStudyId === study.id ? <span className="inlineSpinner" aria-hidden="true" /> : <Trash2 size={17} />}
+                {pendingDeleteStudyId === study.id ? "Deleting..." : "Delete"}
               </button>
             </div>
           </>
@@ -227,7 +229,7 @@ export function ImportEditorSection({
       </section>
 
       {importDetailMessage ? (
-        <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+        <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"} role="status" aria-live="polite">
           {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
           <span>{importDetailMessage}</span>
         </div>

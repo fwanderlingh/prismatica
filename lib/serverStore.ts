@@ -2433,7 +2433,7 @@ export function addScreeningDecisionForUser(
     throw new ApiError("A title/abstract decision must be include, exclude, or maybe.");
   }
   if (getConfirmedDuplicateStudyIds(state, projectId).has(studyId)) {
-    throw new ApiError("This citation has been confirmed as a duplicate and is no longer in the screening queue.");
+    throw new ApiError("This citation has been excluded as a duplicate and is no longer in the screening queue.");
   }
 
   state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts);
@@ -2777,7 +2777,7 @@ export function updateScreeningCheckoutForUser(
     writeState(state);
     return {
       ...buildPayload(state, userId),
-      message: "This citation has been confirmed as a duplicate."
+      message: "This citation has been excluded as a duplicate."
     };
   }
 
@@ -3391,7 +3391,8 @@ export function reopenExtractionResponseForUser(userId: string, projectId: strin
 export function updateDedupCandidateForUser(
   userId: string,
   candidateId: string,
-  status: DedupCandidate["status"]
+  status: DedupCandidate["status"],
+  excludedStudyId?: string
 ): AppMutationPayload {
   const state = readState();
   const currentUser = getUser(state, userId);
@@ -3409,16 +3410,28 @@ export function updateDedupCandidateForUser(
   }
   const projectId = getDedupCandidateProjectId(existingCandidate);
   const project = requireProjectMember(state, projectId, userId);
+  const selectedExcludedStudyId = excludedStudyId ?? existingCandidate.recordB.id;
+  if (
+    (status === "confirmed" || status === "auto_confirmed") &&
+    selectedExcludedStudyId !== existingCandidate.recordA.id &&
+    selectedExcludedStudyId !== existingCandidate.recordB.id
+  ) {
+    throw new ApiError("The excluded citation must belong to this duplicate pair.");
+  }
   state.dedupCandidates = state.dedupCandidates.map((candidate) => {
     if (candidate.id !== candidateId) {
       return candidate;
     }
-    return { ...candidate, projectId, status };
+    return {
+      ...candidate,
+      projectId,
+      status,
+      excludedStudyId: status === "confirmed" || status === "auto_confirmed" ? selectedExcludedStudyId : undefined
+    };
   });
 
   if (status === "confirmed" || status === "auto_confirmed") {
-    const duplicateStudyId = existingCandidate.recordB.id;
-    state.screeningCheckouts = state.screeningCheckouts.filter((checkout) => checkout.studyId !== duplicateStudyId);
+    state.screeningCheckouts = state.screeningCheckouts.filter((checkout) => checkout.studyId !== selectedExcludedStudyId);
   }
   syncProjectWorkflowCounts(state, project.id);
 
@@ -3434,10 +3447,10 @@ export function updateDedupCandidateForUser(
 
 function getDedupCandidateStatusEventLabel(status: DedupCandidate["status"]) {
   if (status === "confirmed" || status === "auto_confirmed") {
-    return "Confirmed duplicate candidate";
+    return "Excluded duplicate citation";
   }
   if (status === "rejected") {
-    return "Rejected duplicate candidate";
+    return "Included both duplicate candidates";
   }
   return "Reopened duplicate candidate";
 }
@@ -3457,25 +3470,25 @@ export function rejectPendingDedupCandidatesForUser(userId: string, projectId: s
   if (pendingCandidates.length === 0) {
     return {
       ...buildPayload(state, userId),
-      message: "No pending duplicate candidates to reject."
+      message: "No pending duplicate pairs to include."
     };
   }
 
   const pendingCandidateIds = new Set(pendingCandidates.map((candidate) => candidate.id));
   state.dedupCandidates = state.dedupCandidates.map((candidate) =>
-    pendingCandidateIds.has(candidate.id) ? { ...candidate, projectId, status: "rejected" } : candidate
+    pendingCandidateIds.has(candidate.id) ? { ...candidate, projectId, status: "rejected", excludedStudyId: undefined } : candidate
   );
   syncProjectWorkflowCounts(state, project.id);
   appendEvent(
     state,
     currentUser.name,
-    `Rejected ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "candidate" : "candidates"}`,
+    `Included both citations for ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "pair" : "pairs"}`,
     projectId
   );
   writeState(state);
   return {
     ...buildPayload(state, userId),
-    message: `Rejected ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "candidate" : "candidates"}.`
+    message: `Included both citations for ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "pair" : "pairs"}.`
   };
 }
 
@@ -4124,7 +4137,7 @@ function getConfirmedDuplicateStudyIds(state: PersistedState, projectId: string)
           isDedupCandidateForProject(candidate, projectId) &&
           (candidate.status === "confirmed" || candidate.status === "auto_confirmed")
       )
-      .map((candidate) => candidate.recordB.id)
+      .map((candidate) => candidate.excludedStudyId ?? candidate.recordB.id)
   );
 }
 
@@ -4239,6 +4252,7 @@ function buildDedupCandidate(projectId: string, left: Study, right: Study, exist
     score: Math.round(weightedScore * 1000) / 1000,
     method: exactMetadataMatch ? "Exact DOI + citation metadata" : doiMatch ? "Normalized DOI + citation metadata" : "Fuzzy title + first author + year",
     status: existingCandidate?.status ?? "pending",
+    excludedStudyId: existingCandidate?.excludedStudyId,
     explanation: {
       title: Math.round(titleScore * 100) / 100,
       author: Math.round(authorScore * 100) / 100,

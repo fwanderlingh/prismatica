@@ -7,7 +7,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ candi
     const userId = await requireSessionUserId();
     const { candidateId } = await context.params;
     const body = await readJsonBody(request);
-    return jsonOk(updateDedupCandidateForUser(userId, candidateId, body.status as DedupCandidate["status"]));
+    return jsonOk(
+      updateDedupCandidateForUser(
+        userId,
+        candidateId,
+        body.status as DedupCandidate["status"],
+        typeof body.excludedStudyId === "string" ? body.excludedStudyId : undefined
+      )
+    );
   } catch (error) {
     return jsonError(error);
   }

@@ -17,14 +17,16 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1071.0",
     "lucide-react": "1.16.0",
-    "next": "16.2.6",
+    "next": "^16.3.4",
     "pg": "8.16.3",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "overrides": {
-    "postcss": "8.5.10"
-  },
+    "next": {
+      "postcss": "8.5.23"
+    }
+  },  
   "devDependencies": {
     "@types/node": "latest",
     "@types/pg": "8.15.5",

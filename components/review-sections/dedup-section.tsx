@@ -10,9 +10,14 @@ type DedupSectionProps = {
   projectScreeningStudies: Study[];
   recordsIdentified: number;
   projectDedupCandidates: DedupCandidate[];
-  pendingDedupAction: DedupCandidate["status"] | null;
+  pendingDedupAction: {
+    candidateId: string;
+    status: DedupCandidate["status"];
+    excludedStudyId?: string;
+  } | null;
+  dedupMessage: string;
   isRejectingAllDedupCandidates: boolean;
-  updateDedupCandidate: (candidateId: string, status: DedupCandidate["status"]) => void;
+  updateDedupCandidate: (candidateId: string, status: DedupCandidate["status"], excludedStudyId?: string) => void;
   rejectAllPendingDedupCandidates: () => void;
 };
 
@@ -22,6 +27,7 @@ export function DedupSection({
   recordsIdentified,
   projectDedupCandidates,
   pendingDedupAction,
+  dedupMessage,
   isRejectingAllDedupCandidates,
   updateDedupCandidate,
   rejectAllPendingDedupCandidates
@@ -81,7 +87,9 @@ export function DedupSection({
 
   const matchScorePercent = selectedCandidate ? formatPercent(selectedCandidate.score) : "";
   const activeStatusLabel = dedupStatusFilterLabels[activeStatus];
-  const selectedStatusLabel = selectedCandidate ? getCandidateStatusLabel(selectedCandidate.status) : "";
+  const selectedStatusLabel = selectedCandidate ? getCandidateStatusLabel(selectedCandidate) : "";
+  const selectedCandidateAction = pendingDedupAction?.candidateId === selectedCandidate?.id ? pendingDedupAction : null;
+  const dedupMessageIsError = /cannot|denied|error|failed|forbidden|invalid|not found|unknown/i.test(dedupMessage);
 
   return (
     <div className="viewStack">
@@ -96,13 +104,20 @@ export function DedupSection({
             Pending {statusCounts.pending}
           </button>
           <button className={activeStatus === "confirmed" ? "active" : ""} type="button" aria-pressed={activeStatus === "confirmed"} onClick={() => setActiveStatus("confirmed")}>
-            Confirmed {statusCounts.confirmed}
+            Excluded {statusCounts.confirmed}
           </button>
           <button className={activeStatus === "rejected" ? "active" : ""} type="button" aria-pressed={activeStatus === "rejected"} onClick={() => setActiveStatus("rejected")}>
-            Rejected {statusCounts.rejected}
+            Included {statusCounts.rejected}
           </button>
         </div>
       </section>
+
+      {dedupMessage ? (
+        <div className={dedupMessageIsError ? "validationItem blocked" : "validationItem ok"} role="status" aria-live="polite">
+          {dedupMessageIsError ? <X size={17} /> : <Check size={17} />}
+          <span>{dedupMessage}</span>
+        </div>
+      ) : null}
 
       <section className="dedupGrid">
         <div className="panel dedupInspectorPanel">
@@ -163,32 +178,48 @@ export function DedupSection({
                     </ul>
                     {selectedCandidate.status === "pending" ? (
                       <div className="buttonRow">
-                        <button className="primaryButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "confirmed")}>
-                          {pendingDedupAction === "confirmed" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
-                          {pendingDedupAction === "confirmed" ? "Confirming..." : "Confirm"}
-                        </button>
-                        <button className="dangerButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "rejected")}>
-                          {pendingDedupAction === "rejected" ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
-                          {pendingDedupAction === "rejected" ? "Rejecting..." : "Reject"}
-                        </button>
-                      </div>
-                    ) : selectedCandidate.status === "rejected" ? (
-                      <div className="buttonRow">
-                        <p className="dedupStatusNote">{selectedStatusLabel}</p>
-                        <button className="ghostButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "pending")}>
-                          {pendingDedupAction === "pending" ? <span className="inlineSpinner" aria-hidden="true" /> : <RotateCcw size={17} />}
-                          {pendingDedupAction === "pending" ? "Undoing..." : "Undo"}
+                        <button className="primaryButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "rejected")}>
+                          {selectedCandidateAction?.status === "rejected" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+                          {selectedCandidateAction?.status === "rejected" ? "Including..." : "Include both entries"}
                         </button>
                       </div>
                     ) : (
-                      <p className="dedupStatusNote">{selectedStatusLabel}</p>
+                      <div className="buttonRow">
+                        <p className="dedupStatusNote">{selectedStatusLabel}</p>
+                        <button className="ghostButton" type="button" disabled={pendingDedupAction !== null} onClick={() => updateDedupCandidate(selectedCandidate.id, "pending")}>
+                          {selectedCandidateAction?.status === "pending" ? <span className="inlineSpinner" aria-hidden="true" /> : <RotateCcw size={17} />}
+                          {selectedCandidateAction?.status === "pending" ? "Undoing..." : "Undo"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
               </section>
               <div className="comparisonGrid">
-                <RecordComparison title="Record A" source={selectedCandidate.recordA.source} study={selectedCandidate.recordA} />
-                <RecordComparison title="Record B" source={selectedCandidate.recordB.source} study={selectedCandidate.recordB} />
+                {[selectedCandidate.recordA, selectedCandidate.recordB].map((study, index) => {
+                  const isExcluded = isConfirmedDedupStatus(selectedCandidate.status) && (selectedCandidate.excludedStudyId ?? selectedCandidate.recordB.id) === study.id;
+                  const isExcludingThisEntry = selectedCandidateAction?.status === "confirmed" && selectedCandidateAction.excludedStudyId === study.id;
+                  return (
+                    <div className={`dedupRecordDecision${isExcluded ? " excluded" : ""}`} key={study.id}>
+                      <RecordComparison title={`Entry ${index + 1}`} source={study.source} study={study} />
+                      {selectedCandidate.status === "pending" ? (
+                        <button
+                          className="dangerButton dedupRecordAction"
+                          type="button"
+                          disabled={pendingDedupAction !== null}
+                          onClick={() => updateDedupCandidate(selectedCandidate.id, "confirmed", study.id)}
+                        >
+                          {isExcludingThisEntry ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
+                          {isExcludingThisEntry ? "Excluding..." : "Exclude this entry"}
+                        </button>
+                      ) : (
+                        <span className={`dedupRecordStatus${isExcluded ? " excluded" : " included"}`}>
+                          {isExcluded ? "Excluded as duplicate" : "Included"}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           ) : (
@@ -204,16 +235,16 @@ export function DedupSection({
       </section>
 
       <section className="panel dedupBulkPanel">
-        <SectionTitle icon={X} title="Bulk Decisions" action={`${statusCounts.pending} pending`} />
+        <SectionTitle icon={Check} title="Bulk Inclusion" action={`${statusCounts.pending} pending`} />
         <div className="buttonRow">
           <button
-            className="dangerButton"
+            className="primaryButton"
             type="button"
             disabled={statusCounts.pending === 0 || pendingDedupAction !== null || isRejectingAllDedupCandidates}
             onClick={rejectAllPendingDedupCandidates}
           >
-            {isRejectingAllDedupCandidates ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
-            {isRejectingAllDedupCandidates ? "Rejecting all..." : "Reject all pending"}
+            {isRejectingAllDedupCandidates ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+            {isRejectingAllDedupCandidates ? "Including all..." : "Include both for all pending"}
           </button>
         </div>
       </section>
@@ -245,19 +276,19 @@ function isConfirmedDedupStatus(status: DedupCandidate["status"]) {
 
 const dedupStatusFilterLabels: Record<DedupStatusFilter, string> = {
   pending: "Pending",
-  confirmed: "Confirmed",
-  rejected: "Rejected"
+  confirmed: "Excluded",
+  rejected: "Included"
 };
 
-function getCandidateStatusLabel(status: DedupCandidate["status"]) {
-  if (status === "auto_confirmed") {
-    return "Auto-confirmed duplicate";
+function getCandidateStatusLabel(candidate: DedupCandidate) {
+  if (candidate.status === "auto_confirmed") {
+    return "One entry was automatically excluded as a duplicate.";
   }
-  if (status === "confirmed") {
-    return "Confirmed duplicate";
+  if (candidate.status === "confirmed") {
+    return "One entry is excluded as a duplicate.";
   }
-  if (status === "rejected") {
-    return "Rejected duplicate";
+  if (candidate.status === "rejected") {
+    return "Both entries are included.";
   }
   return "Pending duplicate review";
 }

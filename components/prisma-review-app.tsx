@@ -630,14 +630,20 @@ export function PrismaReviewApp() {
   const [isSavingStudyEdit, setIsSavingStudyEdit] = useState(false);
   const [isReviewingImportWarnings, setIsReviewingImportWarnings] = useState(false);
   const [pendingReviewedStudyId, setPendingReviewedStudyId] = useState("");
+  const [pendingDeleteStudyId, setPendingDeleteStudyId] = useState("");
   const [deleteProjectMessage, setDeleteProjectMessage] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
   const [serverWorkflowConflicts, setServerWorkflowConflicts] = useState<ProjectWorkflowConflict[]>([]);
   const [events, setEvents] = useState<WorkflowEvent[]>(initialWorkflowEvents);
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>(seedDedupCandidates);
-  const [pendingDedupAction, setPendingDedupAction] = useState<DedupCandidate["status"] | null>(null);
+  const [pendingDedupAction, setPendingDedupAction] = useState<{
+    candidateId: string;
+    status: DedupCandidate["status"];
+    excludedStudyId?: string;
+  } | null>(null);
   const [isRejectingAllDedupCandidates, setIsRejectingAllDedupCandidates] = useState(false);
+  const [dedupMessage, setDedupMessage] = useState("");
   const [studyIndex, setStudyIndex] = useState(0);
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
@@ -2670,10 +2676,12 @@ export function PrismaReviewApp() {
   }
 
   async function deleteImportStudy(study: Study) {
-    if (!selectedImportId || !window.confirm(`Delete "${study.title}" from this import batch?`)) {
+    if (!selectedImportId || pendingDeleteStudyId || !window.confirm(`Delete "${study.title}" from this import batch?`)) {
       return;
     }
 
+    setPendingDeleteStudyId(study.id);
+    setImportDetailMessage("");
     try {
       const payload = await apiRequest<AppMutationPayload>(
         `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${study.id}`,
@@ -2686,9 +2694,11 @@ export function PrismaReviewApp() {
         setStudyEditId("");
         setStudyEditForm(emptyStudyEditForm);
       }
-      setImportDetailMessage("Citation entry deleted.");
+      setImportDetailMessage(`Deleted "${study.title}" from this import batch.`);
     } catch (error) {
       setImportDetailMessage(getErrorMessage(error));
+    } finally {
+      setPendingDeleteStudyId("");
     }
   }
 
@@ -2994,16 +3004,24 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function updateDedupCandidate(candidateId: string, status: DedupCandidate["status"]) {
-    setPendingDedupAction(status);
+  async function updateDedupCandidate(candidateId: string, status: DedupCandidate["status"], excludedStudyId?: string) {
+    setPendingDedupAction({ candidateId, status, excludedStudyId });
+    setDedupMessage("");
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/dedup-candidates/${candidateId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, excludedStudyId })
       });
       applyAppState(payload);
+      setDedupMessage(
+        status === "pending"
+          ? "Deduplication decision undone."
+          : status === "rejected"
+            ? "Both citations included."
+            : "Selected citation excluded as a duplicate."
+      );
     } catch (error) {
-      setLoginError(getErrorMessage(error));
+      setDedupMessage(getErrorMessage(error));
     } finally {
       setPendingDedupAction(null);
     }
@@ -3014,12 +3032,13 @@ export function PrismaReviewApp() {
     if (pendingCount === 0 || isRejectingAllDedupCandidates) {
       return;
     }
-    if (!window.confirm(`Reject all ${pendingCount} pending duplicate ${pendingCount === 1 ? "candidate" : "candidates"}?`)) {
+    if (!window.confirm(`Include both citations for all ${pendingCount} pending duplicate ${pendingCount === 1 ? "pair" : "pairs"}?`)) {
       return;
     }
 
     setIsRejectingAllDedupCandidates(true);
-    setPendingDedupAction("rejected");
+    setPendingDedupAction({ candidateId: "all", status: "rejected" });
+    setDedupMessage("");
     try {
       const payload = await apiRequest<AppMutationPayload>(
         `/api/projects/${selectedProject.id}/dedup-candidates/reject-pending`,
@@ -3028,8 +3047,9 @@ export function PrismaReviewApp() {
         }
       );
       applyAppState(payload);
+      setDedupMessage(payload.message ?? "Both citations were included for every pending pair.");
     } catch (error) {
-      setLoginError(getErrorMessage(error));
+      setDedupMessage(getErrorMessage(error));
     } finally {
       setPendingDedupAction(null);
       setIsRejectingAllDedupCandidates(false);
@@ -3230,6 +3250,7 @@ export function PrismaReviewApp() {
         isSavingStudyEdit={isSavingStudyEdit}
         isReviewingImportWarnings={isReviewingImportWarnings}
         pendingReviewedStudyId={pendingReviewedStudyId}
+        pendingDeleteStudyId={pendingDeleteStudyId}
         closeImportEditor={closeImportEditor}
         deleteImportBatch={deleteImportBatch}
         openScreening={() => navigateToProjectView("screening")}
@@ -3285,6 +3306,7 @@ export function PrismaReviewApp() {
         recordsIdentified={recordsIdentified}
         projectDedupCandidates={projectDedupCandidates}
         pendingDedupAction={pendingDedupAction}
+        dedupMessage={dedupMessage}
         isRejectingAllDedupCandidates={isRejectingAllDedupCandidates}
         updateDedupCandidate={updateDedupCandidate}
         rejectAllPendingDedupCandidates={rejectAllPendingDedupCandidates}
