@@ -37,6 +37,7 @@ type ImportEditorSectionProps = {
   isReviewingImportWarnings: boolean;
   pendingReviewedStudyId: string;
   pendingDeleteStudyId: string;
+  pendingDeleteImportId: string;
   updateImportDetails: (event: FormSubmitEvent) => void;
   onImportSourceNameChange: (value: string) => void;
   onImportFilenameChange: (value: string) => void;
@@ -74,7 +75,8 @@ export function ImportEditorSection({
   deleteImportStudy,
   markImportStudyReviewed,
   pendingReviewedStudyId,
-  pendingDeleteStudyId
+  pendingDeleteStudyId,
+  pendingDeleteImportId
 }: ImportEditorSectionProps) {
   const messageIsSuccess = /imported|updated|deleted|reviewed/i.test(importDetailMessage);
   const entryFallbackIndexes = new Map(batchStudies.map((study, index) => [study.id, index + 1]));
@@ -217,9 +219,9 @@ export function ImportEditorSection({
             <ArrowLeft size={17} />
             Imports
           </button>
-          <button className="dangerButton" type="button" onClick={() => deleteImportBatch(batch.id)}>
-            <Trash2 size={17} />
-            Delete Batch
+          <button className="dangerButton" type="button" disabled={pendingDeleteImportId === batch.id} onClick={() => deleteImportBatch(batch.id)}>
+            {pendingDeleteImportId === batch.id ? <span className="inlineSpinner" aria-hidden="true" /> : <Trash2 size={17} />}
+            {pendingDeleteImportId === batch.id ? "Deleting..." : "Delete Batch"}
           </button>
           <button className="primaryButton" type="button" disabled={batchStudies.length === 0} onClick={openScreening}>
             <FileSearch size={17} />

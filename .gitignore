@@ -10,3 +10,4 @@ tsconfig.tsbuildinfo
 .vscode/
 .codex/
 .agents/
+docs/Prismatica_Migration_Request.md

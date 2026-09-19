@@ -12,7 +12,7 @@ All sensitive API routes call `requireSessionUserId()` before returning app data
 **Main Risks**
 
 1. **SSRF risk from imported PDF URLs**
-   Imported citations can trigger server-side PDF fetches. [normalizeRemoteUrl](/home/graal/public_html/prismatica/lib/serverStore.ts:4765) only checks `http/https`, not private IPs, localhost, metadata IPs, or DNS rebinding.
+	Imported citations can trigger server-side PDF fetches. [normalizeRemoteUrl](/home/graal/public_html/prismatica/lib/serverStore.ts:4765) only checks `http/https`, not private IPs, localhost, metadata IPs, or DNS rebinding.
 
 
 **Verdict**

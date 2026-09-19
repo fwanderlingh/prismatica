@@ -234,7 +234,7 @@ export function SettingsSection({
           </div>
 
           <div className="panel">
-            <SectionTitle icon={Settings} title="State Machine" action="Project policy" />
+            <SectionTitle icon={Settings} title="Project Policy" action="Settings" />
             <label className="toggleRow">
               <input
                 type="checkbox"

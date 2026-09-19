@@ -631,6 +631,7 @@ export function PrismaReviewApp() {
   const [isReviewingImportWarnings, setIsReviewingImportWarnings] = useState(false);
   const [pendingReviewedStudyId, setPendingReviewedStudyId] = useState("");
   const [pendingDeleteStudyId, setPendingDeleteStudyId] = useState("");
+  const [pendingDeleteImportId, setPendingDeleteImportId] = useState("");
   const [deleteProjectMessage, setDeleteProjectMessage] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [decisions, setDecisions] = useState<Decision[]>(initialDecisions);
@@ -644,7 +645,7 @@ export function PrismaReviewApp() {
   } | null>(null);
   const [isRejectingAllDedupCandidates, setIsRejectingAllDedupCandidates] = useState(false);
   const [dedupMessage, setDedupMessage] = useState("");
-  const [studyIndex, setStudyIndex] = useState(0);
+  const [selectedScreeningStudyId, setSelectedScreeningStudyId] = useState("");
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
   const [isUndoingScreeningDecision, setIsUndoingScreeningDecision] = useState(false);
@@ -900,6 +901,7 @@ export function PrismaReviewApp() {
   const currentAuditPage = Math.min(auditPage, auditPageCount);
   const pagedProjectEvents = projectEvents.slice((currentAuditPage - 1) * AUDIT_PAGE_SIZE, currentAuditPage * AUDIT_PAGE_SIZE);
   const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, extractionResponses, projectEvents);
+  const studyIndex = Math.max(activeScreeningStudies.findIndex((study) => study.id === selectedScreeningStudyId), 0);
   const currentStudy = activeScreeningStudies[studyIndex] ?? activeScreeningStudies[0] ?? projectScreeningStudies[0] ?? screeningStudies[0];
   const isCurrentStudyInActiveScreeningQueue = activeScreeningStudies.some((study) => study.id === currentStudy.id);
   const currentUserDecision = useMemo(
@@ -1234,6 +1236,17 @@ export function PrismaReviewApp() {
     setIsMobileNavOpen(false);
   }
 
+  function getSelectedProjectPhaseNavState(key: ViewKey, stage: ReviewProject["stage"]): PhaseNavState | null {
+    if (key === "dedup") {
+      if (projectDedupCandidates.some((candidate) => candidate.status === "pending")) {
+        return "current";
+      }
+      const hasImportedRecords = recordsIdentified > 0 || selectedProject.recordsTotal > 0 || projectScreeningStudies.length > 0;
+      return hasImportedRecords ? "done" : "pending";
+    }
+    return getPhaseNavState(key, stage);
+  }
+
   function getSelectedProjectWorkflowStepState(step: "imports" | "screening" | "fullText" | "extraction", stage: ReviewProject["stage"]) {
     if (selectedProject.requireSequentialPhases && !canNavigateToProjectView(step)) {
       return "pending";
@@ -1389,8 +1402,8 @@ export function PrismaReviewApp() {
   }, [activeView, isAuthenticated, isAuthResolved, selectedProject.requireSequentialPhases, sequentialPhaseAccess]);
 
   useEffect(() => {
-    setStudyIndex((index) => Math.min(index, Math.max(activeScreeningStudies.length - 1, 0)));
-  }, [activeScreeningStudies.length]);
+    setSelectedScreeningStudyId(activeScreeningStudies[studyIndex]?.id ?? "");
+  }, [activeScreeningStudies, studyIndex]);
 
   useEffect(() => {
     setScreeningMessage("");
@@ -1601,7 +1614,7 @@ export function PrismaReviewApp() {
 
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, [activeScreeningStudies.length, activeView, currentStudy.id, currentUserDecision, decisions, selectedProject.id]);
+  }, [activeScreeningStudies, activeView, currentStudy.id, currentUserDecision, decisions, selectedProject.id]);
 
   useEffect(() => {
     setAccountForm((previous) => ({
@@ -1964,12 +1977,20 @@ export function PrismaReviewApp() {
     clearLoginPassword();
   }
 
+  function setStudyIndex(index: number | ((previous: number) => number)) {
+    setSelectedScreeningStudyId((previousId) => {
+      const previousIndex = Math.max(activeScreeningStudies.findIndex((study) => study.id === previousId), 0);
+      const nextIndex = typeof index === "function" ? index(previousIndex) : index;
+      return activeScreeningStudies[nextIndex]?.id ?? activeScreeningStudies[0]?.id ?? "";
+    });
+  }
+
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
     const nextView = projectId === selectedProject.id && !canNavigateToProjectView(view) ? "projectDashboard" : view;
     setSelectedProjectId(projectId);
     setActiveView(nextView, { projectId });
     setIsMobileNavOpen(false);
-    setStudyIndex(0);
+    setSelectedScreeningStudyId("");
     setActiveReportId("");
     setFullTextMessage("");
     setScreeningMessage("");
@@ -2703,12 +2724,17 @@ export function PrismaReviewApp() {
   }
 
   async function deleteImportBatch(importId: string) {
+    if (pendingDeleteImportId) {
+      return;
+    }
     const batch = imports.find((candidate) => candidate.id === importId && candidate.projectId === selectedProject.id);
     const batchLabel = batch ? `"${batch.filename}" (${batch.records} citation ${batch.records === 1 ? "entry" : "entries"})` : "this import batch";
     if (!window.confirm(`Delete ${batchLabel}? This removes its citation entries, reports, decisions, and duplicate candidates.`)) {
       return;
     }
 
+    setPendingDeleteImportId(importId);
+    setImportDetailMessage("");
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${importId}`, {
         method: "DELETE"
@@ -2719,6 +2745,8 @@ export function PrismaReviewApp() {
       setImportMessage(payload.message ?? "Import batch deleted.");
     } catch (error) {
       setImportDetailMessage(getErrorMessage(error));
+    } finally {
+      setPendingDeleteImportId("");
     }
   }
 
@@ -2887,7 +2915,7 @@ export function PrismaReviewApp() {
       const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
       const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const currentStudyNextIndex = nextActiveStudies.findIndex((study) => study.id === currentStudy.id);
-      setStudyIndex(currentStudyNextIndex >= 0 ? currentStudyNextIndex : 0);
+      setSelectedScreeningStudyId(nextActiveStudies[currentStudyNextIndex >= 0 ? currentStudyNextIndex : 0]?.id ?? "");
     } catch (error) {
       setScreeningMessage(getErrorMessage(error));
     } finally {
@@ -2918,7 +2946,7 @@ export function PrismaReviewApp() {
       const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
       const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const restoredStudyIndex = nextActiveStudies.findIndex((study) => study.id === lastAction.studyId);
-      setStudyIndex(restoredStudyIndex >= 0 ? restoredStudyIndex : 0);
+      setSelectedScreeningStudyId(nextActiveStudies[restoredStudyIndex >= 0 ? restoredStudyIndex : 0]?.id ?? "");
       setScreeningMessage("Latest screening decision undone.");
     } catch (error) {
       setScreeningMessage(getErrorMessage(error));
@@ -2947,7 +2975,7 @@ export function PrismaReviewApp() {
       const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
       const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const restoredStudyIndex = nextActiveStudies.findIndex((study) => study.id === studyId);
-      setStudyIndex(restoredStudyIndex >= 0 ? restoredStudyIndex : 0);
+      setSelectedScreeningStudyId(nextActiveStudies[restoredStudyIndex >= 0 ? restoredStudyIndex : 0]?.id ?? "");
       setScreeningMessage(payload.message ?? "Citation returned to the title/abstract queue.");
     } catch (error) {
       setScreeningMessage(getErrorMessage(error));
@@ -3251,6 +3279,7 @@ export function PrismaReviewApp() {
         isReviewingImportWarnings={isReviewingImportWarnings}
         pendingReviewedStudyId={pendingReviewedStudyId}
         pendingDeleteStudyId={pendingDeleteStudyId}
+        pendingDeleteImportId={pendingDeleteImportId}
         closeImportEditor={closeImportEditor}
         deleteImportBatch={deleteImportBatch}
         openScreening={() => navigateToProjectView("screening")}
@@ -3857,7 +3886,7 @@ export function PrismaReviewApp() {
           projectNavItems={projectNavItems}
           reviewPhaseNavKeys={reviewPhaseNavKeys}
           exportFailedCount={exportConsistency.failedCount}
-          getPhaseNavState={getPhaseNavState}
+          getPhaseNavState={getSelectedProjectPhaseNavState}
           canNavigateToProjectView={canNavigateToProjectView}
           formatProjectPhase={formatProjectPhase}
           projectPhaseBadgeTone={projectPhaseBadgeTone}
