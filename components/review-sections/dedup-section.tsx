@@ -6,7 +6,7 @@ import { EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } f
 type DedupStatusFilter = "pending" | "confirmed" | "rejected";
 
 type DedupSectionProps = {
-  projectImportBatches: Pick<ImportBatch, "id" | "sourceName" | "filename" | "records">[];
+  projectImportBatches: Pick<ImportBatch, "id" | "filename" | "records">[];
   projectScreeningStudies: Study[];
   recordsIdentified: number;
   projectDedupCandidates: DedupCandidate[];
@@ -216,9 +216,8 @@ export function DedupSection({
                   const isExcluded = isConfirmedDedupStatus(selectedCandidate.status) && (selectedCandidate.excludedStudyId ?? selectedCandidate.recordB.id) === study.id;
                   const isExcludingThisEntry = selectedCandidateAction?.status === "confirmed" && selectedCandidateAction.excludedStudyId === study.id;
                   const importBatch = study.importBatchId ? importBatchById.get(study.importBatchId) : undefined;
-                  const sourceLabel = importBatch
-                    ? `${importBatch.filename} · ${importBatch.sourceName}`
-                    : study.source;
+                  const sourceLabel = importBatch?.filename ??
+                    (/\b(?:bibtex|ris) upload\b/i.test(study.source) ? "Imported record" : study.source);
                   return (
                     <div className={`dedupRecordDecision${isExcluded ? " excluded" : ""}`} key={study.id}>
                       <RecordComparison title={`Entry ${index + 1}`} source={sourceLabel} study={study} />

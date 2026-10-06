@@ -1,9 +1,11 @@
-import { AlertTriangle, Check, ChevronRight, LayoutDashboard, Settings, Trash2 } from "lucide-react";
+import { Activity, AlertTriangle, Check, ChevronRight, LayoutDashboard, Settings, Trash2 } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
 import { Badge, SectionTitle } from "@/components/prisma-review-ui";
 
 type AdminReviewsSectionProps = {
   dashboardMessage: string;
+  websiteVisitCount: number | null;
+  websiteVisitCountLoading: boolean;
   projects: ReviewProject[];
   users: AppUser[];
   formatProjectPhase: (stage: ReviewProject["stage"]) => string;
@@ -15,6 +17,8 @@ type AdminReviewsSectionProps = {
 
 export function AdminReviewsSection({
   dashboardMessage,
+  websiteVisitCount,
+  websiteVisitCountLoading,
   projects,
   users,
   formatProjectPhase,
@@ -41,6 +45,21 @@ export function AdminReviewsSection({
           </div>
         </section>
       ) : null}
+
+      <section className="panel">
+        <SectionTitle icon={Activity} title="Website Activity" action="Aggregate" />
+        <div className="statusRow info">
+          <span>General visits</span>
+          <strong>
+            {websiteVisitCountLoading && websiteVisitCount === null
+              ? "Loading..."
+              : websiteVisitCount === null
+                ? "Unavailable"
+                : new Intl.NumberFormat("en-US").format(websiteVisitCount)}
+          </strong>
+        </div>
+        <p className="subtle">One count per browser session within 30 minutes. Page paths and user identities are not stored.</p>
+      </section>
 
       <section className="panel">
         <SectionTitle icon={LayoutDashboard} title="Registered Reviews" action={`${projects.length} total`} />

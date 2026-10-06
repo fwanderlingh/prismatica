@@ -6,7 +6,8 @@ const publicRoutes = new Map([
   ["app/api/auth/config/route.ts", "public auth/captcha config"],
   ["app/api/auth/login/route.ts", "public login endpoint"],
   ["app/api/auth/logout/route.ts", "session cookie clearing endpoint"],
-  ["app/api/auth/register/route.ts", "public registration endpoint"]
+  ["app/api/auth/register/route.ts", "public registration endpoint"],
+  ["app/api/website-visits/route.ts", "privacy-light public visit counter"]
 ]);
 
 function walkRouteFiles(directory) {

@@ -581,6 +581,9 @@ export function PrismaReviewApp() {
   const [pendingRouteLabel, setPendingRouteLabel] = useState("");
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [websiteVisitCount, setWebsiteVisitCount] = useState<number | null>(null);
+  const [websiteVisitCountLoading, setWebsiteVisitCountLoading] = useState(false);
+  const websiteVisitRequestStarted = useRef(false);
   const [pendingAuthAction, setPendingAuthAction] = useState<"login" | "register" | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
@@ -1286,6 +1289,64 @@ export function PrismaReviewApp() {
       router.replace(nextUrl);
     });
   }
+
+  useEffect(() => {
+    if (websiteVisitRequestStarted.current) {
+      return;
+    }
+    websiteVisitRequestStarted.current = true;
+
+    const sessionKey = "prismatica-visit-recorded";
+    const countedUntil = Date.now() + 30 * 60 * 1000;
+    try {
+      const previousCountedUntil = Number(window.sessionStorage.getItem(sessionKey) ?? 0);
+      if (previousCountedUntil > Date.now()) {
+        return;
+      }
+      window.sessionStorage.setItem(sessionKey, String(countedUntil));
+    } catch {}
+
+    fetch("/api/website-visits", { method: "POST", credentials: "same-origin" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Visit count request failed.");
+        }
+      })
+      .catch(() => {
+        try {
+          window.sessionStorage.removeItem(sessionKey);
+        } catch {}
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthResolved || !isAuthenticated || !currentUser.isAdmin || activeView !== "adminReviews") {
+      return;
+    }
+
+    let isMounted = true;
+    setWebsiteVisitCountLoading(true);
+    apiRequest<{ visits: number }>("/api/admin/website-visits")
+      .then((payload) => {
+        if (isMounted) {
+          setWebsiteVisitCount(payload.visits);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setWebsiteVisitCount(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setWebsiteVisitCountLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeView, currentUser.isAdmin, isAuthResolved, isAuthenticated]);
 
   useEffect(() => {
     let isMounted = true;
@@ -3690,6 +3751,8 @@ export function PrismaReviewApp() {
     return (
       <AdminReviewsSection
         dashboardMessage={dashboardMessage}
+        websiteVisitCount={websiteVisitCount}
+        websiteVisitCountLoading={websiteVisitCountLoading}
         projects={projects}
         users={users}
         formatProjectPhase={formatProjectPhase}
