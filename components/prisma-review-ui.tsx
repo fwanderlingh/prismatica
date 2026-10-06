@@ -94,10 +94,11 @@ export function ScoreBar({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function RecordComparison({ title, source, study }: { title: string; source: string; study: Study }) {
+export function RecordComparison({ title, source, articleId, study }: { title: string; source: string; articleId: string; study: Study }) {
   return (
     <article className="panel recordCard">
       <SectionTitle icon={Archive} title={title} action={source} />
+      <span className="articleIdPill">Article ID {articleId}</span>
       <dl>
         <div>
           <dt>Title</dt>

@@ -3128,6 +3128,26 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function updateDedupStudy(study: Study, form: StudyEditForm) {
+    if (!study.importBatchId) {
+      throw new Error("This citation is not linked to an editable import batch.");
+    }
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${encodeURIComponent(selectedProject.id)}/imports/${encodeURIComponent(study.importBatchId)}/studies/${encodeURIComponent(study.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(form)
+        }
+      );
+      applyAppState(payload);
+      setDedupMessage(`Updated citation entry: ${study.title}.`);
+    } catch (error) {
+      setDedupMessage(getErrorMessage(error));
+      throw error;
+    }
+  }
+
   async function rejectAllPendingDedupCandidates() {
     const pendingCount = projectDedupCandidates.filter((candidate) => candidate.status === "pending").length;
     if (pendingCount === 0 || isRejectingAllDedupCandidates) {
@@ -3412,6 +3432,7 @@ export function PrismaReviewApp() {
         dedupMessage={dedupMessage}
         isRejectingAllDedupCandidates={isRejectingAllDedupCandidates}
         updateDedupCandidate={updateDedupCandidate}
+        updateDedupStudy={updateDedupStudy}
         rejectAllPendingDedupCandidates={rejectAllPendingDedupCandidates}
       />
     );

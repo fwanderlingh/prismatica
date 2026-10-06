@@ -2538,6 +2538,38 @@ td span {
   justify-self: stretch;
 }
 
+.dedupRecordActions {
+  align-items: stretch;
+}
+
+.dedupRecordActions > * {
+  flex: 1 1 auto;
+}
+
+.articleIdPill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: calc(3px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--teal-soft);
+  border-radius: 999px;
+  background: var(--surface-tint);
+  color: var(--teal);
+  font-size: 0.72rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.dedupStudyEditForm {
+  min-width: 0;
+  align-content: start;
+}
+
+.dedupStudyEditForm .buttonRow {
+  margin-top: calc(4px * var(--ui-scale));
+}
+
 .dedupRecordStatus {
   display: flex;
   align-items: center;

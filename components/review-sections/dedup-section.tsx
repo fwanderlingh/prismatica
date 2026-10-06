@@ -1,9 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
-import { Check, GitMerge, RotateCcw, X } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Check, GitMerge, PenLine, RotateCcw, X } from "lucide-react";
 import type { DedupCandidate, ImportBatch, Study } from "@/lib/prismaData";
 import { EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 
 type DedupStatusFilter = "pending" | "confirmed" | "rejected";
+type DedupStudyEditForm = {
+  title: string;
+  authors: string;
+  journal: string;
+  year: string;
+  doi: string;
+  keywords: string;
+  abstract: string;
+};
 
 type DedupSectionProps = {
   projectImportBatches: Pick<ImportBatch, "id" | "filename" | "records">[];
@@ -18,6 +27,7 @@ type DedupSectionProps = {
   dedupMessage: string;
   isRejectingAllDedupCandidates: boolean;
   updateDedupCandidate: (candidateId: string, status: DedupCandidate["status"], excludedStudyId?: string) => void;
+  updateDedupStudy: (study: Study, form: DedupStudyEditForm) => Promise<void>;
   rejectAllPendingDedupCandidates: () => void;
 };
 
@@ -30,11 +40,15 @@ export function DedupSection({
   dedupMessage,
   isRejectingAllDedupCandidates,
   updateDedupCandidate,
+  updateDedupStudy,
   rejectAllPendingDedupCandidates
 }: DedupSectionProps) {
   const [activeStatus, setActiveStatus] = useState<DedupStatusFilter>("pending");
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const [pendingShuffleSeed, setPendingShuffleSeed] = useState<number | null>(null);
+  const [editingStudyId, setEditingStudyId] = useState("");
+  const [savingStudyId, setSavingStudyId] = useState("");
+  const [studyEditForm, setStudyEditForm] = useState<DedupStudyEditForm | null>(null);
   const importBatchById = useMemo(
     () => new Map(projectImportBatches.map((batch) => [batch.id, batch])),
     [projectImportBatches]
@@ -107,6 +121,37 @@ export function DedupSection({
   const selectedCandidateAction = pendingDedupAction?.candidateId === selectedCandidate?.id ? pendingDedupAction : null;
   const dedupMessageIsError = /cannot|denied|error|failed|forbidden|invalid|not found|unknown/i.test(dedupMessage);
 
+  function beginEditingStudy(study: Study) {
+    setEditingStudyId(study.id);
+    setStudyEditForm({
+      title: study.title,
+      authors: study.authors.join("; "),
+      journal: study.journal,
+      year: study.year > 0 ? String(study.year) : "",
+      doi: study.doi,
+      keywords: study.keywords.join("; "),
+      abstract: study.abstract
+    });
+  }
+
+  async function saveStudyEdit(event: FormEvent<HTMLFormElement>, study: Study) {
+    event.preventDefault();
+    if (!studyEditForm || savingStudyId) {
+      return;
+    }
+
+    setSavingStudyId(study.id);
+    try {
+      await updateDedupStudy(study, studyEditForm);
+      setEditingStudyId("");
+      setStudyEditForm(null);
+    } catch {
+      return;
+    } finally {
+      setSavingStudyId("");
+    }
+  }
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -148,7 +193,11 @@ export function DedupSection({
                     key={candidate.id}
                     type="button"
                     aria-pressed={isSelected}
-                    onClick={() => setSelectedCandidateId(candidate.id)}
+                    onClick={() => {
+                      setSelectedCandidateId(candidate.id);
+                      setEditingStudyId("");
+                      setStudyEditForm(null);
+                    }}
                   >
                     <span>
                       <strong>{candidate.recordA.title}</strong>
@@ -218,24 +267,82 @@ export function DedupSection({
                   const importBatch = study.importBatchId ? importBatchById.get(study.importBatchId) : undefined;
                   const sourceLabel = importBatch?.filename ??
                     (/\b(?:bibtex|ris) upload\b/i.test(study.source) ? "Imported record" : study.source);
+                  const isEditingStudy = editingStudyId === study.id && studyEditForm !== null;
+                  const articleId = study.importItemId === undefined ? study.id : String(study.importItemId);
                   return (
                     <div className={`dedupRecordDecision${isExcluded ? " excluded" : ""}`} key={study.id}>
-                      <RecordComparison title={`Entry ${index + 1}`} source={sourceLabel} study={study} />
-                      {selectedCandidate.status === "pending" ? (
-                        <button
-                          className="dangerButton dedupRecordAction"
-                          type="button"
-                          disabled={pendingDedupAction !== null}
-                          onClick={() => updateDedupCandidate(selectedCandidate.id, "confirmed", study.id)}
-                        >
-                          {isExcludingThisEntry ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
-                          {isExcludingThisEntry ? "Excluding..." : "Exclude this entry"}
-                        </button>
+                      {isEditingStudy ? (
+                        <form className="panel studyEditForm dedupStudyEditForm" onSubmit={(event) => saveStudyEdit(event, study)}>
+                          <span className="articleIdPill">Article ID {articleId}</span>
+                          <label className="wideField">
+                            <span>Title</span>
+                            <input value={studyEditForm.title} onChange={(event) => setStudyEditForm({ ...studyEditForm, title: event.target.value })} />
+                          </label>
+                          <label className="wideField">
+                            <span>Authors</span>
+                            <input value={studyEditForm.authors} onChange={(event) => setStudyEditForm({ ...studyEditForm, authors: event.target.value })} />
+                          </label>
+                          <div className="formGrid">
+                            <label>
+                              <span>Journal</span>
+                              <input value={studyEditForm.journal} onChange={(event) => setStudyEditForm({ ...studyEditForm, journal: event.target.value })} />
+                            </label>
+                            <label>
+                              <span>Year</span>
+                              <input inputMode="numeric" value={studyEditForm.year} onChange={(event) => setStudyEditForm({ ...studyEditForm, year: event.target.value })} />
+                            </label>
+                            <label className="wideField">
+                              <span>DOI</span>
+                              <input value={studyEditForm.doi} onChange={(event) => setStudyEditForm({ ...studyEditForm, doi: event.target.value })} />
+                            </label>
+                          </div>
+                          <label className="wideField">
+                            <span>Keywords</span>
+                            <input value={studyEditForm.keywords} onChange={(event) => setStudyEditForm({ ...studyEditForm, keywords: event.target.value })} />
+                          </label>
+                          <label className="wideField">
+                            <span>Abstract</span>
+                            <textarea value={studyEditForm.abstract} onChange={(event) => setStudyEditForm({ ...studyEditForm, abstract: event.target.value })} />
+                          </label>
+                          <div className="buttonRow">
+                            <button className="primaryButton" type="submit" disabled={savingStudyId === study.id}>
+                              {savingStudyId === study.id ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+                              {savingStudyId === study.id ? "Saving..." : "Save entry"}
+                            </button>
+                            <button className="ghostButton" type="button" disabled={savingStudyId === study.id} onClick={() => { setEditingStudyId(""); setStudyEditForm(null); }}>
+                              <X size={17} />
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
                       ) : (
-                        <span className={`dedupRecordStatus${isExcluded ? " excluded" : " included"}`}>
-                          {isExcluded ? "Excluded as duplicate" : "Included"}
-                        </span>
+                        <RecordComparison title={`Entry ${index + 1}`} source={sourceLabel} articleId={articleId} study={study} />
                       )}
+                      {!isEditingStudy ? (
+                        <div className="buttonRow dedupRecordActions">
+                          {study.importBatchId ? (
+                            <button className="ghostButton" type="button" disabled={pendingDedupAction !== null} onClick={() => beginEditingStudy(study)}>
+                              <PenLine size={17} />
+                              Edit entry
+                            </button>
+                          ) : null}
+                          {selectedCandidate.status === "pending" ? (
+                            <button
+                              className="dangerButton dedupRecordAction"
+                              type="button"
+                              disabled={pendingDedupAction !== null}
+                              onClick={() => updateDedupCandidate(selectedCandidate.id, "confirmed", study.id)}
+                            >
+                              {isExcludingThisEntry ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={17} />}
+                              {isExcludingThisEntry ? "Excluding..." : "Exclude this entry"}
+                            </button>
+                          ) : (
+                            <span className={`dedupRecordStatus${isExcluded ? " excluded" : " included"}`}>
+                              {isExcluded ? "Excluded as duplicate" : "Included"}
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
