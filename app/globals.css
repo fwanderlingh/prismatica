@@ -3760,6 +3760,45 @@ button:disabled {
   background: var(--surface-muted);
 }
 
+.validationItem.importProgress {
+  align-items: center;
+  color: var(--teal);
+  border-color: var(--teal-soft);
+  background: var(--surface-muted);
+}
+
+.importProgressContent {
+  display: grid;
+  flex: 1;
+  gap: calc(9px * var(--ui-scale));
+  min-width: 0;
+}
+
+.importProgressTrack {
+  height: calc(5px * var(--ui-scale));
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--teal-soft);
+}
+
+.importProgressTrack i {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+  animation: importProgressMove 1.4s ease-in-out infinite;
+}
+
+@keyframes importProgressMove {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(270%);
+  }
+}
+
 .adminDirectoryFeedback {
   margin-top: calc(12px * var(--ui-scale));
 }

@@ -7,6 +7,7 @@ type ImportsSectionProps = {
   projectImportBatches: ImportBatch[];
   selectedReviewBatch: ImportBatch | undefined;
   importMessage: string;
+  isImportingCitation: boolean;
   bibtexInputRef: RefObject<HTMLInputElement | null>;
   risInputRef: RefObject<HTMLInputElement | null>;
   onImportCitationFile: (format: ImportBatch["format"], event: ChangeEvent<HTMLInputElement>) => void;
@@ -17,6 +18,7 @@ export function ImportsSection({
   projectImportBatches,
   selectedReviewBatch,
   importMessage,
+  isImportingCitation,
   bibtexInputRef,
   risInputRef,
   onImportCitationFile,
@@ -24,7 +26,7 @@ export function ImportsSection({
 }: ImportsSectionProps) {
   const reviewBatches = projectImportBatches.filter((batch) => batch.status === "needs_review" || batch.parserWarnings > 0);
   const okBatches = projectImportBatches.filter((batch) => batch.status !== "needs_review" && batch.parserWarnings === 0);
-  const importMessageIsSuccess = /deleted|imported|importing|reviewed|saved|updated/i.test(importMessage);
+  const importMessageIsSuccess = !isImportingCitation && /deleted|imported|reviewed|saved|updated/i.test(importMessage);
 
   function renderBatchTable(batches: ImportBatch[]) {
     return (
@@ -88,6 +90,7 @@ export function ImportsSection({
             className="hiddenFileInput"
             ref={bibtexInputRef}
             type="file"
+            disabled={isImportingCitation}
             accept=".bib,.bibtex,text/x-bibtex,text/plain"
             onChange={(event) => onImportCitationFile("bib", event)}
           />
@@ -95,23 +98,32 @@ export function ImportsSection({
             className="hiddenFileInput"
             ref={risInputRef}
             type="file"
+            disabled={isImportingCitation}
             accept=".ris,application/x-research-info-systems,text/plain"
             onChange={(event) => onImportCitationFile("ris", event)}
           />
-          <button className="ghostButton" type="button" title="Upload an RIS file" onClick={() => risInputRef.current?.click()}>
+          <button className="ghostButton" type="button" title="Upload an RIS file" disabled={isImportingCitation} onClick={() => risInputRef.current?.click()}>
             <Upload size={17} />
             RIS
           </button>
-          <button className="ghostButton" type="button" title="Upload a BibTeX file" onClick={() => bibtexInputRef.current?.click()}>
+          <button className="ghostButton" type="button" title="Upload a BibTeX file" disabled={isImportingCitation} onClick={() => bibtexInputRef.current?.click()}>
             <FileArchive size={17} />
             BibTeX
           </button>
         </div>
       </section>
       {importMessage ? (
-        <div className={importMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-          {importMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-          <span>{importMessage}</span>
+        <div
+          className={isImportingCitation ? "validationItem importProgress" : importMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}
+          role="status"
+          aria-live="polite"
+          aria-busy={isImportingCitation}
+        >
+          {isImportingCitation ? <span className="inlineSpinner" aria-hidden="true" /> : importMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <div className="importProgressContent">
+            <span>{importMessage}</span>
+            {isImportingCitation ? <div className="importProgressTrack" aria-hidden="true"><i /></div> : null}
+          </div>
         </div>
       ) : null}
 

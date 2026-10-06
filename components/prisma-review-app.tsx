@@ -670,6 +670,7 @@ export function PrismaReviewApp() {
   const [fullTextMessage, setFullTextMessage] = useState("");
   const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "retrieval" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
+  const [isImportingCitation, setIsImportingCitation] = useState(false);
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
   const [importDetailMessage, setImportDetailMessage] = useState("");
@@ -2554,9 +2555,11 @@ export function PrismaReviewApp() {
       return;
     }
 
-    setImportMessage(`Importing ${file.name}...`);
+    setIsImportingCitation(true);
+    setImportMessage(`Reading ${file.name}...`);
     try {
       const content = await file.text();
+      setImportMessage(`Uploading and parsing ${file.name}...`);
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports`, {
         method: "POST",
         body: JSON.stringify({
@@ -2575,6 +2578,8 @@ export function PrismaReviewApp() {
       setImportMessage(successMessage);
     } catch (error) {
       setImportMessage(getErrorMessage(error));
+    } finally {
+      setIsImportingCitation(false);
     }
   }
 
@@ -3319,6 +3324,7 @@ export function PrismaReviewApp() {
         projectImportBatches={projectImportBatches}
         selectedReviewBatch={selectedReviewBatch}
         importMessage={importMessage}
+        isImportingCitation={isImportingCitation}
         bibtexInputRef={bibtexInputRef}
         risInputRef={risInputRef}
         onImportCitationFile={importCitationFile}

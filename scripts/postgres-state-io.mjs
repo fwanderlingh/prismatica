@@ -881,10 +881,160 @@ async function writeReviewTables(client, state) {
   }
 }
 
+async function writeImportStudyMutation(client, mutation) {
+  await client.query("BEGIN");
+  try {
+    const { study, studyPosition, batch, batchPosition, project, reports, event, dedupCandidates } = mutation;
+    await client.query(
+      `
+        INSERT INTO review_studies (
+          id, project_id, import_batch_id, position, import_item_id,
+          title, abstract, authors, journal, year, doi, source, stage,
+          keywords, raw_citation, parser_warnings, payload
+        ) VALUES (
+          $1, $2, $3, $4, $5,
+          $6, $7, $8::jsonb, $9, $10, $11, $12, $13,
+          $14::jsonb, $15, $16::jsonb, $17::jsonb
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          project_id = EXCLUDED.project_id,
+          import_batch_id = EXCLUDED.import_batch_id,
+          position = EXCLUDED.position,
+          import_item_id = EXCLUDED.import_item_id,
+          title = EXCLUDED.title,
+          abstract = EXCLUDED.abstract,
+          authors = EXCLUDED.authors,
+          journal = EXCLUDED.journal,
+          year = EXCLUDED.year,
+          doi = EXCLUDED.doi,
+          source = EXCLUDED.source,
+          stage = EXCLUDED.stage,
+          keywords = EXCLUDED.keywords,
+          raw_citation = EXCLUDED.raw_citation,
+          parser_warnings = EXCLUDED.parser_warnings,
+          payload = EXCLUDED.payload
+      `,
+      [
+        study.id,
+        study.projectId ?? null,
+        study.importBatchId ?? null,
+        studyPosition,
+        typeof study.importItemId === "number" ? study.importItemId : null,
+        study.title,
+        study.abstract,
+        JSON.stringify(asArray(study.authors)),
+        study.journal,
+        Number(study.year ?? 0),
+        study.doi,
+        study.source,
+        study.stage,
+        JSON.stringify(asArray(study.keywords)),
+        study.rawCitation ?? null,
+        JSON.stringify(asArray(study.parserWarnings)),
+        JSON.stringify(study)
+      ]
+    );
+    await client.query(
+      `
+        INSERT INTO import_batches (id, project_id, position, payload)
+        VALUES ($1, $2, $3, $4::jsonb)
+        ON CONFLICT (id) DO UPDATE SET
+          project_id = EXCLUDED.project_id,
+          position = EXCLUDED.position,
+          payload = EXCLUDED.payload
+      `,
+      [batch.id, batch.projectId ?? null, batchPosition, JSON.stringify(batch)]
+    );
+
+    const projectUpdate = await client.query(
+      `
+        UPDATE review_projects SET
+          status = $1,
+          stage = $2,
+          last_event = $3,
+          updated_at_text = $4,
+          records_total = $5,
+          records_screened = $6,
+          conflicts = $7,
+          studies_included = $8,
+          payload = $9::jsonb
+        WHERE id = $10
+      `,
+      [
+        project.status,
+        project.stage,
+        project.lastEvent,
+        project.updatedAt,
+        Number(project.recordsTotal ?? 0),
+        Number(project.recordsScreened ?? 0),
+        Number(project.conflicts ?? 0),
+        Number(project.studiesIncluded ?? 0),
+        JSON.stringify(project),
+        project.id
+      ]
+    );
+    if (projectUpdate.rowCount !== 1) {
+      throw new Error("Project was not found while saving the imported citation.");
+    }
+
+    for (const { report } of reports) {
+      await client.query(
+        `
+          UPDATE review_reports SET title = $1, citation = $2, payload = $3::jsonb
+          WHERE id = $4 AND project_id = $5 AND study_id = $6
+        `,
+        [report.title, report.citation, JSON.stringify(report), report.id, report.projectId, report.studyId]
+      );
+    }
+
+    await client.query(
+      `
+        INSERT INTO workflow_events (id, entity, position, payload)
+        VALUES ($1, $2, COALESCE((SELECT MAX(position) FROM workflow_events), 0) + 1, $3::jsonb)
+        ON CONFLICT (id) DO UPDATE SET entity = EXCLUDED.entity, payload = EXCLUDED.payload
+      `,
+      [event.id, event.entity ?? null, JSON.stringify(event)]
+    );
+
+    if (Array.isArray(dedupCandidates)) {
+      await client.query(
+        `
+          DELETE FROM review_dedup_candidates
+          WHERE record_a_id IN (SELECT id FROM review_studies WHERE project_id = $1)
+             OR record_b_id IN (SELECT id FROM review_studies WHERE project_id = $1)
+        `,
+        [project.id]
+      );
+      const positionResult = await client.query("SELECT COALESCE(MAX(position), 0) AS max_position FROM review_dedup_candidates");
+      const firstPosition = Number(positionResult.rows[0]?.max_position ?? 0) + 1;
+      for (let index = 0; index < dedupCandidates.length; index += 1) {
+        const candidate = dedupCandidates[index];
+        await client.query(
+          `
+            INSERT INTO review_dedup_candidates (id, record_a_id, record_b_id, position, payload)
+            VALUES ($1, $2, $3, $4, $5::jsonb)
+            ON CONFLICT (id) DO UPDATE SET
+              record_a_id = EXCLUDED.record_a_id,
+              record_b_id = EXCLUDED.record_b_id,
+              position = EXCLUDED.position,
+              payload = EXCLUDED.payload
+          `,
+          [candidate.id, candidate.recordA?.id ?? null, candidate.recordB?.id ?? null, firstPosition + index, JSON.stringify(candidate)]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
 async function run() {
   const action = process.argv[2];
-  if (action !== "read" && action !== "write") {
-    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|write>");
+  if (action !== "read" && action !== "read-auth-config" && action !== "write" && action !== "write-import-study") {
+    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|write|write-import-study>");
   }
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -896,6 +1046,12 @@ async function run() {
   await client.connect();
 
   try {
+    if (action === "read-auth-config") {
+      const result = await client.query("SELECT registration_enabled FROM auth_settings WHERE id = 1");
+      process.stdout.write(JSON.stringify({ registrationEnabled: result.rows[0]?.registration_enabled ?? true }));
+      return;
+    }
+
     await ensureSchema(client);
 
     if (action === "read") {
@@ -918,6 +1074,11 @@ async function run() {
     }
 
     const parsed = JSON.parse(raw);
+    if (action === "write-import-study") {
+      await writeImportStudyMutation(client, parsed);
+      return;
+    }
+
     const nextState = {
       ...defaultState(),
       ...parsed

@@ -160,10 +160,10 @@ function postgresStateIoScriptPath() {
   return path.join(process.cwd(), "scripts", "postgres-state-io.mjs");
 }
 
-function runPostgresStateIo(action: "read" | "write", payload?: PersistedState) {
+function runPostgresStateIo(action: "read" | "read-auth-config" | "write" | "write-import-study", payload?: unknown) {
   const output = execFileSync(process.execPath, [postgresStateIoScriptPath(), action], {
     env: process.env,
-    input: action === "write" ? `${JSON.stringify(payload)}\n` : undefined,
+    input: action === "read" ? undefined : `${JSON.stringify(payload)}\n`,
     encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024
   });
@@ -291,8 +291,15 @@ function readState(): PersistedState {
     }
 
     const parsed = JSON.parse(serializedState) as Partial<PersistedState>;
-    const normalized = normalizeState(parsed);
-    writeState(normalized);
+    const hasUnmaterializedLegacyImports = (parsed.imports ?? []).some(
+      (batch) =>
+        batch.records > 0 &&
+        !(parsed.studies ?? []).some((study) => study.projectId === batch.projectId && study.importBatchId === batch.id)
+    );
+    const normalized = normalizeState(parsed, hasUnmaterializedLegacyImports);
+    if (hasUnmaterializedLegacyImports) {
+      writeState(normalized);
+    }
     return normalized;
   }
 
@@ -320,6 +327,42 @@ function writeState(state: PersistedState) {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(/*turbopackIgnore: true*/ tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   fs.renameSync(/*turbopackIgnore: true*/ tempPath, filePath);
+}
+
+function persistImportStudyMutation(
+  state: PersistedState,
+  projectId: string,
+  importId: string,
+  studyId: string,
+  refreshDedupCandidates = false
+) {
+  if (!usePostgresStateStore()) {
+    writeState(state);
+    return;
+  }
+
+  const study = state.studies.find((item) => item.id === studyId && item.projectId === projectId && item.importBatchId === importId);
+  const batch = state.imports.find((item) => item.id === importId && item.projectId === projectId);
+  const project = state.projects.find((item) => item.id === projectId);
+  const event = state.events[state.events.length - 1];
+  if (!study || !batch || !project || !event) {
+    throw new Error("Import study persistence data is incomplete.");
+  }
+
+  runPostgresStateIo("write-import-study", {
+    study,
+    studyPosition: state.studies.findIndex((item) => item.id === study.id) + 1,
+    batch,
+    batchPosition: state.imports.findIndex((item) => item.id === batch.id) + 1,
+    project,
+    reports: state.reports
+      .map((report, index) => ({ report, position: index + 1 }))
+      .filter(({ report }) => report.projectId === projectId && report.studyId === studyId),
+    event,
+    dedupCandidates: refreshDedupCandidates
+      ? state.dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === projectId)
+      : undefined
+  });
 }
 
 function assignImportItemIds(studies: Study[]): Study[] {
@@ -385,7 +428,7 @@ function getNextImportItemId(state: PersistedState, projectId: string) {
   return maxId + 1;
 }
 
-function normalizeState(state: Partial<PersistedState>): PersistedState {
+function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = true): PersistedState {
   const now = new Date().toISOString();
   const authSettings = normalizeAuthSettings(state.authSettings);
   const checkoutWindowSettings = normalizeCheckoutWindowSettings(state.checkoutWindowSettings);
@@ -584,10 +627,12 @@ function normalizeState(state: Partial<PersistedState>): PersistedState {
       ? state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)))
       : []
   };
-  for (const project of normalizedState.projects) {
-    syncDedupCandidatesForProject(normalizedState, project.id);
+  if (rebuildDerivedState) {
+    for (const project of normalizedState.projects) {
+      syncDedupCandidatesForProject(normalizedState, project.id);
+    }
+    resyncAllProjectWorkflowState(normalizedState);
   }
-  resyncAllProjectWorkflowState(normalizedState);
   return normalizedState;
 }
 
@@ -1164,9 +1209,11 @@ export function deleteProjectForUser(userId: string, projectId: string): AppMuta
 }
 
 export function getPublicAuthConfig(): PublicAuthConfigPayload {
-  const state = readState();
+  const authSettings = usePostgresStateStore()
+    ? normalizeAuthSettings(JSON.parse(runPostgresStateIo("read-auth-config")) as Partial<AppAuthSettings>)
+    : readState().authSettings;
   return {
-    authSettings: state.authSettings,
+    authSettings,
     captcha: createRegistrationCaptcha()
   };
 }
@@ -2349,7 +2396,7 @@ export function updateImportStudyForUser(
   syncDedupCandidatesForProject(state, projectId);
   syncProjectAfterImportChange(state, projectId, `Updated imported citation in ${batch.filename}`);
   appendEvent(state, currentUser.name, `Updated imported citation in ${batch.filename}`, studyId);
-  writeState(state);
+  persistImportStudyMutation(state, projectId, importId, studyId, true);
   return buildPayload(state, userId);
 }
 
@@ -2403,7 +2450,7 @@ export function markImportStudyReviewedForUser(userId: string, projectId: string
   syncImportBatchAfterStudyChange(state, projectId, importId, true);
   syncProjectAfterImportChange(state, projectId, `Reviewed imported citation in ${batch.filename}`);
   appendEvent(state, currentUser.name, `Reviewed imported citation in ${batch.filename}`, studyId);
-  writeState(state);
+  persistImportStudyMutation(state, projectId, importId, studyId);
   return {
     ...buildPayload(state, userId),
     message: `Marked "${study.title}" reviewed.`
