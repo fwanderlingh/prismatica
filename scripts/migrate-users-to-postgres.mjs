@@ -17,8 +17,9 @@ function readStateFile(filePath) {
 
   const users = Array.isArray(parsed.users) ? parsed.users : [];
   const authSettings = parsed.authSettings && typeof parsed.authSettings === "object" ? parsed.authSettings : {};
-  const checkoutWindowSettings = parsed.checkoutWindowSettings && typeof parsed.checkoutWindowSettings === "object" ? parsed.checkoutWindowSettings : authSettings;
-  return { users, authSettings, checkoutWindowSettings, absolutePath };
+  const settings = parsed.reviewSettings;
+  const reviewSettings = settings && typeof settings === "object" ? settings : authSettings;
+  return { users, authSettings, reviewSettings, absolutePath };
 }
 
 function parseIsoOrNow(value) {
@@ -101,16 +102,16 @@ async function migrateAuthSettings(client, authSettings) {
   );
 }
 
-async function migrateCheckoutWindowSettings(client, checkoutWindowSettings) {
-  const screeningCheckoutWindowMinutes = clampCheckoutWindowMinutes(checkoutWindowSettings.screeningCheckoutWindowMinutes, 60);
-  const extractionCheckoutWindowMinutes = clampCheckoutWindowMinutes(checkoutWindowSettings.extractionCheckoutWindowMinutes, 120);
-  const pdfUploadMaxSizeMb = clampPdfUploadMaxSizeMb(checkoutWindowSettings.pdfUploadMaxSizeMb, 50);
-  const requestedAuditLimit = Number(checkoutWindowSettings.auditHistoryLimit);
+async function migrateReviewSettings(client, reviewSettings) {
+  const screeningCheckoutWindowMinutes = clampCheckoutWindowMinutes(reviewSettings.screeningCheckoutWindowMinutes, 60);
+  const extractionCheckoutWindowMinutes = clampCheckoutWindowMinutes(reviewSettings.extractionCheckoutWindowMinutes, 120);
+  const pdfUploadMaxSizeMb = clampPdfUploadMaxSizeMb(reviewSettings.pdfUploadMaxSizeMb, 50);
+  const requestedAuditLimit = Number(reviewSettings.auditHistoryLimit);
   const auditHistoryLimit = Number.isFinite(requestedAuditLimit) && requestedAuditLimit >= 1
     ? Math.min(10000, Math.round(requestedAuditLimit)) : 100;
   await client.query(
     `
-      INSERT INTO checkout_window_settings (
+      INSERT INTO review_settings (
         id, screening_checkout_window_minutes,
         extraction_checkout_window_minutes, pdf_upload_max_size_mb, audit_history_limit, updated_at
       )
@@ -190,7 +191,7 @@ async function run() {
     throw new Error("DATABASE_URL is required.");
   }
 
-  const { users, authSettings, checkoutWindowSettings, absolutePath } = readStateFile(sourceFile);
+  const { users, authSettings, reviewSettings, absolutePath } = readStateFile(sourceFile);
 
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
@@ -199,7 +200,7 @@ async function run() {
     await client.query("BEGIN");
     await ensureSchema(client);
     await migrateAuthSettings(client, authSettings);
-    await migrateCheckoutWindowSettings(client, checkoutWindowSettings);
+    await migrateReviewSettings(client, reviewSettings);
     const importedUsers = await migrateUsers(client, users);
     await client.query("COMMIT");
 

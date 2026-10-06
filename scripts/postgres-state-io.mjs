@@ -95,7 +95,7 @@ async function ensureSchema(client) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
-    CREATE TABLE IF NOT EXISTS checkout_window_settings (
+    CREATE TABLE IF NOT EXISTS review_settings (
       id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
       screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 60,
       extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 120,
@@ -265,8 +265,8 @@ async function ensureSchema(client) {
     );
 
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS title TEXT;
-    ALTER TABLE checkout_window_settings ADD COLUMN IF NOT EXISTS audit_history_limit INTEGER NOT NULL DEFAULT 100;
-    ALTER TABLE checkout_window_settings ADD COLUMN IF NOT EXISTS pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50;
+    ALTER TABLE review_settings ADD COLUMN IF NOT EXISTS audit_history_limit INTEGER NOT NULL DEFAULT 100;
+    ALTER TABLE review_settings ADD COLUMN IF NOT EXISTS pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50;
 
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS organization TEXT;
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS protocol_id TEXT;
@@ -361,7 +361,7 @@ function defaultState() {
     authSettings: {
       registrationEnabled: true
     },
-    checkoutWindowSettings: {
+    reviewSettings: {
       screeningCheckoutWindowMinutes: 60,
       extractionCheckoutWindowMinutes: 120,
       auditHistoryLimit: 100,
@@ -546,14 +546,14 @@ async function readRelationalState(client) {
       WHERE id = 1
     `
   );
-  const checkoutWindowSettingsResult = await client.query(
+  const reviewSettingsResult = await client.query(
     `
       SELECT
         screening_checkout_window_minutes,
         extraction_checkout_window_minutes,
         pdf_upload_max_size_mb,
         audit_history_limit
-      FROM checkout_window_settings
+      FROM review_settings
       WHERE id = 1
     `
   );
@@ -566,7 +566,7 @@ async function readRelationalState(client) {
   const extractionResponses = await readRows(client, "review_extraction_responses");
   const extractionConsensus = await readRows(client, "review_extraction_consensus");
   const decisions = await readRows(client, "review_decisions");
-  const auditLimit = normalizeAuditHistoryLimit(checkoutWindowSettingsResult.rows[0]?.audit_history_limit);
+  const auditLimit = normalizeAuditHistoryLimit(reviewSettingsResult.rows[0]?.audit_history_limit);
   const eventRows = await client.query(
     `SELECT payload::text AS payload FROM workflow_events
      ORDER BY payload->>'time' DESC, position ASC, id ASC LIMIT $1`, [auditLimit]
@@ -577,7 +577,7 @@ async function readRelationalState(client) {
   const hasRelationalState =
     usersResult.rowCount > 0 ||
     authSettingsResult.rowCount > 0 ||
-    checkoutWindowSettingsResult.rowCount > 0 ||
+    reviewSettingsResult.rowCount > 0 ||
     projects.length > 0 ||
     imports.length > 0 ||
     studies.length > 0 ||
@@ -598,11 +598,11 @@ async function readRelationalState(client) {
     authSettings: {
       registrationEnabled: authSettingsResult.rows[0]?.registration_enabled ?? true,
     },
-    checkoutWindowSettings: {
-      screeningCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.screening_checkout_window_minutes ?? 60,
-      extractionCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.extraction_checkout_window_minutes ?? 120,
-      auditHistoryLimit: normalizeAuditHistoryLimit(checkoutWindowSettingsResult.rows[0]?.audit_history_limit),
-      pdfUploadMaxSizeMb: checkoutWindowSettingsResult.rows[0]?.pdf_upload_max_size_mb ?? 50
+    reviewSettings: {
+      screeningCheckoutWindowMinutes: reviewSettingsResult.rows[0]?.screening_checkout_window_minutes ?? 60,
+      extractionCheckoutWindowMinutes: reviewSettingsResult.rows[0]?.extraction_checkout_window_minutes ?? 120,
+      auditHistoryLimit: normalizeAuditHistoryLimit(reviewSettingsResult.rows[0]?.audit_history_limit),
+      pdfUploadMaxSizeMb: reviewSettingsResult.rows[0]?.pdf_upload_max_size_mb ?? 50
     },
     users: usersResult.rows.map((row) => ({
       id: row.id,
@@ -705,10 +705,10 @@ async function writeAuthSettings(client, state) {
   );
 }
 
-async function writeCheckoutWindowSettings(client, state) {
+async function writeReviewSettings(client, state) {
   await client.query(
     `
-      INSERT INTO checkout_window_settings (
+      INSERT INTO review_settings (
         id, screening_checkout_window_minutes,
         extraction_checkout_window_minutes, pdf_upload_max_size_mb, audit_history_limit, updated_at
       )
@@ -722,10 +722,10 @@ async function writeCheckoutWindowSettings(client, state) {
         updated_at = NOW()
     `,
     [
-      clampCheckoutWindowMinutes(state.checkoutWindowSettings?.screeningCheckoutWindowMinutes, 60),
-      clampCheckoutWindowMinutes(state.checkoutWindowSettings?.extractionCheckoutWindowMinutes, 120),
-      clampPdfUploadMaxSizeMb(state.checkoutWindowSettings?.pdfUploadMaxSizeMb, 50),
-      normalizeAuditHistoryLimit(state.checkoutWindowSettings?.auditHistoryLimit)
+      clampCheckoutWindowMinutes(state.reviewSettings?.screeningCheckoutWindowMinutes, 60),
+      clampCheckoutWindowMinutes(state.reviewSettings?.extractionCheckoutWindowMinutes, 120),
+      clampPdfUploadMaxSizeMb(state.reviewSettings?.pdfUploadMaxSizeMb, 50),
+      normalizeAuditHistoryLimit(state.reviewSettings?.auditHistoryLimit)
     ]
   );
 }
@@ -883,7 +883,7 @@ async function writeReviewTables(client, state) {
     let items = Array.isArray(state[config.arrayKey]) ? state[config.arrayKey] : [];
     if (config.arrayKey === "events") {
       items = items.slice().sort((a, b) => Date.parse(b.time) - Date.parse(a.time))
-        .slice(0, normalizeAuditHistoryLimit(state.checkoutWindowSettings?.auditHistoryLimit));
+        .slice(0, normalizeAuditHistoryLimit(state.reviewSettings?.auditHistoryLimit));
     }
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
@@ -911,7 +911,7 @@ async function appendWorkflowEvent(client, event) {
      ON CONFLICT (id) DO UPDATE SET entity = EXCLUDED.entity, payload = EXCLUDED.payload`,
     [event.id, event.entity ?? null, JSON.stringify(event)]
   );
-  const settings = await client.query("SELECT audit_history_limit FROM checkout_window_settings WHERE id = 1");
+  const settings = await client.query("SELECT audit_history_limit FROM review_settings WHERE id = 1");
   await client.query(
     `DELETE FROM workflow_events WHERE id IN (
        SELECT id FROM workflow_events
@@ -1218,7 +1218,7 @@ async function run() {
     };
     await client.query("BEGIN");
     await writeAuthSettings(client, nextState);
-    await writeCheckoutWindowSettings(client, nextState);
+    await writeReviewSettings(client, nextState);
     await writeUsers(client, nextState);
     await truncateReviewStateTables(client);
     await writeProjects(client, nextState);

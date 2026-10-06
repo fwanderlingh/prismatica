@@ -1,5 +1,5 @@
-import { updateCheckoutWindowSettingsForUser } from "@/lib/serverStore";
-import { syncCheckoutWindowSettingsToPostgres } from "@/lib/postgresUsersSync";
+import { updateReviewSettingsForUser } from "@/lib/serverStore";
+import { syncReviewSettingsToPostgres } from "@/lib/postgresUsersSync";
 import { jsonError, jsonOk, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
 
 export async function PATCH(request: Request) {
@@ -20,8 +20,8 @@ export async function PATCH(request: Request) {
         ? { pdfUploadMaxSizeMb: Number(body.pdfUploadMaxSizeMb) }
         : {})
     };
-    const payload = updateCheckoutWindowSettingsForUser(adminUserId, settings);
-    await syncCheckoutWindowSettingsToPostgres();
+    const payload = updateReviewSettingsForUser(adminUserId, settings);
+    await syncReviewSettingsToPostgres();
     return jsonOk(payload);
   } catch (error) {
     return jsonError(error);

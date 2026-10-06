@@ -24,7 +24,7 @@ type StoredState = {
   authSettings?: {
     registrationEnabled?: boolean;
   };
-  checkoutWindowSettings?: {
+  reviewSettings?: {
     screeningCheckoutWindowMinutes?: number;
     extractionCheckoutWindowMinutes?: number;
     pdfUploadMaxSizeMb?: number;
@@ -162,7 +162,7 @@ async function upsertAuthSettings(
   );
 }
 
-async function upsertCheckoutWindowSettings(
+async function upsertReviewSettings(
   client: Pool,
   screeningCheckoutWindowMinutes: number,
   extractionCheckoutWindowMinutes: number,
@@ -171,7 +171,7 @@ async function upsertCheckoutWindowSettings(
 ) {
   await client.query(
     `
-      INSERT INTO checkout_window_settings (
+      INSERT INTO review_settings (
         id, screening_checkout_window_minutes,
         extraction_checkout_window_minutes, pdf_upload_max_size_mb, audit_history_limit, updated_at
       )
@@ -219,29 +219,29 @@ export async function syncAuthSettingsToPostgres() {
   await upsertAuthSettings(client, registrationEnabled);
 }
 
-export async function syncCheckoutWindowSettingsToPostgres() {
+export async function syncReviewSettingsToPostgres() {
   if (!usersSyncEnabled()) {
     return;
   }
 
   const state = readState();
   const screeningCheckoutWindowMinutes =
-    state.checkoutWindowSettings?.screeningCheckoutWindowMinutes ?? 60;
+    state.reviewSettings?.screeningCheckoutWindowMinutes ?? 60;
   const extractionCheckoutWindowMinutes =
-    state.checkoutWindowSettings?.extractionCheckoutWindowMinutes ?? 120;
+    state.reviewSettings?.extractionCheckoutWindowMinutes ?? 120;
   const pdfUploadMaxSizeMb = clampPdfUploadMaxSizeMb(
-    state.checkoutWindowSettings?.pdfUploadMaxSizeMb,
+    state.reviewSettings?.pdfUploadMaxSizeMb,
     50
   );
 
   const client = getPool();
   await ensureSchema(client);
-  await upsertCheckoutWindowSettings(
+  await upsertReviewSettings(
     client,
     screeningCheckoutWindowMinutes,
     extractionCheckoutWindowMinutes,
     pdfUploadMaxSizeMb,
-    normalizeAuditHistoryLimit(state.checkoutWindowSettings?.auditHistoryLimit)
+    normalizeAuditHistoryLimit(state.reviewSettings?.auditHistoryLimit)
   );
 }
 

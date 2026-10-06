@@ -21,7 +21,7 @@ export type DecisionActionPayload = {
 export type AppStatePayload = {
   currentUser: AppUser;
   authSettings: AppAuthSettings;
-  checkoutWindowSettings: AppCheckoutWindowSettings;
+  reviewSettings: AppReviewSettings;
   users: AppUser[];
   projects: ReviewProject[];
   imports: ImportBatch[];
@@ -40,7 +40,7 @@ export type AppAuthSettings = {
   registrationEnabled: boolean;
 };
 
-export type AppCheckoutWindowSettings = {
+export type AppReviewSettings = {
   screeningCheckoutWindowMinutes: number;
   extractionCheckoutWindowMinutes: number;
   pdfUploadMaxSizeMb: number;

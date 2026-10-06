@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS auth_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS checkout_window_settings (
+CREATE TABLE IF NOT EXISTS review_settings (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 60,
   extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 120,
@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS checkout_window_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE checkout_window_settings ADD COLUMN IF NOT EXISTS audit_history_limit INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE review_settings ADD COLUMN IF NOT EXISTS audit_history_limit INTEGER NOT NULL DEFAULT 100;
 
-ALTER TABLE checkout_window_settings
+ALTER TABLE review_settings
   ADD COLUMN IF NOT EXISTS pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50;
 
 

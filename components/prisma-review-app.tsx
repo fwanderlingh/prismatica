@@ -82,7 +82,7 @@ import {
   type WorkflowEvent
 } from "@/lib/prismaData";
 import { getProjectAuditEvents } from "@/lib/auditHistory";
-import type { ApiErrorPayload, AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
+import type { ApiErrorPayload, AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
 import {
   getActiveExtractionReports,
@@ -171,7 +171,7 @@ const defaultAuthSettings: AppAuthSettings = {
   registrationEnabled: true,
 };
 
-const defaultCheckoutWindowSettings = {
+const defaultReviewSettings = {
   screeningCheckoutWindowMinutes: 60,
   extractionCheckoutWindowMinutes: 120,
   pdfUploadMaxSizeMb: 25,
@@ -590,13 +590,13 @@ export function PrismaReviewApp() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
   const [authSettingsMessage, setAuthSettingsMessage] = useState("");
-  const [checkoutWindowSettings, setCheckoutWindowSettings] = useState(defaultCheckoutWindowSettings);
-  const [checkoutWindowSettingsMessage, setCheckoutWindowSettingsMessage] = useState("");
-  const [checkoutWindowSettingsForm, setCheckoutWindowSettingsForm] = useState({
-    screeningCheckoutWindowMinutes: defaultCheckoutWindowSettings.screeningCheckoutWindowMinutes,
-    extractionCheckoutWindowMinutes: defaultCheckoutWindowSettings.extractionCheckoutWindowMinutes,
-    auditHistoryLimit: defaultCheckoutWindowSettings.auditHistoryLimit,
-    pdfUploadMaxSizeMb: defaultCheckoutWindowSettings.pdfUploadMaxSizeMb
+  const [reviewSettings, setReviewSettings] = useState(defaultReviewSettings);
+  const [reviewSettingsMessage, setReviewSettingsMessage] = useState("");
+  const [reviewSettingsForm, setReviewSettingsForm] = useState({
+    screeningCheckoutWindowMinutes: defaultReviewSettings.screeningCheckoutWindowMinutes,
+    extractionCheckoutWindowMinutes: defaultReviewSettings.extractionCheckoutWindowMinutes,
+    auditHistoryLimit: defaultReviewSettings.auditHistoryLimit,
+    pdfUploadMaxSizeMb: defaultReviewSettings.pdfUploadMaxSizeMb
   });
   const [captchaChallenge, setCaptchaChallenge] = useState<PublicAuthConfigPayload["captcha"] | null>(null);
   const [projects, setProjects] = useState<ReviewProject[]>(reviewProjects);
@@ -690,7 +690,7 @@ export function PrismaReviewApp() {
   const [isCreatingAdminUser, setIsCreatingAdminUser] = useState(false);
   const [pendingAdminUserAction, setPendingAdminUserAction] = useState<{ userId: string; action: "reset" | "delete" } | null>(null);
   const [isUpdatingRegistrationSetting, setIsUpdatingRegistrationSetting] = useState(false);
-  const [isUpdatingCheckoutWindowSettings, setIsUpdatingCheckoutWindowSettings] = useState(false);
+  const [isUpdatingReviewSettings, setIsUpdatingReviewSettings] = useState(false);
   const [adminCreateUserForm, setAdminCreateUserForm] = useState({
     name: "",
     email: "",
@@ -1502,7 +1502,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowSettings.screeningCheckoutWindowMinutes));
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(reviewSettings.screeningCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1516,7 +1516,7 @@ export function PrismaReviewApp() {
     };
   }, [
     activeView,
-    checkoutWindowSettings.screeningCheckoutWindowMinutes,
+    reviewSettings.screeningCheckoutWindowMinutes,
     currentStudy.id,
     isAuthResolved,
     isAuthenticated,
@@ -1553,7 +1553,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowSettings.screeningCheckoutWindowMinutes));
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(reviewSettings.screeningCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1569,7 +1569,7 @@ export function PrismaReviewApp() {
     activeReport.id,
     activeReport.studyId,
     activeView,
-    checkoutWindowSettings.screeningCheckoutWindowMinutes,
+    reviewSettings.screeningCheckoutWindowMinutes,
     isActiveReportInActiveFullTextQueue,
     isAuthResolved,
     isAuthenticated,
@@ -1613,7 +1613,7 @@ export function PrismaReviewApp() {
     }
 
     acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowSettings.extractionCheckoutWindowMinutes));
+    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(reviewSettings.extractionCheckoutWindowMinutes));
 
     return () => {
       isCancelled = true;
@@ -1630,7 +1630,7 @@ export function PrismaReviewApp() {
     activeExtractionReport?.studyId,
     activeExtractionTemplate?.id,
     activeView,
-    checkoutWindowSettings.extractionCheckoutWindowMinutes,
+    reviewSettings.extractionCheckoutWindowMinutes,
     isActiveExtractionReportInActiveQueue,
     isAuthResolved,
     isAuthenticated,
@@ -1693,17 +1693,17 @@ export function PrismaReviewApp() {
   }, [currentUser.id, currentUser.name, currentUser.organization, currentUser.title, currentUser.websiteTheme]);
 
   useEffect(() => {
-    setCheckoutWindowSettingsForm({
-      screeningCheckoutWindowMinutes: checkoutWindowSettings.screeningCheckoutWindowMinutes,
-      extractionCheckoutWindowMinutes: checkoutWindowSettings.extractionCheckoutWindowMinutes,
-      auditHistoryLimit: checkoutWindowSettings.auditHistoryLimit,
-      pdfUploadMaxSizeMb: checkoutWindowSettings.pdfUploadMaxSizeMb
+    setReviewSettingsForm({
+      screeningCheckoutWindowMinutes: reviewSettings.screeningCheckoutWindowMinutes,
+      extractionCheckoutWindowMinutes: reviewSettings.extractionCheckoutWindowMinutes,
+      auditHistoryLimit: reviewSettings.auditHistoryLimit,
+      pdfUploadMaxSizeMb: reviewSettings.pdfUploadMaxSizeMb
     });
   }, [
-    checkoutWindowSettings.extractionCheckoutWindowMinutes,
-    checkoutWindowSettings.pdfUploadMaxSizeMb,
-    checkoutWindowSettings.auditHistoryLimit,
-    checkoutWindowSettings.screeningCheckoutWindowMinutes
+    reviewSettings.extractionCheckoutWindowMinutes,
+    reviewSettings.pdfUploadMaxSizeMb,
+    reviewSettings.auditHistoryLimit,
+    reviewSettings.screeningCheckoutWindowMinutes
   ]);
 
   useEffect(() => {
@@ -1903,13 +1903,13 @@ export function PrismaReviewApp() {
   function applyAppState(payload: AppStatePayload | AppMutationPayload) {
     setAuthSettings(payload.authSettings ?? defaultAuthSettings);
 
-    const nextCheckoutWindowSettings = payload.checkoutWindowSettings ?? defaultCheckoutWindowSettings;
-    setCheckoutWindowSettings(nextCheckoutWindowSettings);
-    setCheckoutWindowSettingsForm({
-      screeningCheckoutWindowMinutes: nextCheckoutWindowSettings.screeningCheckoutWindowMinutes,
-      extractionCheckoutWindowMinutes: nextCheckoutWindowSettings.extractionCheckoutWindowMinutes,
-      auditHistoryLimit: nextCheckoutWindowSettings.auditHistoryLimit,
-      pdfUploadMaxSizeMb: nextCheckoutWindowSettings.pdfUploadMaxSizeMb
+    const nextReviewSettings = payload.reviewSettings ?? defaultReviewSettings;
+    setReviewSettings(nextReviewSettings);
+    setReviewSettingsForm({
+      screeningCheckoutWindowMinutes: nextReviewSettings.screeningCheckoutWindowMinutes,
+      extractionCheckoutWindowMinutes: nextReviewSettings.extractionCheckoutWindowMinutes,
+      auditHistoryLimit: nextReviewSettings.auditHistoryLimit,
+      pdfUploadMaxSizeMb: nextReviewSettings.pdfUploadMaxSizeMb
     });
     setUsers(payload.users);
     setProjects(payload.projects);
@@ -2935,27 +2935,27 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function updateCheckoutWindowSettings(event: FormSubmitEvent) {
+  async function updateReviewSettings(event: FormSubmitEvent) {
     event.preventDefault();
-    setCheckoutWindowSettingsMessage("");
-    setIsUpdatingCheckoutWindowSettings(true);
+    setReviewSettingsMessage("");
+    setIsUpdatingReviewSettings(true);
     
     try {
-      const payload = await apiRequest<AppMutationPayload>("/api/admin/checkout-window-settings", {
+      const payload = await apiRequest<AppMutationPayload>("/api/admin/review-settings", {
         method: "PATCH",
         body: JSON.stringify({
-          screeningCheckoutWindowMinutes: checkoutWindowSettingsForm.screeningCheckoutWindowMinutes,
-          extractionCheckoutWindowMinutes: checkoutWindowSettingsForm.extractionCheckoutWindowMinutes,
-          auditHistoryLimit: checkoutWindowSettingsForm.auditHistoryLimit,
-          pdfUploadMaxSizeMb: checkoutWindowSettingsForm.pdfUploadMaxSizeMb
+          screeningCheckoutWindowMinutes: reviewSettingsForm.screeningCheckoutWindowMinutes,
+          extractionCheckoutWindowMinutes: reviewSettingsForm.extractionCheckoutWindowMinutes,
+          auditHistoryLimit: reviewSettingsForm.auditHistoryLimit,
+          pdfUploadMaxSizeMb: reviewSettingsForm.pdfUploadMaxSizeMb
         })
       });
       applyAppState(payload);
-      setCheckoutWindowSettingsMessage(payload.message ?? "Global review settings saved.");
+      setReviewSettingsMessage(payload.message ?? "Global review settings saved.");
     } catch (error) {
-      setCheckoutWindowSettingsMessage(getErrorMessage(error));
+      setReviewSettingsMessage(getErrorMessage(error));
     } finally {
-      setIsUpdatingCheckoutWindowSettings(false);
+      setIsUpdatingReviewSettings(false);
     }
   }
 
@@ -3224,9 +3224,9 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const maxPdfSizeBytes = checkoutWindowSettings.pdfUploadMaxSizeMb * 1024 * 1024;
+    const maxPdfSizeBytes = reviewSettings.pdfUploadMaxSizeMb * 1024 * 1024;
     if (file.size > maxPdfSizeBytes) {
-      setFullTextMessage(`PDF file must be ${checkoutWindowSettings.pdfUploadMaxSizeMb} MB or smaller.`);
+      setFullTextMessage(`PDF file must be ${reviewSettings.pdfUploadMaxSizeMb} MB or smaller.`);
       return;
     }
 
@@ -3797,10 +3797,10 @@ export function PrismaReviewApp() {
         currentUser={currentUser}
         adminDirectoryMessage={adminDirectoryMessage}
         authSettings={authSettings}
-        checkoutWindowSettings={checkoutWindowSettings}
-        checkoutWindowSettingsForm={checkoutWindowSettingsForm}
+        reviewSettings={reviewSettings}
+        reviewSettingsForm={reviewSettingsForm}
         authSettingsMessage={authSettingsMessage}
-        checkoutWindowSettingsMessage={checkoutWindowSettingsMessage}
+        reviewSettingsMessage={reviewSettingsMessage}
         adminResetUserPassword={adminResetUserPassword}
         adminDeleteUser={adminDeleteUser}
         createUserForm={adminCreateUserForm}
@@ -3812,30 +3812,30 @@ export function PrismaReviewApp() {
         isCreatingUser={isCreatingAdminUser}
         pendingUserAction={pendingAdminUserAction}
         isUpdatingRegistrationSetting={isUpdatingRegistrationSetting}
-        isUpdatingCheckoutWindowSettings={isUpdatingCheckoutWindowSettings}
+        isUpdatingReviewSettings={isUpdatingReviewSettings}
         updateRegistrationSetting={updateRegistrationSetting}
         onScreeningCheckoutWindowChange={(value) =>
-          setCheckoutWindowSettingsForm((previous) => ({
+          setReviewSettingsForm((previous) => ({
             ...previous,
             screeningCheckoutWindowMinutes: value
           }))
         }
         onExtractionCheckoutWindowChange={(value) =>
-          setCheckoutWindowSettingsForm((previous) => ({
+          setReviewSettingsForm((previous) => ({
             ...previous,
             extractionCheckoutWindowMinutes: value
           }))
         }
         onAuditHistoryLimitChange={(value) =>
-          setCheckoutWindowSettingsForm((previous) => ({ ...previous, auditHistoryLimit: value }))
+          setReviewSettingsForm((previous) => ({ ...previous, auditHistoryLimit: value }))
         }
         onPdfUploadMaxSizeMbChange={(value) =>
-          setCheckoutWindowSettingsForm((previous) => ({
+          setReviewSettingsForm((previous) => ({
             ...previous,
             pdfUploadMaxSizeMb: value
           }))
         }
-        updateCheckoutWindowSettings={updateCheckoutWindowSettings}
+        updateReviewSettings={updateReviewSettings}
       />
     );
   }

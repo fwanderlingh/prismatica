@@ -51,17 +51,17 @@ try {
   for (const record of [pair.recordA, pair.recordB]) record.projectId = project.id;
   const event = (index, entity = project.id) => ({ id: `old-${index}`, entity, actor: admin.name, action: 'Existing event', time: new Date(Date.UTC(2020, 0, 1) + index * 1000).toISOString() });
   function fixture(limit, count = 5) {
-    return { version: 1, users: [admin, reviewer], projects: [project], studies: [pair.recordA, pair.recordB], imports: [], reports: [], decisions: [], extractionTemplates: [], extractionResponses: [], extractionConsensus: [], screeningCheckouts: [], dedupCandidates: [structuredClone(pair)], checkoutWindowSettings: limit === undefined ? {} : { auditHistoryLimit: limit }, events: Array.from({ length: count }, (_, i) => event(i)).reverse() };
+    return { version: 1, users: [admin, reviewer], projects: [project], studies: [pair.recordA, pair.recordB], imports: [], reports: [], decisions: [], extractionTemplates: [], extractionResponses: [], extractionConsensus: [], screeningCheckouts: [], dedupCandidates: [structuredClone(pair)], reviewSettings: limit === undefined ? {} : { auditHistoryLimit: limit }, events: Array.from({ length: count }, (_, i) => event(i)).reverse() };
   }
   const writeFixture = state => fs.writeFileSync(process.env.PRISMATICA_DATA_FILE, JSON.stringify(state));
   writeFixture(fixture(undefined, 130));
   let payload = store.getAppStateForUser(admin.id);
-  assert.equal(payload.checkoutWindowSettings.auditHistoryLimit, 100);
+  assert.equal(payload.reviewSettings.auditHistoryLimit, 100);
   assert.equal(payload.events.length, 100);
   assert.equal(payload.events[0].id, 'old-129');
-  assert.throws(() => store.updateCheckoutWindowSettingsForUser(reviewer.id, { auditHistoryLimit: 200 }), /admin/i);
-  store.updateCheckoutWindowSettingsForUser(admin.id, { auditHistoryLimit: 7 });
-  assert.equal(store.getAppStateForUser(admin.id).checkoutWindowSettings.auditHistoryLimit, 7);
+  assert.throws(() => store.updateReviewSettingsForUser(reviewer.id, { auditHistoryLimit: 200 }), /admin/i);
+  store.updateReviewSettingsForUser(admin.id, { auditHistoryLimit: 7 });
+  assert.equal(store.getAppStateForUser(admin.id).reviewSettings.auditHistoryLimit, 7);
   assert.ok(JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE)).events.length <= 7);
 
   writeFixture(fixture(150, 130));

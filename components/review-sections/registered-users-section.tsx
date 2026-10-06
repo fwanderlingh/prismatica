@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, Check, Clock, ShieldCheck, UserPlus, Users } from "lucide-react";
-import type { AppAuthSettings, AppCheckoutWindowSettings } from "@/lib/apiTypes";
+import type { AppAuthSettings, AppReviewSettings } from "@/lib/apiTypes";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 
@@ -15,7 +15,7 @@ type AdminCreateUserForm = {
   title: string;
 };
 
-export type CheckoutWindowSettingsForm = {
+export type ReviewSettingsForm = {
   screeningCheckoutWindowMinutes: number;
   extractionCheckoutWindowMinutes: number;
   pdfUploadMaxSizeMb: number;
@@ -28,9 +28,9 @@ type RegisteredUsersSectionProps = {
   adminDirectoryMessage: string;
   authSettings: AppAuthSettings;
   authSettingsMessage: string;
-  checkoutWindowSettings: AppCheckoutWindowSettings;
-  checkoutWindowSettingsForm: CheckoutWindowSettingsForm;
-  checkoutWindowSettingsMessage: string;
+  reviewSettings: AppReviewSettings;
+  reviewSettingsForm: ReviewSettingsForm;
+  reviewSettingsMessage: string;
   adminResetUserPassword: (user: AppUser) => void;
   adminDeleteUser: (user: AppUser) => void;
   createUserForm: AdminCreateUserForm;
@@ -42,13 +42,13 @@ type RegisteredUsersSectionProps = {
   isCreatingUser: boolean;
   pendingUserAction: { userId: string; action: "reset" | "delete" } | null;
   isUpdatingRegistrationSetting: boolean;
-  isUpdatingCheckoutWindowSettings: boolean;
+  isUpdatingReviewSettings: boolean;
   updateRegistrationSetting: (enabled: boolean) => void;
   onScreeningCheckoutWindowChange: (value: number) => void;
   onExtractionCheckoutWindowChange: (value: number) => void;
   onPdfUploadMaxSizeMbChange: (value: number) => void;
   onAuditHistoryLimitChange: (value: number) => void;
-  updateCheckoutWindowSettings: (event: FormSubmitEvent) => void;
+  updateReviewSettings: (event: FormSubmitEvent) => void;
 };
 
 const adminUsersPageSize = 10;
@@ -58,10 +58,10 @@ export function RegisteredUsersSection({
   currentUser,
   adminDirectoryMessage,
   authSettings,
-  checkoutWindowSettings,
-  checkoutWindowSettingsForm,
+  reviewSettings,
+  reviewSettingsForm,
   authSettingsMessage,
-  checkoutWindowSettingsMessage,
+  reviewSettingsMessage,
   adminResetUserPassword,
   adminDeleteUser,
   createUserForm,
@@ -73,17 +73,17 @@ export function RegisteredUsersSection({
   isCreatingUser,
   pendingUserAction,
   isUpdatingRegistrationSetting,
-  isUpdatingCheckoutWindowSettings,
+  isUpdatingReviewSettings,
   updateRegistrationSetting,
   onScreeningCheckoutWindowChange,
   onExtractionCheckoutWindowChange,
   onPdfUploadMaxSizeMbChange,
   onAuditHistoryLimitChange,
-  updateCheckoutWindowSettings
+  updateReviewSettings
 }: RegisteredUsersSectionProps) {
   const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
   const authSettingsMessageIsSuccess = /saved|disabled|enabled/i.test(authSettingsMessage);
-  const checkoutWindowSettingsMessageIsSuccess = /saved/i.test(checkoutWindowSettingsMessage);
+  const reviewSettingsMessageIsSuccess = /saved/i.test(reviewSettingsMessage);
   const userPageCount = Math.max(1, Math.ceil(users.length / adminUsersPageSize));
   const [userPage, setUserPage] = useState(1);
   const currentUserPage = Math.min(userPage, userPageCount);
@@ -230,15 +230,15 @@ export function RegisteredUsersSection({
         <div className="panel">
           <SectionTitle icon={Clock} title="Review Settings" action="Global" />
           <p className="subtle">Set review checkout windows, the maximum PDF upload size, and audit history retention.</p>
-          <form className="inviteForm" onSubmit={updateCheckoutWindowSettings}>
+          <form className="inviteForm" onSubmit={updateReviewSettings}>
             <label>
               <span>Screening/full-text minutes</span>
               <input
                 type="number"
                 min={1}
                 max={600}
-                value={checkoutWindowSettingsForm.screeningCheckoutWindowMinutes}
-                disabled={isUpdatingCheckoutWindowSettings}
+                value={reviewSettingsForm.screeningCheckoutWindowMinutes}
+                disabled={isUpdatingReviewSettings}
                 onChange={(event) => onScreeningCheckoutWindowChange(Number(event.target.value))}
               />
             </label>
@@ -248,8 +248,8 @@ export function RegisteredUsersSection({
                 type="number"
                 min={1}
                 max={600}
-                value={checkoutWindowSettingsForm.extractionCheckoutWindowMinutes}
-                disabled={isUpdatingCheckoutWindowSettings}
+                value={reviewSettingsForm.extractionCheckoutWindowMinutes}
+                disabled={isUpdatingReviewSettings}
                 onChange={(event) => onExtractionCheckoutWindowChange(Number(event.target.value))}
               />
             </label>
@@ -259,8 +259,8 @@ export function RegisteredUsersSection({
                 type="number"
                 min={1}
                 max={100}
-                value={checkoutWindowSettingsForm.pdfUploadMaxSizeMb}
-                disabled={isUpdatingCheckoutWindowSettings}
+                value={reviewSettingsForm.pdfUploadMaxSizeMb}
+                disabled={isUpdatingReviewSettings}
                 onChange={(event) => onPdfUploadMaxSizeMbChange(Number(event.target.value))}
               />
             </label>
@@ -272,14 +272,14 @@ export function RegisteredUsersSection({
                 max={10000}
                 step={1}
                 required
-                value={checkoutWindowSettingsForm.auditHistoryLimit}
-                disabled={isUpdatingCheckoutWindowSettings}
+                value={reviewSettingsForm.auditHistoryLimit}
+                disabled={isUpdatingReviewSettings}
                 onChange={(event) => onAuditHistoryLimitChange(Number(event.target.value))}
               />
               <small>Across all reviews. Default: 100. Lowering this limit removes older events.</small>
             </label>
-            <button className="ghostButton" type="submit" disabled={isUpdatingCheckoutWindowSettings}>
-              {isUpdatingCheckoutWindowSettings ? (
+            <button className="ghostButton" type="submit" disabled={isUpdatingReviewSettings}>
+              {isUpdatingReviewSettings ? (
                 <>
                   <span className="inlineSpinner" aria-hidden="true" />
                   Saving settings...
@@ -293,15 +293,15 @@ export function RegisteredUsersSection({
             </button>
           </form>
           <div className="stateRows">
-            <StatusRow label="Screening/full text" value={`${checkoutWindowSettings.screeningCheckoutWindowMinutes} min`} tone="info" />
-            <StatusRow label="Extraction" value={`${checkoutWindowSettings.extractionCheckoutWindowMinutes} min`} tone="info" />
-            <StatusRow label="Audit history" value={`${checkoutWindowSettings.auditHistoryLimit} events globally`} tone="info" />
-            <StatusRow label="PDF upload limit" value={`${checkoutWindowSettings.pdfUploadMaxSizeMb} MB`} tone="info" />
+            <StatusRow label="Screening/full text" value={`${reviewSettings.screeningCheckoutWindowMinutes} min`} tone="info" />
+            <StatusRow label="Extraction" value={`${reviewSettings.extractionCheckoutWindowMinutes} min`} tone="info" />
+            <StatusRow label="Audit history" value={`${reviewSettings.auditHistoryLimit} events globally`} tone="info" />
+            <StatusRow label="PDF upload limit" value={`${reviewSettings.pdfUploadMaxSizeMb} MB`} tone="info" />
           </div>
-          {checkoutWindowSettingsMessage ? (
-            <div className={checkoutWindowSettingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-              {checkoutWindowSettingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{checkoutWindowSettingsMessage}</span>
+          {reviewSettingsMessage ? (
+            <div className={reviewSettingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+              {reviewSettingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+              <span>{reviewSettingsMessage}</span>
             </div>
           ) : null}
         </div>

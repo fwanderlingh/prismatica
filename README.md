@@ -433,3 +433,6 @@ in the project audit. Previously missing events cannot be recreated by this fix.
 
 Run `npm run check:audit` for isolated regression checks using temporary data and
 a simulated PostgreSQL client; it does not start a server or contact a database.
+
+Global review preferences are stored in `review_settings` and exposed through
+`/api/admin/review-settings` using the `reviewSettings` application-state field.

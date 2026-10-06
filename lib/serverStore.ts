@@ -3,7 +3,7 @@ import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import { normalizeAuditHistoryLimit } from "./auditHistory";
-import type { AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
+import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
 import { randomizeReviewQueueItems } from "./workflowSelectors";
 import {
@@ -36,7 +36,7 @@ type StoredUser = AppUser & {
 type PersistedState = {
   version: 1;
   authSettings: AppAuthSettings;
-  checkoutWindowSettings: AppCheckoutWindowSettings;
+  reviewSettings: AppReviewSettings;
   users: StoredUser[];
   projects: ReviewProject[];
   imports: ImportBatch[];
@@ -189,7 +189,7 @@ function defaultAuthSettings(): AppAuthSettings {
   };
 }
 
-function defaultCheckoutWindowSettings(): AppCheckoutWindowSettings {
+function defaultReviewSettings(): AppReviewSettings {
   return {
     screeningCheckoutWindowMinutes: defaultScreeningCheckoutWindowMinutes,
     extractionCheckoutWindowMinutes: defaultExtractionCheckoutWindowMinutes,
@@ -206,8 +206,8 @@ function normalizeAuthSettings(settings: Partial<AppAuthSettings> | undefined): 
   };
 }
 
-function normalizeCheckoutWindowSettings(settings: Partial<AppCheckoutWindowSettings> | undefined): AppCheckoutWindowSettings {
-  const defaults = defaultCheckoutWindowSettings();
+function normalizeReviewSettings(settings: Partial<AppReviewSettings> | undefined): AppReviewSettings {
+  const defaults = defaultReviewSettings();
   return {
     ...defaults,
     screeningCheckoutWindowMinutes: clampCheckoutWindowMinutes(
@@ -239,7 +239,7 @@ function clampPdfUploadMaxSizeMb(value: unknown, fallback: number) {
   return Math.max(1, Math.min(500, Math.round(numericValue)));
 }
 
-function pdfUploadMaxSizeBytes(settings: AppCheckoutWindowSettings) {
+function pdfUploadMaxSizeBytes(settings: AppReviewSettings) {
   return settings.pdfUploadMaxSizeMb * 1024 * 1024;
 }
 
@@ -270,7 +270,7 @@ function createSeedState(): PersistedState {
   return {
     version: 1,
     authSettings: defaultAuthSettings(),
-    checkoutWindowSettings: defaultCheckoutWindowSettings(),
+    reviewSettings: defaultReviewSettings(),
     users: [],
     projects: [],
     imports: [],
@@ -454,7 +454,7 @@ function getNextImportItemId(state: PersistedState, projectId: string) {
 function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = true): PersistedState {
   const now = new Date().toISOString();
   const authSettings = normalizeAuthSettings(state.authSettings);
-  const checkoutWindowSettings = normalizeCheckoutWindowSettings(state.checkoutWindowSettings);
+  const reviewSettings = normalizeReviewSettings(state.reviewSettings);
   const persistedUsers = Array.isArray(state.users) ? state.users.filter((user) => !demoUserIds.has(user.id)) : [];
   const users = ensureAdminUser(
     persistedUsers.map((user) => ({
@@ -608,7 +608,7 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
   const normalizedState: PersistedState = {
     version: 1,
     authSettings,
-    checkoutWindowSettings,
+    reviewSettings,
     users: users.map((user) => {
       if (user.passwordHash && user.passwordSalt) {
         return user as StoredUser;
@@ -650,7 +650,7 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
     events: Array.isArray(state.events)
       ? state.events.filter((event) => projectIds.has(event.entity) || studyIds.has(event.entity) || reportIds.has(event.entity) || dedupCandidateIds.has(event.entity))
           .sort((left, right) => Date.parse(right.time) - Date.parse(left.time))
-          .slice(0, checkoutWindowSettings.auditHistoryLimit)
+          .slice(0, reviewSettings.auditHistoryLimit)
       : [],
     dedupCandidates: Array.isArray(state.dedupCandidates)
       ? state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)))
@@ -964,7 +964,7 @@ function getExtractionCheckoutCapacity(
   return Math.max(project.extractionRequiredVotes - submittedResponses.length, 0);
 }
 
-function getCheckoutTtlMs(stage: ScreeningCheckout["stage"], settings: AppCheckoutWindowSettings) {
+function getCheckoutTtlMs(stage: ScreeningCheckout["stage"], settings: AppReviewSettings) {
   const minutes = stage === "extraction" ? settings.extractionCheckoutWindowMinutes : settings.screeningCheckoutWindowMinutes;
   return clampCheckoutWindowMinutes(minutes, stage === "extraction" ? defaultExtractionCheckoutWindowMinutes : defaultScreeningCheckoutWindowMinutes) * 60 * 1000;
 }
@@ -1053,7 +1053,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
   return {
     currentUser: publicUser(currentUser),
     authSettings: state.authSettings,
-    checkoutWindowSettings: state.checkoutWindowSettings,
+    reviewSettings: state.reviewSettings,
     users: state.users.filter((user) => currentUser.isAdmin || !user.isAdmin).map(publicUser),
     projects,
     imports: state.imports.filter((batch) => projectIds.has(batch.projectId)),
@@ -1105,7 +1105,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
           visibleDedupCandidateIds.has(event.entity) ||
           (projectIds.has("demo-review") && !allProjectIds.has(event.entity))
       )
-      .slice(0, state.checkoutWindowSettings.auditHistoryLimit),
+      .slice(0, state.reviewSettings.auditHistoryLimit),
     dedupCandidates: visibleDedupCandidates
   };
 }
@@ -1271,27 +1271,27 @@ export function updateAuthSettingsForUser(adminUserIdInput: string, settings: Pa
   };
 }
 
-export function updateCheckoutWindowSettingsForUser(
+export function updateReviewSettingsForUser(
   adminUserIdInput: string,
-  settings: Partial<AppCheckoutWindowSettings>
+  settings: Partial<AppReviewSettings>
 ): AppMutationPayload {
   const state = readState();
   const adminUser = requireAdminUser(state, adminUserIdInput);
 
-  const previousSettings = normalizeCheckoutWindowSettings(state.checkoutWindowSettings);
+  const previousSettings = normalizeReviewSettings(state.reviewSettings);
 
-  state.checkoutWindowSettings = normalizeCheckoutWindowSettings({
+  state.reviewSettings = normalizeReviewSettings({
     ...previousSettings,
     ...settings
   });
 
-  const checkoutWindowChanged =
-    previousSettings.screeningCheckoutWindowMinutes !== state.checkoutWindowSettings.screeningCheckoutWindowMinutes ||
-    previousSettings.extractionCheckoutWindowMinutes !== state.checkoutWindowSettings.extractionCheckoutWindowMinutes ||
-    previousSettings.pdfUploadMaxSizeMb !== state.checkoutWindowSettings.pdfUploadMaxSizeMb ||
-    previousSettings.auditHistoryLimit !== state.checkoutWindowSettings.auditHistoryLimit;
+  const reviewSettingsChanged =
+    previousSettings.screeningCheckoutWindowMinutes !== state.reviewSettings.screeningCheckoutWindowMinutes ||
+    previousSettings.extractionCheckoutWindowMinutes !== state.reviewSettings.extractionCheckoutWindowMinutes ||
+    previousSettings.pdfUploadMaxSizeMb !== state.reviewSettings.pdfUploadMaxSizeMb ||
+    previousSettings.auditHistoryLimit !== state.reviewSettings.auditHistoryLimit;
 
-  const eventMessage = checkoutWindowChanged ? "Updated global review settings" : "";
+  const eventMessage = reviewSettingsChanged ? "Updated global review settings" : "";
 
   if (eventMessage) {
     appendEvent(state, adminUser.name, eventMessage, adminUser.id);
@@ -1299,7 +1299,7 @@ export function updateCheckoutWindowSettingsForUser(
   writeState(state);
   return {
     ...buildPayload(state, adminUser.id),
-    message: checkoutWindowChanged ? "Global review settings saved." : ""
+    message: reviewSettingsChanged ? "Global review settings saved." : ""
   };
 }
 
@@ -1999,7 +1999,7 @@ export function saveExtractionResponseForUser(userId: string, projectId: string,
         templateId: template.id,
         userId,
         checkedOutAt: new Date(checkoutTime).toISOString(),
-        expiresAt: new Date(checkoutTime + getCheckoutTtlMs("extraction", state.checkoutWindowSettings)).toISOString()
+        expiresAt: new Date(checkoutTime + getCheckoutTtlMs("extraction", state.reviewSettings)).toISOString()
       });
     }
   }
@@ -2640,7 +2640,7 @@ function acquireTitleAbstractCheckoutForUser(state: PersistedState, project: Rev
     studyId,
     userId,
     checkedOutAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.checkoutWindowSettings)).toISOString()
+    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.reviewSettings)).toISOString()
   });
   return true;
 }
@@ -2766,7 +2766,7 @@ export function updateScreeningCheckoutForUser(
       templateId: template.id,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.checkoutWindowSettings)).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.reviewSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2839,7 +2839,7 @@ export function updateScreeningCheckoutForUser(
       reportId,
       userId,
       checkedOutAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.checkoutWindowSettings)).toISOString()
+      expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.reviewSettings)).toISOString()
     });
     writeState(state);
     return buildPayload(state, userId);
@@ -2916,7 +2916,7 @@ export function updateScreeningCheckoutForUser(
     studyId,
     userId,
     checkedOutAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.checkoutWindowSettings)).toISOString()
+    expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.reviewSettings)).toISOString()
   });
   writeState(state);
   return buildPayload(state, userId);
@@ -3102,7 +3102,7 @@ export function updateReportForUser(
         reportId,
         userId,
         checkedOutAt: new Date(now).toISOString(),
-        expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.checkoutWindowSettings)).toISOString()
+        expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.reviewSettings)).toISOString()
       });
     }
   }
@@ -3182,7 +3182,7 @@ export async function uploadReportPdfForUser(
     throw new ApiError("Upload a PDF file.");
   }
 
-  assertPdfInputWithinSizeLimit(input.contentBase64 ?? "", state.checkoutWindowSettings, input.size);
+  assertPdfInputWithinSizeLimit(input.contentBase64 ?? "", state.reviewSettings, input.size);
   const buffer = Buffer.from(input.contentBase64 ?? "", "base64");
   await storeReportPdfBuffer(state, projectId, reportId, {
     buffer,
@@ -3965,7 +3965,7 @@ async function retrievePdfForReportFromUrl(
   }
 
   try {
-    const remotePdf = await fetchRemotePdf(pdfUrl, report.title, state.checkoutWindowSettings);
+    const remotePdf = await fetchRemotePdf(pdfUrl, report.title, state.reviewSettings);
     await storeReportPdfBuffer(state, projectId, reportId, {
       buffer: remotePdf.buffer,
       fileName: remotePdf.fileName,
@@ -4008,7 +4008,7 @@ async function storeReportPdfBuffer(
 ) {
   const fileName = sanitizePdfFileName(input.fileName);
   const mimeType = input.mimeType || "application/pdf";
-  validatePdfBuffer(input.buffer, state.checkoutWindowSettings, input.declaredSize);
+  validatePdfBuffer(input.buffer, state.reviewSettings, input.declaredSize);
   const checksum = crypto.createHash("sha256").update(input.buffer).digest("hex");
   const storagePath = pdfStorage.buildStoragePath({ projectId, reportId, checksum, fileName });
   await pdfStorage.writePdf(storagePath, input.buffer, { checksum, fileName, projectId, reportId });
@@ -4486,7 +4486,7 @@ function appendEvent(state: PersistedState, actor: string, action: string, entit
     entity,
     time: new Date().toISOString()
   };
-  state.events = [nextEvent, ...state.events].slice(0, state.checkoutWindowSettings.auditHistoryLimit);
+  state.events = [nextEvent, ...state.events].slice(0, state.reviewSettings.auditHistoryLimit);
 }
 
 function requireAdminUser(state: PersistedState, userId: string) {
@@ -4683,7 +4683,7 @@ function formatStudyCitation(study: Study) {
   return `${authors}. ${study.journal}. ${year}.`;
 }
 
-function validatePdfBuffer(buffer: Buffer, settings: AppCheckoutWindowSettings, declaredSize?: number) {
+function validatePdfBuffer(buffer: Buffer, settings: AppReviewSettings, declaredSize?: number) {
   const maxPdfSize = pdfUploadMaxSizeBytes(settings);
   if (buffer.length === 0) {
     throw new ApiError("PDF file is empty.");
@@ -4699,7 +4699,7 @@ function validatePdfBuffer(buffer: Buffer, settings: AppCheckoutWindowSettings, 
   }
 }
 
-function assertPdfInputWithinSizeLimit(contentBase64: string, settings: AppCheckoutWindowSettings, declaredSize?: number) {
+function assertPdfInputWithinSizeLimit(contentBase64: string, settings: AppReviewSettings, declaredSize?: number) {
   const maxPdfSize = pdfUploadMaxSizeBytes(settings);
   if (typeof declaredSize === "number" && declaredSize > maxPdfSize) {
     throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
@@ -4711,7 +4711,7 @@ function assertPdfInputWithinSizeLimit(contentBase64: string, settings: AppCheck
   }
 }
 
-async function readResponseBufferWithinLimit(response: Response, settings: AppCheckoutWindowSettings) {
+async function readResponseBufferWithinLimit(response: Response, settings: AppReviewSettings) {
   const maxPdfSize = pdfUploadMaxSizeBytes(settings);
   if (!response.body) {
     const buffer = Buffer.from(await response.arrayBuffer());
@@ -4747,7 +4747,7 @@ async function readResponseBufferWithinLimit(response: Response, settings: AppCh
   return Buffer.concat(chunks, totalBytes);
 }
 
-async function fetchRemotePdf(pdfUrl: string, fallbackTitle: string, settings: AppCheckoutWindowSettings) {
+async function fetchRemotePdf(pdfUrl: string, fallbackTitle: string, settings: AppReviewSettings) {
   const url = normalizeRemoteUrl(pdfUrl);
   if (!url) {
     throw new ApiError("PDF link must be an HTTP or HTTPS URL.");
