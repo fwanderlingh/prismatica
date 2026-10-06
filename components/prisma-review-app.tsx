@@ -81,6 +81,7 @@ import {
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
+import { getProjectAuditEvents } from "@/lib/auditHistory";
 import type { ApiErrorPayload, AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
 import {
@@ -173,7 +174,8 @@ const defaultAuthSettings: AppAuthSettings = {
 const defaultCheckoutWindowSettings = {
   screeningCheckoutWindowMinutes: 60,
   extractionCheckoutWindowMinutes: 120,
-  pdfUploadMaxSizeMb: 25
+  pdfUploadMaxSizeMb: 25,
+  auditHistoryLimit: 100
 };
 
 const globalNavItems: NavItem[] = [
@@ -593,6 +595,7 @@ export function PrismaReviewApp() {
   const [checkoutWindowSettingsForm, setCheckoutWindowSettingsForm] = useState({
     screeningCheckoutWindowMinutes: defaultCheckoutWindowSettings.screeningCheckoutWindowMinutes,
     extractionCheckoutWindowMinutes: defaultCheckoutWindowSettings.extractionCheckoutWindowMinutes,
+    auditHistoryLimit: defaultCheckoutWindowSettings.auditHistoryLimit,
     pdfUploadMaxSizeMb: defaultCheckoutWindowSettings.pdfUploadMaxSizeMb
   });
   const [captchaChallenge, setCaptchaChallenge] = useState<PublicAuthConfigPayload["captcha"] | null>(null);
@@ -895,11 +898,9 @@ export function PrismaReviewApp() {
     [currentUser.id, decisions, projectScreeningStudies, selectedProject]
   );
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
-  const projectStudyIds = new Set(projectScreeningStudies.map((study) => study.id));
-  const projectReportIds = new Set(projectReportQueue.map((report) => report.id));
   const projectEvents = hasProjectSeedData
     ? events.filter((event) => !projectIdSet.has(event.entity) || event.entity === selectedProject.id)
-    : events.filter((event) => event.entity === selectedProject.id || projectStudyIds.has(event.entity) || projectReportIds.has(event.entity));
+    : getProjectAuditEvents(events, selectedProject.id, projectScreeningStudies, projectReportQueue, projectDedupCandidates);
   const latestProjectEvents = projectEvents.slice(0, 5);
   const auditPageCount = Math.max(1, Math.ceil(projectEvents.length / AUDIT_PAGE_SIZE));
   const currentAuditPage = Math.min(auditPage, auditPageCount);
@@ -1695,11 +1696,13 @@ export function PrismaReviewApp() {
     setCheckoutWindowSettingsForm({
       screeningCheckoutWindowMinutes: checkoutWindowSettings.screeningCheckoutWindowMinutes,
       extractionCheckoutWindowMinutes: checkoutWindowSettings.extractionCheckoutWindowMinutes,
+      auditHistoryLimit: checkoutWindowSettings.auditHistoryLimit,
       pdfUploadMaxSizeMb: checkoutWindowSettings.pdfUploadMaxSizeMb
     });
   }, [
     checkoutWindowSettings.extractionCheckoutWindowMinutes,
     checkoutWindowSettings.pdfUploadMaxSizeMb,
+    checkoutWindowSettings.auditHistoryLimit,
     checkoutWindowSettings.screeningCheckoutWindowMinutes
   ]);
 
@@ -1905,6 +1908,7 @@ export function PrismaReviewApp() {
     setCheckoutWindowSettingsForm({
       screeningCheckoutWindowMinutes: nextCheckoutWindowSettings.screeningCheckoutWindowMinutes,
       extractionCheckoutWindowMinutes: nextCheckoutWindowSettings.extractionCheckoutWindowMinutes,
+      auditHistoryLimit: nextCheckoutWindowSettings.auditHistoryLimit,
       pdfUploadMaxSizeMb: nextCheckoutWindowSettings.pdfUploadMaxSizeMb
     });
     setUsers(payload.users);
@@ -2942,6 +2946,7 @@ export function PrismaReviewApp() {
         body: JSON.stringify({
           screeningCheckoutWindowMinutes: checkoutWindowSettingsForm.screeningCheckoutWindowMinutes,
           extractionCheckoutWindowMinutes: checkoutWindowSettingsForm.extractionCheckoutWindowMinutes,
+          auditHistoryLimit: checkoutWindowSettingsForm.auditHistoryLimit,
           pdfUploadMaxSizeMb: checkoutWindowSettingsForm.pdfUploadMaxSizeMb
         })
       });
@@ -3349,7 +3354,7 @@ export function PrismaReviewApp() {
         decisionTone={decisionTone}
         formatDecision={formatDecision}
         formatAuditTime={formatAuditTime}
-        formatAuditEntityLabel={formatAuditEntityLabel}
+        formatAuditEntityLabel={(event, project, studies, reports) => formatAuditEntityLabel(event, project, studies, reports, projectDedupCandidates)}
         openConflict={openConflict}
         onOpenSettings={() => navigateToProjectView("settings")}
         onOpenAudit={() => navigateToProjectView("audit")}
@@ -3668,7 +3673,7 @@ export function PrismaReviewApp() {
         projectScreeningStudies={projectScreeningStudies}
         projectReportQueue={projectReportQueue}
         formatAuditTime={formatAuditTime}
-        formatAuditEntityLabel={formatAuditEntityLabel}
+        formatAuditEntityLabel={(event, project, studies, reports) => formatAuditEntityLabel(event, project, studies, reports, projectDedupCandidates)}
         onOpenOverview={() => setActiveView("projectDashboard")}
         onPreviousPage={() => setAuditPage((page) => Math.max(page - 1, 1))}
         onNextPage={() => setAuditPage((page) => Math.min(page + 1, auditPageCount))}
@@ -3820,6 +3825,9 @@ export function PrismaReviewApp() {
             ...previous,
             extractionCheckoutWindowMinutes: value
           }))
+        }
+        onAuditHistoryLimitChange={(value) =>
+          setCheckoutWindowSettingsForm((previous) => ({ ...previous, auditHistoryLimit: value }))
         }
         onPdfUploadMaxSizeMbChange={(value) =>
           setCheckoutWindowSettingsForm((previous) => ({
@@ -4246,8 +4254,14 @@ function formatAuditEntityLabel(
   event: WorkflowEvent,
   project: ReviewProject,
   studies: Study[],
-  reports: Report[]
+  reports: Report[],
+  candidates: DedupCandidate[] = []
 ) {
+  const pair = candidates.find((candidate) => candidate.id === event.entity);
+  if (pair) {
+    return `Article #${pair.recordA.importItemId ?? pair.recordA.id} ↔ Article #${pair.recordB.importItemId ?? pair.recordB.id}`;
+  }
+
   const study = studies.find((candidate) => candidate.id === event.entity);
   if (study) {
     return study.title;

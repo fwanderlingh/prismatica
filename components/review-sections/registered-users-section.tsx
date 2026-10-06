@@ -19,6 +19,7 @@ export type CheckoutWindowSettingsForm = {
   screeningCheckoutWindowMinutes: number;
   extractionCheckoutWindowMinutes: number;
   pdfUploadMaxSizeMb: number;
+  auditHistoryLimit: number;
 };
 
 type RegisteredUsersSectionProps = {
@@ -46,6 +47,7 @@ type RegisteredUsersSectionProps = {
   onScreeningCheckoutWindowChange: (value: number) => void;
   onExtractionCheckoutWindowChange: (value: number) => void;
   onPdfUploadMaxSizeMbChange: (value: number) => void;
+  onAuditHistoryLimitChange: (value: number) => void;
   updateCheckoutWindowSettings: (event: FormSubmitEvent) => void;
 };
 
@@ -76,6 +78,7 @@ export function RegisteredUsersSection({
   onScreeningCheckoutWindowChange,
   onExtractionCheckoutWindowChange,
   onPdfUploadMaxSizeMbChange,
+  onAuditHistoryLimitChange,
   updateCheckoutWindowSettings
 }: RegisteredUsersSectionProps) {
   const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
@@ -226,7 +229,7 @@ export function RegisteredUsersSection({
 
         <div className="panel">
           <SectionTitle icon={Clock} title="Review Settings" action="Global" />
-          <p className="subtle">Set review checkout windows and the maximum PDF upload size.</p>
+          <p className="subtle">Set review checkout windows, the maximum PDF upload size, and audit history retention.</p>
           <form className="inviteForm" onSubmit={updateCheckoutWindowSettings}>
             <label>
               <span>Screening/full-text minutes</span>
@@ -261,6 +264,20 @@ export function RegisteredUsersSection({
                 onChange={(event) => onPdfUploadMaxSizeMbChange(Number(event.target.value))}
               />
             </label>
+            <label>
+              <span>Audit history limit (events)</span>
+              <input
+                type="number"
+                min={1}
+                max={10000}
+                step={1}
+                required
+                value={checkoutWindowSettingsForm.auditHistoryLimit}
+                disabled={isUpdatingCheckoutWindowSettings}
+                onChange={(event) => onAuditHistoryLimitChange(Number(event.target.value))}
+              />
+              <small>Across all reviews. Default: 100. Lowering this limit removes older events.</small>
+            </label>
             <button className="ghostButton" type="submit" disabled={isUpdatingCheckoutWindowSettings}>
               {isUpdatingCheckoutWindowSettings ? (
                 <>
@@ -278,6 +295,7 @@ export function RegisteredUsersSection({
           <div className="stateRows">
             <StatusRow label="Screening/full text" value={`${checkoutWindowSettings.screeningCheckoutWindowMinutes} min`} tone="info" />
             <StatusRow label="Extraction" value={`${checkoutWindowSettings.extractionCheckoutWindowMinutes} min`} tone="info" />
+            <StatusRow label="Audit history" value={`${checkoutWindowSettings.auditHistoryLimit} events globally`} tone="info" />
             <StatusRow label="PDF upload limit" value={`${checkoutWindowSettings.pdfUploadMaxSizeMb} MB`} tone="info" />
           </div>
           {checkoutWindowSettingsMessage ? (

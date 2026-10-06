@@ -7,6 +7,9 @@ export async function PATCH(request: Request) {
     const adminUserId = await requireSessionUserId();
     const body = await readJsonBody(request);
     const settings = {
+      ...(Object.prototype.hasOwnProperty.call(body, "auditHistoryLimit")
+        ? { auditHistoryLimit: Number(body.auditHistoryLimit) }
+        : {}),
       ...(Object.prototype.hasOwnProperty.call(body, "screeningCheckoutWindowMinutes")
         ? { screeningCheckoutWindowMinutes: Number(body.screeningCheckoutWindowMinutes) }
         : {}),

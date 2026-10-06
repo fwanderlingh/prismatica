@@ -2401,57 +2401,19 @@ td span {
   padding-right: calc(2px * var(--ui-scale));
 }
 
-.dedupCandidateButton {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: calc(10px * var(--ui-scale));
+.dedupQueueArticleIds {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  width: 100%;
-  min-height: calc(64px * var(--ui-scale));
-  padding: calc(10px * var(--ui-scale));
-  color: var(--text);
-  border: calc(1px * var(--ui-scale)) solid var(--border);
-  border-radius: calc(8px * var(--ui-scale));
-  background: var(--surface);
-  text-align: left;
-}
-
-.dedupCandidateButton:hover,
-.dedupCandidateButton:focus-visible,
-.dedupCandidateButton.active {
-  border-color: color-mix(in srgb, var(--teal) 52%, var(--border));
-  background: color-mix(in srgb, var(--surface) 72%, var(--teal-soft));
-}
-
-.dedupCandidateButton span {
-  display: grid;
   gap: calc(4px * var(--ui-scale));
   min-width: 0;
+  color: var(--muted);
 }
 
-.dedupCandidateButton strong,
-.dedupCandidateButton small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dedupCandidateButton strong {
-  font-size: 0.88rem;
-  line-height: 1.25;
-}
-
-.dedupCandidateButton small {
+.dedupQueueSources {
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 760;
-}
-
-.dedupCandidateButton em {
-  color: var(--teal);
-  font-size: 0.82rem;
-  font-style: normal;
-  font-weight: 850;
+  overflow-wrap: anywhere;
 }
 
 .dedupStatusNote {

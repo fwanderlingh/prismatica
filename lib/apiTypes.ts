@@ -44,6 +44,7 @@ export type AppCheckoutWindowSettings = {
   screeningCheckoutWindowMinutes: number;
   extractionCheckoutWindowMinutes: number;
   pdfUploadMaxSizeMb: number;
+  auditHistoryLimit: number;
 };
 
 export type PublicAuthConfigPayload = {

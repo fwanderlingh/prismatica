@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Check, GitMerge, PenLine, RotateCcw, X } from "lucide-react";
 import type { DedupCandidate, ImportBatch, Study } from "@/lib/prismaData";
-import { EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
+import { Badge, EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
+import { ArticleIdLabel } from "@/components/review-sections/review-queue";
 
 type DedupStatusFilter = "pending" | "confirmed" | "rejected";
 type DedupStudyEditForm = {
@@ -78,6 +79,10 @@ export function DedupSection({
   );
 
   useEffect(() => {
+    // Wait for the initial shuffle before committing the first selection.
+    if (activeStatus === "pending" && pendingShuffleSeed === null) {
+      return;
+    }
     if (visibleCandidates.length === 0) {
       setSelectedCandidateId("");
       return;
@@ -85,7 +90,7 @@ export function DedupSection({
     if (!visibleCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
       setSelectedCandidateId(visibleCandidates[0].id);
     }
-  }, [selectedCandidateId, visibleCandidates]);
+  }, [activeStatus, pendingShuffleSeed, selectedCandidateId, visibleCandidates]);
 
   const selectedCandidate = visibleCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? visibleCandidates[0];
 
@@ -120,6 +125,12 @@ export function DedupSection({
   const selectedStatusLabel = selectedCandidate ? getCandidateStatusLabel(selectedCandidate) : "";
   const selectedCandidateAction = pendingDedupAction?.candidateId === selectedCandidate?.id ? pendingDedupAction : null;
   const dedupMessageIsError = /cannot|denied|error|failed|forbidden|invalid|not found|unknown/i.test(dedupMessage);
+
+  function getStudyProvenance(study: Study) {
+    const importBatch = study.importBatchId ? importBatchById.get(study.importBatchId) : undefined;
+    return importBatch?.filename ??
+      (/\b(?:bibtex|ris) upload\b/i.test(study.source) ? "Import filename unavailable" : study.source);
+  }
 
   function beginEditingStudy(study: Study) {
     setEditingStudyId(study.id);
@@ -159,16 +170,17 @@ export function DedupSection({
           <p className="eyebrow">Deduplication</p>
           <h1>Candidate Review</h1>
           <p className="subtle">Duplicate records are attached to canonical studies, never deleted.</p>
+          <p className="subtle">Counters show candidate pairs, not retained articles. “Kept both” counts pairs where you chose to include both entries.</p>
         </div>
         <div className="segmented">
           <button className={activeStatus === "pending" ? "active" : ""} type="button" aria-pressed={activeStatus === "pending"} onClick={() => setActiveStatus("pending")}>
             Pending {statusCounts.pending}
           </button>
           <button className={activeStatus === "confirmed" ? "active" : ""} type="button" aria-pressed={activeStatus === "confirmed"} onClick={() => setActiveStatus("confirmed")}>
-            Excluded {statusCounts.confirmed}
+            Duplicates {statusCounts.confirmed}
           </button>
           <button className={activeStatus === "rejected" ? "active" : ""} type="button" aria-pressed={activeStatus === "rejected"} onClick={() => setActiveStatus("rejected")}>
-            Included {statusCounts.rejected}
+            Kept both {statusCounts.rejected}
           </button>
         </div>
       </section>
@@ -189,7 +201,7 @@ export function DedupSection({
                 const isSelected = selectedCandidate?.id === candidate.id;
                 return (
                   <button
-                    className={`dedupCandidateButton${isSelected ? " active" : ""}`}
+                    className={`queueItem${isSelected ? " active" : ""}`}
                     key={candidate.id}
                     type="button"
                     aria-pressed={isSelected}
@@ -199,13 +211,21 @@ export function DedupSection({
                       setStudyEditForm(null);
                     }}
                   >
-                    <span>
-                      <strong>{candidate.recordA.title}</strong>
-                      <small>
-                        {candidate.recordA.source} vs {candidate.recordB.source}
-                      </small>
+                    <div className="queueItemTop">
+                      <span className="dedupQueueArticleIds">
+                        <ArticleIdLabel study={candidate.recordA} fallbackId={candidate.recordA.id} />
+                        <span aria-label="compared with">↔</span>
+                        <ArticleIdLabel study={candidate.recordB} fallbackId={candidate.recordB.id} />
+                      </span>
+                      <span className="queueBadges">
+                        <Badge label={`${formatPercent(candidate.score)} match`} tone="info" />
+                      </span>
+                    </div>
+                    <span className="queueItemTitle">{candidate.recordA.title}</span>
+                    <span className="queueItemTitle">{candidate.recordB.title}</span>
+                    <span className="dedupQueueSources">
+                      {getStudyProvenance(candidate.recordA)} vs {getStudyProvenance(candidate.recordB)}
                     </span>
-                    <em>{formatPercent(candidate.score)}</em>
                   </button>
                 );
               })}
@@ -213,8 +233,8 @@ export function DedupSection({
           ) : (
             <EmptyState
               icon={GitMerge}
-              title={`No ${activeStatusLabel.toLowerCase()} candidates`}
-              description={`There are no duplicate candidates in the ${activeStatusLabel.toLowerCase()} list.`}
+              title={dedupEmptyStateTitles[activeStatus]}
+              description={`There are no candidate pairs in the “${activeStatusLabel}” list.`}
             />
           )}
         </div>
@@ -264,9 +284,7 @@ export function DedupSection({
                 {[selectedCandidate.recordA, selectedCandidate.recordB].map((study, index) => {
                   const isExcluded = isConfirmedDedupStatus(selectedCandidate.status) && (selectedCandidate.excludedStudyId ?? selectedCandidate.recordB.id) === study.id;
                   const isExcludingThisEntry = selectedCandidateAction?.status === "confirmed" && selectedCandidateAction.excludedStudyId === study.id;
-                  const importBatch = study.importBatchId ? importBatchById.get(study.importBatchId) : undefined;
-                  const sourceLabel = importBatch?.filename ??
-                    (/\b(?:bibtex|ris) upload\b/i.test(study.source) ? "Imported record" : study.source);
+                  const sourceLabel = getStudyProvenance(study);
                   const isEditingStudy = editingStudyId === study.id && studyEditForm !== null;
                   const articleId = study.importItemId === undefined ? study.id : String(study.importItemId);
                   return (
@@ -352,7 +370,7 @@ export function DedupSection({
             <section className="panel">
               <EmptyState
                 icon={GitMerge}
-                title={`No ${activeStatusLabel.toLowerCase()} candidates`}
+                title={dedupEmptyStateTitles[activeStatus]}
                 description={`Choose another duplicate review status to inspect candidates.`}
               />
             </section>
@@ -414,8 +432,14 @@ function isConfirmedDedupStatus(status: DedupCandidate["status"]) {
 
 const dedupStatusFilterLabels: Record<DedupStatusFilter, string> = {
   pending: "Pending",
-  confirmed: "Excluded",
-  rejected: "Included"
+  confirmed: "Duplicates",
+  rejected: "Kept both"
+};
+
+const dedupEmptyStateTitles: Record<DedupStatusFilter, string> = {
+  pending: "No pending candidates",
+  confirmed: "No confirmed duplicate pairs",
+  rejected: "No pairs with both entries kept"
 };
 
 function getCandidateStatusLabel(candidate: DedupCandidate) {

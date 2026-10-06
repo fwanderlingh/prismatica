@@ -1,4 +1,5 @@
 import fs from "fs";
+import { normalizeAuditHistoryLimit } from "./auditHistory";
 import path from "path";
 import { Pool } from "pg";
 
@@ -27,6 +28,7 @@ type StoredState = {
     screeningCheckoutWindowMinutes?: number;
     extractionCheckoutWindowMinutes?: number;
     pdfUploadMaxSizeMb?: number;
+    auditHistoryLimit?: number;
   };
   users?: StoredUserRecord[];
 };
@@ -164,23 +166,25 @@ async function upsertCheckoutWindowSettings(
   client: Pool,
   screeningCheckoutWindowMinutes: number,
   extractionCheckoutWindowMinutes: number,
-  pdfUploadMaxSizeMb: number
+  pdfUploadMaxSizeMb: number,
+  auditHistoryLimit: number
 ) {
   await client.query(
     `
       INSERT INTO checkout_window_settings (
         id, screening_checkout_window_minutes,
-        extraction_checkout_window_minutes, pdf_upload_max_size_mb, updated_at
+        extraction_checkout_window_minutes, pdf_upload_max_size_mb, audit_history_limit, updated_at
       )
-      VALUES (1, $1, $2, $3, NOW())
+      VALUES (1, $1, $2, $3, $4, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
         extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
         pdf_upload_max_size_mb = EXCLUDED.pdf_upload_max_size_mb,
+        audit_history_limit = EXCLUDED.audit_history_limit,
         updated_at = NOW()
     `,
-    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes, pdfUploadMaxSizeMb]
+    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes, pdfUploadMaxSizeMb, auditHistoryLimit]
   );
 }
 
@@ -236,7 +240,8 @@ export async function syncCheckoutWindowSettingsToPostgres() {
     client,
     screeningCheckoutWindowMinutes,
     extractionCheckoutWindowMinutes,
-    pdfUploadMaxSizeMb
+    pdfUploadMaxSizeMb,
+    normalizeAuditHistoryLimit(state.checkoutWindowSettings?.auditHistoryLimit)
   );
 }
 

@@ -100,6 +100,7 @@ async function ensureSchema(client) {
       screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 60,
       extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 120,
       pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50,
+      audit_history_limit INTEGER NOT NULL DEFAULT 100,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -264,6 +265,7 @@ async function ensureSchema(client) {
     );
 
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE checkout_window_settings ADD COLUMN IF NOT EXISTS audit_history_limit INTEGER NOT NULL DEFAULT 100;
     ALTER TABLE checkout_window_settings ADD COLUMN IF NOT EXISTS pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50;
 
     ALTER TABLE review_projects ADD COLUMN IF NOT EXISTS organization TEXT;
@@ -362,6 +364,7 @@ function defaultState() {
     checkoutWindowSettings: {
       screeningCheckoutWindowMinutes: 60,
       extractionCheckoutWindowMinutes: 120,
+      auditHistoryLimit: 100,
       pdfUploadMaxSizeMb: 50
     },
     users: [],
@@ -548,7 +551,8 @@ async function readRelationalState(client) {
       SELECT
         screening_checkout_window_minutes,
         extraction_checkout_window_minutes,
-        pdf_upload_max_size_mb
+        pdf_upload_max_size_mb,
+        audit_history_limit
       FROM checkout_window_settings
       WHERE id = 1
     `
@@ -562,7 +566,12 @@ async function readRelationalState(client) {
   const extractionResponses = await readRows(client, "review_extraction_responses");
   const extractionConsensus = await readRows(client, "review_extraction_consensus");
   const decisions = await readRows(client, "review_decisions");
-  const events = await readRows(client, "workflow_events");
+  const auditLimit = normalizeAuditHistoryLimit(checkoutWindowSettingsResult.rows[0]?.audit_history_limit);
+  const eventRows = await client.query(
+    `SELECT payload::text AS payload FROM workflow_events
+     ORDER BY payload->>'time' DESC, position ASC, id ASC LIMIT $1`, [auditLimit]
+  );
+  const events = eventRows.rows.map((row) => JSON.parse(row.payload));
   const dedupCandidates = await readRows(client, "review_dedup_candidates");
 
   const hasRelationalState =
@@ -592,6 +601,7 @@ async function readRelationalState(client) {
     checkoutWindowSettings: {
       screeningCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.screening_checkout_window_minutes ?? 60,
       extractionCheckoutWindowMinutes: checkoutWindowSettingsResult.rows[0]?.extraction_checkout_window_minutes ?? 120,
+      auditHistoryLimit: normalizeAuditHistoryLimit(checkoutWindowSettingsResult.rows[0]?.audit_history_limit),
       pdfUploadMaxSizeMb: checkoutWindowSettingsResult.rows[0]?.pdf_upload_max_size_mb ?? 50
     },
     users: usersResult.rows.map((row) => ({
@@ -700,20 +710,22 @@ async function writeCheckoutWindowSettings(client, state) {
     `
       INSERT INTO checkout_window_settings (
         id, screening_checkout_window_minutes,
-        extraction_checkout_window_minutes, pdf_upload_max_size_mb, updated_at
+        extraction_checkout_window_minutes, pdf_upload_max_size_mb, audit_history_limit, updated_at
       )
-      VALUES (1, $1, $2, $3, NOW())
+      VALUES (1, $1, $2, $3, $4, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
         extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
         pdf_upload_max_size_mb = EXCLUDED.pdf_upload_max_size_mb,
+        audit_history_limit = EXCLUDED.audit_history_limit,
         updated_at = NOW()
     `,
     [
       clampCheckoutWindowMinutes(state.checkoutWindowSettings?.screeningCheckoutWindowMinutes, 60),
       clampCheckoutWindowMinutes(state.checkoutWindowSettings?.extractionCheckoutWindowMinutes, 120),
-      clampPdfUploadMaxSizeMb(state.checkoutWindowSettings?.pdfUploadMaxSizeMb, 50)
+      clampPdfUploadMaxSizeMb(state.checkoutWindowSettings?.pdfUploadMaxSizeMb, 50),
+      normalizeAuditHistoryLimit(state.checkoutWindowSettings?.auditHistoryLimit)
     ]
   );
 }
@@ -868,7 +880,11 @@ async function writeReports(client, state) {
 
 async function writeReviewTables(client, state) {
   for (const config of tableConfigs) {
-    const items = Array.isArray(state[config.arrayKey]) ? state[config.arrayKey] : [];
+    let items = Array.isArray(state[config.arrayKey]) ? state[config.arrayKey] : [];
+    if (config.arrayKey === "events") {
+      items = items.slice().sort((a, b) => Date.parse(b.time) - Date.parse(a.time))
+        .slice(0, normalizeAuditHistoryLimit(state.checkoutWindowSettings?.auditHistoryLimit));
+    }
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
       const columnList = [config.idColumn, ...config.extraColumns, "payload"];
@@ -879,6 +895,30 @@ async function writeReviewTables(client, state) {
       );
     }
   }
+}
+
+function normalizeAuditHistoryLimit(value) {
+  const limit = Number(value);
+  return Number.isFinite(limit) && limit >= 1 ? Math.min(10000, Math.round(limit)) : 100;
+}
+
+async function appendWorkflowEvent(client, event) {
+  // Serialize incremental appends so pruning keeps the newest events across reviews.
+  await client.query("LOCK TABLE workflow_events IN SHARE ROW EXCLUSIVE MODE");
+  await client.query(
+    `INSERT INTO workflow_events (id, entity, position, payload)
+     VALUES ($1, $2, COALESCE((SELECT MIN(position) FROM workflow_events), 0) - 1, $3::jsonb)
+     ON CONFLICT (id) DO UPDATE SET entity = EXCLUDED.entity, payload = EXCLUDED.payload`,
+    [event.id, event.entity ?? null, JSON.stringify(event)]
+  );
+  const settings = await client.query("SELECT audit_history_limit FROM checkout_window_settings WHERE id = 1");
+  await client.query(
+    `DELETE FROM workflow_events WHERE id IN (
+       SELECT id FROM workflow_events
+       ORDER BY payload->>'time' DESC, position ASC, id ASC OFFSET $1
+     )`,
+    [normalizeAuditHistoryLimit(settings.rows[0]?.audit_history_limit)]
+  );
 }
 
 async function writeImportStudyMutation(client, mutation) {
@@ -987,14 +1027,7 @@ async function writeImportStudyMutation(client, mutation) {
       );
     }
 
-    await client.query(
-      `
-        INSERT INTO workflow_events (id, entity, position, payload)
-        VALUES ($1, $2, COALESCE((SELECT MAX(position) FROM workflow_events), 0) + 1, $3::jsonb)
-        ON CONFLICT (id) DO UPDATE SET entity = EXCLUDED.entity, payload = EXCLUDED.payload
-      `,
-      [event.id, event.entity ?? null, JSON.stringify(event)]
-    );
+    await appendWorkflowEvent(client, event);
 
     if (Array.isArray(dedupCandidates)) {
       await client.query(
@@ -1108,14 +1141,7 @@ async function writeDedupDecisions(client, mutation) {
       throw new Error("Project was not found while saving the deduplication decision.");
     }
 
-    await client.query(
-      `
-        INSERT INTO workflow_events (id, entity, position, payload)
-        VALUES ($1, $2, COALESCE((SELECT MAX(position) FROM workflow_events), 0) + 1, $3::jsonb)
-        ON CONFLICT (id) DO NOTHING
-      `,
-      [event.id, event.entity ?? null, JSON.stringify(event)]
-    );
+    await appendWorkflowEvent(client, event);
     await client.query("COMMIT");
     transactionOpen = false;
     process.stdout.write(JSON.stringify({ updated: true }));

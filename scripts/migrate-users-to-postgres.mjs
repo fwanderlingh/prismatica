@@ -105,21 +105,25 @@ async function migrateCheckoutWindowSettings(client, checkoutWindowSettings) {
   const screeningCheckoutWindowMinutes = clampCheckoutWindowMinutes(checkoutWindowSettings.screeningCheckoutWindowMinutes, 60);
   const extractionCheckoutWindowMinutes = clampCheckoutWindowMinutes(checkoutWindowSettings.extractionCheckoutWindowMinutes, 120);
   const pdfUploadMaxSizeMb = clampPdfUploadMaxSizeMb(checkoutWindowSettings.pdfUploadMaxSizeMb, 50);
+  const requestedAuditLimit = Number(checkoutWindowSettings.auditHistoryLimit);
+  const auditHistoryLimit = Number.isFinite(requestedAuditLimit) && requestedAuditLimit >= 1
+    ? Math.min(10000, Math.round(requestedAuditLimit)) : 100;
   await client.query(
     `
       INSERT INTO checkout_window_settings (
         id, screening_checkout_window_minutes,
-        extraction_checkout_window_minutes, pdf_upload_max_size_mb, updated_at
+        extraction_checkout_window_minutes, pdf_upload_max_size_mb, audit_history_limit, updated_at
       )
-      VALUES (1, $1, $2, $3, NOW())
+      VALUES (1, $1, $2, $3, $4, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         screening_checkout_window_minutes = EXCLUDED.screening_checkout_window_minutes,
         extraction_checkout_window_minutes = EXCLUDED.extraction_checkout_window_minutes,
         pdf_upload_max_size_mb = EXCLUDED.pdf_upload_max_size_mb,
+        audit_history_limit = EXCLUDED.audit_history_limit,
         updated_at = NOW()
     `,
-    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes, pdfUploadMaxSizeMb]
+    [screeningCheckoutWindowMinutes, extractionCheckoutWindowMinutes, pdfUploadMaxSizeMb, auditHistoryLimit]
   );
 }
 

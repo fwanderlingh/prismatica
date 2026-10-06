@@ -418,3 +418,18 @@ sudo systemctl reload caddy
 - Restrict filesystem permissions on data and PDF storage
 - Open only required firewall ports (`443`; optionally `80` for ACME HTTP challenge)
 - Keep Caddy internal CA materials restricted to trusted admins (if using internal CA mode)
+
+### Audit history retention
+
+Administrators can set **Registered Users → Review Settings → Audit history limit**.
+The default is **100 events across all reviews**, configurable from 1 to 10,000.
+The newest events are retained; lowering the limit removes older events, and raising
+it cannot recover events already removed. This applies to file and PostgreSQL storage.
+Existing settings without a history limit use 100; PostgreSQL adds the preference
+column automatically when its schema is initialized.
+
+Dedup exclusions, keeping both entries, reopening pairs, and bulk inclusion appear
+in the project audit. Previously missing events cannot be recreated by this fix.
+
+Run `npm run check:audit` for isolated regression checks using temporary data and
+a simulated PostgreSQL client; it does not start a server or contact a database.

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
+import { normalizeAuditHistoryLimit } from "./auditHistory";
 import type { AppAuthSettings, AppCheckoutWindowSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
 import { randomizeReviewQueueItems } from "./workflowSelectors";
@@ -192,7 +193,8 @@ function defaultCheckoutWindowSettings(): AppCheckoutWindowSettings {
   return {
     screeningCheckoutWindowMinutes: defaultScreeningCheckoutWindowMinutes,
     extractionCheckoutWindowMinutes: defaultExtractionCheckoutWindowMinutes,
-    pdfUploadMaxSizeMb: defaultPdfUploadMaxSizeMb
+    pdfUploadMaxSizeMb: defaultPdfUploadMaxSizeMb,
+    auditHistoryLimit: 100
   };
 }
 
@@ -216,7 +218,8 @@ function normalizeCheckoutWindowSettings(settings: Partial<AppCheckoutWindowSett
       settings?.extractionCheckoutWindowMinutes,
       defaults.extractionCheckoutWindowMinutes
     ),
-    pdfUploadMaxSizeMb: clampPdfUploadMaxSizeMb(settings?.pdfUploadMaxSizeMb, defaults.pdfUploadMaxSizeMb)
+    pdfUploadMaxSizeMb: clampPdfUploadMaxSizeMb(settings?.pdfUploadMaxSizeMb, defaults.pdfUploadMaxSizeMb),
+    auditHistoryLimit: normalizeAuditHistoryLimit(settings?.auditHistoryLimit)
   };
 }
 
@@ -347,7 +350,7 @@ function persistImportStudyMutation(
   const study = state.studies.find((item) => item.id === studyId && item.projectId === projectId && item.importBatchId === importId);
   const batch = state.imports.find((item) => item.id === importId && item.projectId === projectId);
   const project = state.projects.find((item) => item.id === projectId);
-  const event = state.events[state.events.length - 1];
+  const event = state.events[0];
   if (!study || !batch || !project || !event) {
     throw new Error("Import study persistence data is incomplete.");
   }
@@ -598,6 +601,10 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
     };
   });
 
+  const dedupCandidateIds = new Set((Array.isArray(state.dedupCandidates) ? state.dedupCandidates : [])
+    .filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)))
+    .map((candidate) => candidate.id));
+
   const normalizedState: PersistedState = {
     version: 1,
     authSettings,
@@ -641,7 +648,9 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
           })
       : [],
     events: Array.isArray(state.events)
-      ? state.events.filter((event) => projectIds.has(event.entity) || studyIds.has(event.entity) || reportIds.has(event.entity))
+      ? state.events.filter((event) => projectIds.has(event.entity) || studyIds.has(event.entity) || reportIds.has(event.entity) || dedupCandidateIds.has(event.entity))
+          .sort((left, right) => Date.parse(right.time) - Date.parse(left.time))
+          .slice(0, checkoutWindowSettings.auditHistoryLimit)
       : [],
     dedupCandidates: Array.isArray(state.dedupCandidates)
       ? state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)))
@@ -1096,7 +1105,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
           visibleDedupCandidateIds.has(event.entity) ||
           (projectIds.has("demo-review") && !allProjectIds.has(event.entity))
       )
-      .slice(0, 50),
+      .slice(0, state.checkoutWindowSettings.auditHistoryLimit),
     dedupCandidates: visibleDedupCandidates
   };
 }
@@ -1279,7 +1288,8 @@ export function updateCheckoutWindowSettingsForUser(
   const checkoutWindowChanged =
     previousSettings.screeningCheckoutWindowMinutes !== state.checkoutWindowSettings.screeningCheckoutWindowMinutes ||
     previousSettings.extractionCheckoutWindowMinutes !== state.checkoutWindowSettings.extractionCheckoutWindowMinutes ||
-    previousSettings.pdfUploadMaxSizeMb !== state.checkoutWindowSettings.pdfUploadMaxSizeMb;
+    previousSettings.pdfUploadMaxSizeMb !== state.checkoutWindowSettings.pdfUploadMaxSizeMb ||
+    previousSettings.auditHistoryLimit !== state.checkoutWindowSettings.auditHistoryLimit;
 
   const eventMessage = checkoutWindowChanged ? "Updated global review settings" : "";
 
@@ -3509,7 +3519,7 @@ export function updateDedupCandidateForUser(
     candidateId
   );
   const updatedCandidate = state.dedupCandidates.find((candidate) => candidate.id === candidateId);
-  const event = state.events[state.events.length - 1];
+  const event = state.events[0];
   const updatedProject = state.projects.find((candidate) => candidate.id === project.id);
   if (!updatedCandidate || !updatedProject || !event || !persistDedupDecisions(state, [{ candidate: updatedCandidate, expectedStatus: existingCandidate.status }], updatedProject, event)) {
     throw new ApiError("This duplicate pair was already decided by another reviewer. The latest state has been refreshed.", 409);
@@ -3557,7 +3567,7 @@ export function rejectPendingDedupCandidatesForUser(userId: string, projectId: s
     `Included both citations for ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "pair" : "pairs"}`,
     projectId
   );
-  const event = state.events[state.events.length - 1];
+  const event = state.events[0];
   const changedCandidates = state.dedupCandidates.filter((candidate) => pendingCandidateIds.has(candidate.id));
   const updatedProject = state.projects.find((candidate) => candidate.id === project.id);
   if (!event || !persistDedupDecisions(
@@ -4476,7 +4486,7 @@ function appendEvent(state: PersistedState, actor: string, action: string, entit
     entity,
     time: new Date().toISOString()
   };
-  state.events = [nextEvent, ...state.events].slice(0, 50);
+  state.events = [nextEvent, ...state.events].slice(0, state.checkoutWindowSettings.auditHistoryLimit);
 }
 
 function requireAdminUser(state: PersistedState, userId: string) {

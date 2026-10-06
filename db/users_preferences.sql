@@ -11,8 +11,11 @@ CREATE TABLE IF NOT EXISTS checkout_window_settings (
   screening_checkout_window_minutes INTEGER NOT NULL DEFAULT 60,
   extraction_checkout_window_minutes INTEGER NOT NULL DEFAULT 120,
   pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50,
+  audit_history_limit INTEGER NOT NULL DEFAULT 100,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE checkout_window_settings ADD COLUMN IF NOT EXISTS audit_history_limit INTEGER NOT NULL DEFAULT 100;
 
 ALTER TABLE checkout_window_settings
   ADD COLUMN IF NOT EXISTS pdf_upload_max_size_mb INTEGER NOT NULL DEFAULT 50;
