@@ -37,6 +37,18 @@ export function AboutSection() {
           <a className="repoLink" href="https://github.com/fwanderlingh/prismatica" target="_blank" rel="noreferrer">
             github.com/fwanderlingh/prismatica
           </a>
+          <div className="aboutCitation">
+            <strong>Cite this website</strong>
+            <pre aria-label="BibTeX citation"><code>{[
+              "@misc{prismatica,",
+              "  author = {Wanderlingh, Francesco},",
+              "  title = {{Prismatica: Open Source PRISMA Review Platform}},",
+              "  year = {2026},",
+              "  howpublished = {\\url{https://github.com/fwanderlingh/prismatica}},",
+              "  note = {Accessed October 6, 2026}",
+              "}"
+            ].join("\n")}</code></pre>
+          </div>
         </div>
       </section>
 

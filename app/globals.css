@@ -1511,6 +1511,30 @@ a.primaryButton[target="_blank"]:focus-visible {
   font-weight: 800;
 }
 
+.aboutCitation {
+  display: grid;
+  gap: calc(8px * var(--ui-scale));
+  min-width: 0;
+  margin-top: calc(8px * var(--ui-scale));
+}
+
+.aboutCitation strong {
+  color: var(--text-strong);
+}
+
+.aboutCitation pre {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0;
+  padding: calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  font: 0.78rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+}
+
 .aboutFeatureGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
