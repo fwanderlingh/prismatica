@@ -3993,6 +3993,14 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .dedupDetailColumn {
+    order: 1;
+  }
+
+  .dedupInspectorPanel {
+    order: 2;
+  }
+
   .comparisonGrid {
     grid-template-columns: 1fr;
   }

@@ -3054,7 +3054,14 @@ export function PrismaReviewApp() {
             : "Selected citation excluded as a duplicate."
       );
     } catch (error) {
-      setDedupMessage(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      if (/already decided by another reviewer/i.test(message)) {
+        try {
+          const refreshedPayload = await apiRequest<AppStatePayload>("/api/app-state");
+          applyAppState(refreshedPayload);
+        } catch {}
+      }
+      setDedupMessage(message);
     } finally {
       setPendingDedupAction(null);
     }

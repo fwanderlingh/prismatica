@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, GitMerge, RotateCcw, X } from "lucide-react";
-import type { DedupCandidate, Study } from "@/lib/prismaData";
+import type { DedupCandidate, ImportBatch, Study } from "@/lib/prismaData";
 import { EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 
 type DedupStatusFilter = "pending" | "confirmed" | "rejected";
 
 type DedupSectionProps = {
-  projectImportBatches: { records: number }[];
+  projectImportBatches: Pick<ImportBatch, "id" | "sourceName" | "filename" | "records">[];
   projectScreeningStudies: Study[];
   recordsIdentified: number;
   projectDedupCandidates: DedupCandidate[];
@@ -34,6 +34,14 @@ export function DedupSection({
 }: DedupSectionProps) {
   const [activeStatus, setActiveStatus] = useState<DedupStatusFilter>("pending");
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
+  const [pendingShuffleSeed, setPendingShuffleSeed] = useState<number | null>(null);
+  const importBatchById = useMemo(
+    () => new Map(projectImportBatches.map((batch) => [batch.id, batch])),
+    [projectImportBatches]
+  );
+  useEffect(() => {
+    setPendingShuffleSeed(Math.random());
+  }, []);
   const statusCounts = useMemo(
     () => ({
       pending: projectDedupCandidates.filter((candidate) => candidate.status === "pending").length,
@@ -43,8 +51,16 @@ export function DedupSection({
     [projectDedupCandidates]
   );
   const visibleCandidates = useMemo(
-    () => projectDedupCandidates.filter((candidate) => matchesStatusFilter(candidate, activeStatus)),
-    [activeStatus, projectDedupCandidates]
+    () => {
+      const candidates = projectDedupCandidates.filter((candidate) => matchesStatusFilter(candidate, activeStatus));
+      if (activeStatus !== "pending" || pendingShuffleSeed === null) {
+        return candidates;
+      }
+      return candidates.slice().sort((left, right) =>
+        compareRandomizedCandidates(left.id, right.id, pendingShuffleSeed)
+      );
+    },
+    [activeStatus, pendingShuffleSeed, projectDedupCandidates]
   );
 
   useEffect(() => {
@@ -199,9 +215,13 @@ export function DedupSection({
                 {[selectedCandidate.recordA, selectedCandidate.recordB].map((study, index) => {
                   const isExcluded = isConfirmedDedupStatus(selectedCandidate.status) && (selectedCandidate.excludedStudyId ?? selectedCandidate.recordB.id) === study.id;
                   const isExcludingThisEntry = selectedCandidateAction?.status === "confirmed" && selectedCandidateAction.excludedStudyId === study.id;
+                  const importBatch = study.importBatchId ? importBatchById.get(study.importBatchId) : undefined;
+                  const sourceLabel = importBatch
+                    ? `${importBatch.filename} · ${importBatch.sourceName}`
+                    : study.source;
                   return (
                     <div className={`dedupRecordDecision${isExcluded ? " excluded" : ""}`} key={study.id}>
-                      <RecordComparison title={`Entry ${index + 1}`} source={study.source} study={study} />
+                      <RecordComparison title={`Entry ${index + 1}`} source={sourceLabel} study={study} />
                       {selectedCandidate.status === "pending" ? (
                         <button
                           className="dangerButton dedupRecordAction"
@@ -268,6 +288,18 @@ function matchesStatusFilter(candidate: DedupCandidate, status: DedupStatusFilte
     return isConfirmedDedupStatus(candidate.status);
   }
   return candidate.status === status;
+}
+
+function compareRandomizedCandidates(leftId: string, rightId: string, seed: number) {
+  return randomizedCandidateKey(leftId, seed) - randomizedCandidateKey(rightId, seed);
+}
+
+function randomizedCandidateKey(candidateId: string, seed: number) {
+  let hash = Math.floor(seed * 0xffffffff) >>> 0;
+  for (let index = 0; index < candidateId.length; index += 1) {
+    hash = Math.imul(hash ^ candidateId.charCodeAt(index), 16777619) >>> 0;
+  }
+  return hash;
 }
 
 function isConfirmedDedupStatus(status: DedupCandidate["status"]) {

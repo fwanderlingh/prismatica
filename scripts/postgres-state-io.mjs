@@ -1031,10 +1031,106 @@ async function writeImportStudyMutation(client, mutation) {
   }
 }
 
+async function writeDedupDecisions(client, mutation) {
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN");
+    transactionOpen = true;
+    const { candidates, project, event } = mutation;
+    const projectLock = await client.query("SELECT id FROM review_projects WHERE id = $1 FOR UPDATE", [project.id]);
+    if (projectLock.rowCount !== 1) {
+      await client.query("ROLLBACK");
+      transactionOpen = false;
+      process.stdout.write(JSON.stringify({ updated: false }));
+      return;
+    }
+
+    for (const { candidate, expectedStatus } of candidates) {
+      const current = await client.query(
+        "SELECT payload->>'status' AS status FROM review_dedup_candidates WHERE id = $1 FOR UPDATE",
+        [candidate.id]
+      );
+      if (current.rows[0]?.status !== expectedStatus) {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        process.stdout.write(JSON.stringify({ updated: false }));
+        return;
+      }
+    }
+
+    for (const { candidate, expectedStatus } of candidates) {
+      const update = await client.query(
+        `
+          UPDATE review_dedup_candidates SET
+            record_a_id = $1,
+            record_b_id = $2,
+            payload = $3::jsonb
+          WHERE id = $4 AND payload->>'status' = $5
+        `,
+        [candidate.recordA?.id ?? null, candidate.recordB?.id ?? null, JSON.stringify(candidate), candidate.id, expectedStatus]
+      );
+      if (update.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        process.stdout.write(JSON.stringify({ updated: false }));
+        return;
+      }
+    }
+
+    const projectUpdate = await client.query(
+      `
+        UPDATE review_projects SET
+          status = $1,
+          stage = $2,
+          last_event = $3,
+          updated_at_text = $4,
+          records_total = $5,
+          records_screened = $6,
+          conflicts = $7,
+          studies_included = $8,
+          payload = $9::jsonb
+        WHERE id = $10
+      `,
+      [
+        project.status,
+        project.stage,
+        project.lastEvent,
+        project.updatedAt,
+        Number(project.recordsTotal ?? 0),
+        Number(project.recordsScreened ?? 0),
+        Number(project.conflicts ?? 0),
+        Number(project.studiesIncluded ?? 0),
+        JSON.stringify(project),
+        project.id
+      ]
+    );
+    if (projectUpdate.rowCount !== 1) {
+      throw new Error("Project was not found while saving the deduplication decision.");
+    }
+
+    await client.query(
+      `
+        INSERT INTO workflow_events (id, entity, position, payload)
+        VALUES ($1, $2, COALESCE((SELECT MAX(position) FROM workflow_events), 0) + 1, $3::jsonb)
+        ON CONFLICT (id) DO NOTHING
+      `,
+      [event.id, event.entity ?? null, JSON.stringify(event)]
+    );
+    await client.query("COMMIT");
+    transactionOpen = false;
+    process.stdout.write(JSON.stringify({ updated: true }));
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK");
+    }
+    throw error;
+  }
+}
+
 async function run() {
   const action = process.argv[2];
-  if (action !== "read" && action !== "read-auth-config" && action !== "write" && action !== "write-import-study") {
-    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|write|write-import-study>");
+  if (action !== "read" && action !== "read-auth-config" && action !== "write" && action !== "write-import-study" && action !== "write-dedup-decisions") {
+    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|write|write-import-study|write-dedup-decisions>");
   }
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -1047,6 +1143,13 @@ async function run() {
 
   try {
     if (action === "read-auth-config") {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS auth_settings (
+          id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+          registration_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
       const result = await client.query("SELECT registration_enabled FROM auth_settings WHERE id = 1");
       process.stdout.write(JSON.stringify({ registrationEnabled: result.rows[0]?.registration_enabled ?? true }));
       return;
@@ -1076,6 +1179,10 @@ async function run() {
     const parsed = JSON.parse(raw);
     if (action === "write-import-study") {
       await writeImportStudyMutation(client, parsed);
+      return;
+    }
+    if (action === "write-dedup-decisions") {
+      await writeDedupDecisions(client, parsed);
       return;
     }
 

@@ -160,10 +160,13 @@ function postgresStateIoScriptPath() {
   return path.join(process.cwd(), "scripts", "postgres-state-io.mjs");
 }
 
-function runPostgresStateIo(action: "read" | "read-auth-config" | "write" | "write-import-study", payload?: unknown) {
+function runPostgresStateIo(
+  action: "read" | "read-auth-config" | "write" | "write-import-study" | "write-dedup-decisions",
+  payload?: unknown
+) {
   const output = execFileSync(process.execPath, [postgresStateIoScriptPath(), action], {
     env: process.env,
-    input: action === "read" ? undefined : `${JSON.stringify(payload)}\n`,
+    input: action === "read" || action === "read-auth-config" ? undefined : `${JSON.stringify(payload)}\n`,
     encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024
   });
@@ -363,6 +366,23 @@ function persistImportStudyMutation(
       ? state.dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === projectId)
       : undefined
   });
+}
+
+function persistDedupDecisions(
+  state: PersistedState,
+  candidates: Array<{ candidate: DedupCandidate; expectedStatus: DedupCandidate["status"] }>,
+  project: ReviewProject,
+  event: WorkflowEvent
+) {
+  if (!usePostgresStateStore()) {
+    writeState(state);
+    return true;
+  }
+
+  const result = JSON.parse(
+    runPostgresStateIo("write-dedup-decisions", { candidates, project, event })
+  ) as { updated: boolean };
+  return result.updated;
 }
 
 function assignImportItemIds(studies: Study[]): Study[] {
@@ -3488,7 +3508,12 @@ export function updateDedupCandidateForUser(
     getDedupCandidateStatusEventLabel(status),
     candidateId
   );
-  writeState(state);
+  const updatedCandidate = state.dedupCandidates.find((candidate) => candidate.id === candidateId);
+  const event = state.events[state.events.length - 1];
+  const updatedProject = state.projects.find((candidate) => candidate.id === project.id);
+  if (!updatedCandidate || !updatedProject || !event || !persistDedupDecisions(state, [{ candidate: updatedCandidate, expectedStatus: existingCandidate.status }], updatedProject, event)) {
+    throw new ApiError("This duplicate pair was already decided by another reviewer. The latest state has been refreshed.", 409);
+  }
   return buildPayload(state, userId);
 }
 
@@ -3532,7 +3557,17 @@ export function rejectPendingDedupCandidatesForUser(userId: string, projectId: s
     `Included both citations for ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "pair" : "pairs"}`,
     projectId
   );
-  writeState(state);
+  const event = state.events[state.events.length - 1];
+  const changedCandidates = state.dedupCandidates.filter((candidate) => pendingCandidateIds.has(candidate.id));
+  const updatedProject = state.projects.find((candidate) => candidate.id === project.id);
+  if (!event || !persistDedupDecisions(
+    state,
+    changedCandidates.map((candidate) => ({ candidate, expectedStatus: "pending" })),
+    updatedProject ?? project,
+    event
+  )) {
+    throw new ApiError("Some duplicate pairs were already decided by another reviewer. The latest state has been refreshed.", 409);
+  }
   return {
     ...buildPayload(state, userId),
     message: `Included both citations for ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "pair" : "pairs"}.`

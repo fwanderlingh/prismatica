@@ -153,7 +153,7 @@ export function ImportEditorSection({
                 <strong>{study.title}</strong>
                 <span>
                   {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} ·{" "}
-                  {study.year > 0 ? study.year : <span className="needsReviewText">Year needs review</span>}
+                  {study.year > 0 ? study.year : "Year not provided"}
                 </span>
               </div>
               {needsReview ? (
@@ -168,19 +168,19 @@ export function ImportEditorSection({
                 </span>
               )}
             </div>
-            <p className="importAbstract">{study.abstract}</p>
-            {study.pdfUrl ? (
-              <p className="importPdfLink">
-                <FileText size={15} />
-                <a href={study.pdfUrl} target="_blank" rel="noreferrer">Linked PDF</a>
-              </p>
-            ) : null}
             {study.parserWarnings && study.parserWarnings.length > 0 ? (
               <ul className="plainList compactList">
                 {study.parserWarnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
+            ) : null}
+            <p className="importAbstract">{study.abstract}</p>
+            {study.pdfUrl ? (
+              <p className="importPdfLink">
+                <FileText size={15} />
+                <a href={study.pdfUrl} target="_blank" rel="noreferrer">Linked PDF</a>
+              </p>
             ) : null}
             <div className="importEntryFooter buttonRow">
               {needsReview ? (
