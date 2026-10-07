@@ -1,3 +1,5 @@
+import type { LoadProgress as LoadingProgress } from "@/lib/loadProgress";
+import { LoadProgress } from "./load-progress";
 import { AlertTriangle, BookOpen, Check, ChevronDown, Database, FileArchive, FileSearch, FileText, GitMerge, Lock, Upload } from "lucide-react";
 import type { ChangeEvent, RefObject } from "react";
 import type { ImportBatch } from "@/lib/prismaData";
@@ -8,6 +10,7 @@ type ImportsSectionProps = {
   selectedReviewBatch: ImportBatch | undefined;
   importMessage: string;
   isImportingCitation: boolean;
+  importProgress: LoadingProgress | null;
   bibtexInputRef: RefObject<HTMLInputElement | null>;
   risInputRef: RefObject<HTMLInputElement | null>;
   onImportCitationFile: (format: ImportBatch["format"], event: ChangeEvent<HTMLInputElement>) => void;
@@ -19,6 +22,7 @@ export function ImportsSection({
   selectedReviewBatch,
   importMessage,
   isImportingCitation,
+  importProgress,
   bibtexInputRef,
   risInputRef,
   onImportCitationFile,
@@ -115,14 +119,12 @@ export function ImportsSection({
       {importMessage ? (
         <div
           className={isImportingCitation ? "validationItem importProgress" : importMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}
-          role="status"
-          aria-live="polite"
-          aria-busy={isImportingCitation}
+          role={isImportingCitation ? undefined : "status"}
+          aria-live={isImportingCitation ? undefined : "polite"}
         >
           {isImportingCitation ? <span className="inlineSpinner" aria-hidden="true" /> : importMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
           <div className="importProgressContent">
-            <span>{importMessage}</span>
-            {isImportingCitation ? <div className="importProgressTrack" aria-hidden="true"><i /></div> : null}
+            {isImportingCitation && importProgress ? <LoadProgress {...importProgress} /> : <span>{importMessage}</span>}
           </div>
         </div>
       ) : null}

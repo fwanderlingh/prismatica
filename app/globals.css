@@ -4331,3 +4331,60 @@ button:disabled {
     width: 100%;
   }
 }
+
+.loadProgress {
+  display: grid;
+  gap: calc(8px * var(--ui-scale));
+  min-width: 0;
+  width: 100%;
+}
+
+.loadProgressHeading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: calc(8px * var(--ui-scale));
+}
+
+.loadProgress p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.loadProgressTrack {
+  height: calc(5px * var(--ui-scale));
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--teal-soft);
+}
+
+.loadProgressTrack i {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+  transition: width 160ms ease;
+}
+
+.loadProgressTrack.indeterminate i {
+  width: 38%;
+  animation: importProgressMove 1.4s ease-in-out infinite;
+}
+
+.mainLoadingPanel {
+  width: min(calc(520px * var(--ui-scale)), calc(100vw - 40px));
+  max-width: 100%;
+}
+
+.mainLoadingPanel .loadProgress span,
+.mainLoadingPanel .loadProgress strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadProgressTrack i {
+    animation: none;
+    transition: none;
+  }
+}

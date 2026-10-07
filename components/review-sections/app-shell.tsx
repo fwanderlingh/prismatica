@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { LoadProgress } from "./load-progress";
 import { ChevronDown, ChevronRight, Info, PanelRight, UserCircle } from "lucide-react";
 
 type BreadcrumbItem = {
@@ -152,10 +153,7 @@ export function AppShell({
           <div className="mainLoadingOverlay" role="status" aria-live="polite">
             <div className="mainLoadingPanel">
               <span className="mainLoadingSpinner" aria-hidden="true" />
-              {/*<div>
-                <strong>{mainPendingLabel}</strong>
-                <span>Preparing the next view</span>
-              </div>*/}
+              <LoadProgress label={mainPendingLabel} detail="Preparing the requested page. Larger reviews may take longer." />
             </div>
           </div>
         ) : null}

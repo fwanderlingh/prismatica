@@ -78,6 +78,36 @@ try {
   payload = store.rejectPendingDedupCandidatesForUser(admin.id, project.id);
   assert.match(payload.events[0].action, /Included both citations for 1 duplicate pair/);
 
+  // Import stage reporting must not change persistence or report a saved result early.
+  writeFixture(fixture(100));
+  const importStages = [];
+  const imported = await store.createImportBatchForUser(admin.id, project.id, {
+    format: 'bib', filename: 'progress.bib', content: '@article{progress, title={Progress test citation}, author={Test, Author}, year={2024}}'
+  }, async (step) => {
+    await Promise.resolve();
+    importStages.push(step.label);
+    if (step.label === 'Preparing updated review') {
+      assert.ok(JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE)).imports.some(batch => batch.filename === 'progress.bib'));
+    }
+  });
+  assert.deepEqual(importStages, ['Loading review data', 'Parsing citations', 'Preparing citations', 'Checking duplicate candidates', 'Saving import', 'Preparing updated review']);
+  assert.ok(imported.events.some(event => event.action.includes('progress.bib')));
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(null, { status: 404 });
+    writeFixture(fixture(100));
+    const pdfSteps = [];
+    await store.createImportBatchForUser(admin.id, project.id, {
+      format: 'bib', filename: 'linked-pdfs.bib',
+      content: '@article{a, title={First PDF}, year={2024}, pdf={https://example.test/a.pdf}}\n@article{b, title={Second PDF}, year={2024}, pdf={https://example.test/b.pdf}}'
+    }, step => { if (step.label === 'Retrieving linked PDFs') pdfSteps.push(step); });
+    assert.deepEqual(pdfSteps.map(step => step.percent), [0, 50, 100]);
+    assert.match(pdfSteps[2].detail, /2 of 2 links checked · 0 retrieved · 2 unavailable/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
   // Capture actual incremental PostgreSQL mutations without invoking a database.
   let dbState = fixture(100);
   let savedMutation;

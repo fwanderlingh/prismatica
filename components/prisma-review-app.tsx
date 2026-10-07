@@ -81,7 +81,10 @@ import {
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
+import { groupByKey } from "@/lib/collectionIndexes";
 import { getProjectAuditEvents } from "@/lib/auditHistory";
+import { readFileWithProgress, readImportProgress, type LoadProgress as LoadingProgress } from "@/lib/loadProgress";
+import { LoadProgress } from "./review-sections/load-progress";
 import type { ApiErrorPayload, AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
 import {
@@ -530,13 +533,14 @@ const guestUser: AppUser = {
   websiteTheme: "system"
 };
 
-async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
+async function apiRequest<T>(url: string, init?: RequestInit, onProgress?: (progress: LoadingProgress) => void): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
   const response = await fetch(url, { ...init, headers });
+  onProgress?.({ label: "Receiving workspace data", detail: "Loading your reviews, citations, and decisions." });
   const payload = (await response.json().catch(() => ({}))) as T | ApiErrorPayload;
   if (!response.ok) {
     throw new Error((payload as ApiErrorPayload).error || "The server request failed.");
@@ -677,6 +681,8 @@ export function PrismaReviewApp() {
   const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "retrieval" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
   const [isImportingCitation, setIsImportingCitation] = useState(false);
+  const [importProgress, setImportProgress] = useState<LoadingProgress | null>(null);
+  const [workspaceProgress, setWorkspaceProgress] = useState<LoadingProgress>({ label: "Loading your workspace", detail: "Waiting for your reviews and permissions from the server." });
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
   const [importDetailMessage, setImportDetailMessage] = useState("");
@@ -782,26 +788,36 @@ export function PrismaReviewApp() {
   );
   const isProjectView = isProjectScopedView(activeView);
   const hasProjectSeedData = selectedProject.id === "demo-review";
-  const projectImportBatches = imports.filter((batch) => batch.projectId === selectedProject.id);
-  const importedProjectStudies = studies.filter((study) => study.projectId === selectedProject.id);
+  const projectImportBatches = useMemo(() => imports.filter((batch) => batch.projectId === selectedProject.id), [imports, selectedProject.id]);
+  const importedProjectStudies = useMemo(() => studies.filter((study) => study.projectId === selectedProject.id), [studies, selectedProject.id]);
   const projectDedupCandidates = useMemo(
     () => dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === selectedProject.id),
     [dedupCandidates, selectedProject.id]
   );
   const confirmedDuplicateStudyIds = useMemo(() => getConfirmedDuplicateStudyIds(projectDedupCandidates), [projectDedupCandidates]);
-  const projectScreeningStudies = (hasProjectSeedData ? screeningStudies : importedProjectStudies).filter(
-    (study) => !confirmedDuplicateStudyIds.has(study.id)
+  const projectScreeningStudies = useMemo(
+    () => (hasProjectSeedData ? screeningStudies : importedProjectStudies).filter((study) => !confirmedDuplicateStudyIds.has(study.id)),
+    [hasProjectSeedData, importedProjectStudies, confirmedDuplicateStudyIds]
   );
-  const projectReportQueue = sortReportsByStudyOrder(
-    hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(selectedProject, importedProjectStudies, reports),
-    projectScreeningStudies
+  const projectReportQueue = useMemo(
+    () => sortReportsByStudyOrder(
+      hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(selectedProject, importedProjectStudies, reports),
+      projectScreeningStudies
+    ),
+    [hasProjectSeedData, selectedProject, importedProjectStudies, reports, projectScreeningStudies]
   );
   const activeFullTextReports = useMemo(
     () => getActiveFullTextReports(selectedProject, projectReportQueue, decisions, currentUser.id),
     [currentUser.id, decisions, projectReportQueue, selectedProject]
   );
-  const projectExtractionStudyIds = new Set(projectScreeningStudies.filter((study) => study.stage === "extraction").map((study) => study.id));
-  const projectExtractionReports = projectReportQueue.filter((report) => projectExtractionStudyIds.has(report.studyId));
+  const projectExtractionStudyIds = useMemo(
+    () => new Set(projectScreeningStudies.filter((study) => study.stage === "extraction").map((study) => study.id)),
+    [projectScreeningStudies]
+  );
+  const projectExtractionReports = useMemo(
+    () => projectReportQueue.filter((report) => projectExtractionStudyIds.has(report.studyId)),
+    [projectExtractionStudyIds, projectReportQueue]
+  );
   const projectExtractionReportKey = projectExtractionReports.map((report) => report.id).join("|");
   const activeExtractionTemplate =
     extractionTemplates.find((template) => template.projectId === selectedProject.id && template.isActive) ??
@@ -843,17 +859,15 @@ export function PrismaReviewApp() {
     () => getCountsForProject(selectedProject, projectScreeningStudies, projectReportQueue, decisions, extractionResponses, extractionTemplates, projectDedupCandidates),
     [decisions, extractionResponses, extractionTemplates, projectDedupCandidates, projectReportQueue, projectScreeningStudies, selectedProject]
   );
+  const titleAbstractDecisionsByStudy = useMemo(
+    () => groupByKey(decisions.filter((decision) => decision.projectId === selectedProject.id && decision.stage === "title_abstract" && decision.isCurrent), (decision) => decision.studyId),
+    [decisions, selectedProject.id]
+  );
   const titleAbstractEvaluations = useMemo(
     () =>
       new Map(
         projectScreeningStudies.map((study) => {
-          const currentDecisions = decisions.filter(
-            (decision) =>
-              decision.projectId === selectedProject.id &&
-              decision.studyId === study.id &&
-              decision.stage === "title_abstract" &&
-              decision.isCurrent
-          );
+          const currentDecisions = titleAbstractDecisionsByStudy.get(study.id) ?? [];
           return [
             study.id,
             evaluateStage(
@@ -865,7 +879,7 @@ export function PrismaReviewApp() {
           ];
         })
       ),
-    [decisions, projectScreeningStudies, selectedProject.abstractRequiredVotes, selectedProject.id, selectedProject.maybePolicy]
+    [titleAbstractDecisionsByStudy, projectScreeningStudies, selectedProject.abstractRequiredVotes, selectedProject.maybePolicy]
   );
   const workflowConflicts = useMemo<WorkflowConflict[]>(
     () =>
@@ -1354,7 +1368,7 @@ export function PrismaReviewApp() {
 
     async function loadServerSession() {
       try {
-        const payload = await apiRequest<AppStatePayload>("/api/app-state");
+        const payload = await apiRequest<AppStatePayload>("/api/app-state", undefined, (progress) => { if (isMounted) setWorkspaceProgress(progress); });
         if (!isMounted) {
           return;
         }
@@ -1363,6 +1377,7 @@ export function PrismaReviewApp() {
         setIsAuthenticated(true);
       } catch {
         if (isMounted) {
+          setWorkspaceProgress({ label: "Preparing sign-in", detail: "Loading sign-in options." });
           await loadAuthConfig().catch(() => undefined);
           setIsAuthenticated(false);
         }
@@ -1893,7 +1908,7 @@ export function PrismaReviewApp() {
           </div>
           <div className="authLoadingBody">
             <span className="authLoadingSpinner" aria-hidden="true" />
-            <p className="subtle">Loading your workspace...</p>
+            <LoadProgress {...workspaceProgress} />
           </div>
         </section>
       </main>
@@ -2616,17 +2631,18 @@ export function PrismaReviewApp() {
   async function importCitationFile(format: ImportBatch["format"], event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) {
+    if (!file || isImportingCitation) {
       return;
     }
 
     setIsImportingCitation(true);
     setImportMessage(`Reading ${file.name}...`);
     try {
-      const content = await file.text();
-      setImportMessage(`Uploading and parsing ${file.name}...`);
-      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports`, {
+      const content = await readFileWithProgress(file, setImportProgress);
+      setImportProgress({ label: `Uploading ${file.name}`, detail: "Sending citations to the server. Parsing starts after the upload finishes." });
+      const response = await fetch(`/api/projects/${selectedProject.id}/imports`, {
         method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
         body: JSON.stringify({
           format,
           filename: file.name,
@@ -2634,6 +2650,7 @@ export function PrismaReviewApp() {
           content
         })
       });
+      const payload = await readImportProgress<AppMutationPayload>(response, setImportProgress);
       applyAppState(payload);
       const importedBatchId = payload.imports.find((batch) => batch.projectId === selectedProject.id)?.id ?? "";
       const successMessage = payload.message || `${file.name} imported and stored on the server.`;
@@ -2645,6 +2662,7 @@ export function PrismaReviewApp() {
       setImportMessage(getErrorMessage(error));
     } finally {
       setIsImportingCitation(false);
+      setImportProgress(null);
     }
   }
 
@@ -3418,6 +3436,7 @@ export function PrismaReviewApp() {
         selectedReviewBatch={selectedReviewBatch}
         importMessage={importMessage}
         isImportingCitation={isImportingCitation}
+        importProgress={importProgress}
         bibtexInputRef={bibtexInputRef}
         risInputRef={risInputRef}
         onImportCitationFile={importCitationFile}
@@ -3910,7 +3929,7 @@ export function PrismaReviewApp() {
           </div>
           <div className="authLoadingBody">
             <span className="authLoadingSpinner" aria-hidden="true" />
-            <p className="subtle">Resolving route...</p>
+            <LoadProgress label="Opening review" detail="Checking access and preparing the requested page." />
           </div>
         </section>
       </main>

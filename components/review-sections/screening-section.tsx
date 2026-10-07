@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
 import type { Decision, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
@@ -73,6 +73,15 @@ export function ScreeningSection({
   addScreeningDecision,
   undoLastDecision
 }: ScreeningSectionProps) {
+  const decisionsByStudy = useMemo(() => {
+    const result = new Map<string, Decision>();
+    for (const decision of decisions) {
+      if (decision.projectId === selectedProjectId && decision.userId === currentUserId && decision.stage === "title_abstract" && decision.isCurrent && !result.has(decision.studyId)) {
+        result.set(decision.studyId, decision);
+      }
+    }
+    return result;
+  }, [decisions, selectedProjectId, currentUserId]);
   const isSubmittingDecision = pendingScreeningDecision !== null;
   const activeDecisionValue = currentUserDecision?.decisionValue;
   const isDecisionDisabled = isSubmittingDecision || isUndoingScreeningDecision || !canRecordScreeningDecision;
@@ -152,14 +161,7 @@ export function ScreeningSection({
           <SectionTitle icon={ListChecks} title="Queue" action={`${projectScreeningStudies.length} active`} />
           <div className="queueList">
             {projectScreeningStudies.map((study, index) => {
-              const decision = decisions.find(
-                (candidate) =>
-                  candidate.projectId === selectedProjectId &&
-                  candidate.studyId === study.id &&
-                  candidate.userId === currentUserId &&
-                  candidate.stage === "title_abstract" &&
-                  candidate.isCurrent
-              );
+              const decision = decisionsByStudy.get(study.id);
               const queueEvaluation = titleAbstractEvaluations.get(study.id);
               const hasQueueConflict = queueEvaluation?.state === "conflict" || queueEvaluation?.state === "needs_third_vote";
               return (

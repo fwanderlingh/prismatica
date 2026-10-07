@@ -1,4 +1,6 @@
 import crypto from "crypto";
+import { groupByKey } from "./collectionIndexes";
+import type { LoadProgress } from "./loadProgress";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -1050,6 +1052,13 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
   const visibleDedupCandidates = state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)));
   const visibleDedupCandidateIds = new Set(visibleDedupCandidates.map((candidate) => candidate.id));
 
+  const decisionsByStudy = groupByKey(state.decisions, (decision) => decision.studyId);
+  const decisionsByReport = groupByKey(state.decisions, (decision) => decision.reportId);
+  const checkoutsByStudy = groupByKey(activeScreeningCheckouts, (checkout) => checkout.studyId);
+  const checkoutsByReport = groupByKey(activeScreeningCheckouts, (checkout) => checkout.reportId);
+  const templatesByProject = groupByKey(state.extractionTemplates, (template) => template.projectId);
+  const responsesByReport = groupByKey(state.extractionResponses, (response) => response.reportId);
+
   return {
     currentUser: publicUser(currentUser),
     authSettings: state.authSettings,
@@ -1063,8 +1072,8 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
         withStudyWorkflowState(
           study,
           study.projectId ? projectById.get(study.projectId) : undefined,
-          state.decisions,
-          activeScreeningCheckouts,
+          decisionsByStudy.get(study.id) ?? [],
+          checkoutsByStudy.get(study.id) ?? [],
           userId
         )
       ),
@@ -1074,10 +1083,10 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
         withReportWorkflowState(
           report,
           projectById.get(report.projectId),
-          state.decisions,
-          state.extractionTemplates,
-          state.extractionResponses,
-          activeScreeningCheckouts,
+          decisionsByReport.get(report.id) ?? [],
+          templatesByProject.get(report.projectId) ?? [],
+          responsesByReport.get(report.id) ?? [],
+          checkoutsByReport.get(report.id) ?? [],
           userId
         )
       ),
@@ -1113,9 +1122,12 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
 function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewProject, userId: string): ProjectWorkflowConflict[] {
   const canSeeAllVotes = !project.blindMode || isProjectOwner(project, userId);
   const visibleDecisions = (decisions: Decision[]) => (canSeeAllVotes ? decisions : decisions.filter((decision) => decision.userId === userId));
+  const projectDecisions = state.decisions.filter((decision) => decision.projectId === project.id && decision.isCurrent);
+  const decisionsByStudy = groupByKey(projectDecisions, (decision) => decision.studyId);
+  const decisionsByReport = groupByKey(projectDecisions, (decision) => decision.reportId);
   const projectStudies = state.studies.filter((study) => study.projectId === project.id);
   const titleAbstractConflicts = projectStudies.flatMap((study): ProjectWorkflowConflict[] => {
-    const currentDecisions = state.decisions.filter(
+    const currentDecisions = (decisionsByStudy.get(study.id) ?? []).filter(
       (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
     );
     const evaluation = evaluateStage(
@@ -1145,7 +1157,7 @@ function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
 
   const fullTextConflicts = getWorkflowReportsForProject(state, project.id)
     .flatMap((report): ProjectWorkflowConflict[] => {
-      const currentDecisions = state.decisions.filter(
+      const currentDecisions = (decisionsByReport.get(report.id) ?? []).filter(
         (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
       );
       const evaluation = evaluateStage(
@@ -2118,8 +2130,10 @@ export async function createImportBatchForUser(
     filename?: string;
     byteSize?: number;
     content?: string;
-  }
+  },
+  onProgress?: (progress: LoadProgress) => void | Promise<void>
 ): Promise<AppMutationPayload> {
+  await onProgress?.({ label: "Loading review data", detail: "Preparing the review for this import." });
   const state = readState();
   const currentUser = getUser(state, userId);
   const project = requireProjectMember(state, projectId, userId);
@@ -2133,8 +2147,10 @@ export async function createImportBatchForUser(
 
   const filename = input.filename?.trim() || `${input.format}-import.${input.format === "bib" ? "bib" : "ris"}`;
   const content = input.content ?? "";
+  await onProgress?.({ label: "Parsing citations", detail: `Reading citation entries in ${filename}.` });
   const parsedCitations = parseCitationFile(input.format, content);
   const records = parsedCitations.length;
+  await onProgress?.({ label: "Preparing citations", detail: `${records} citation entries parsed. Checking metadata and PDF links.` });
   const importFileWarnings: string[] = [];
   if (!content.trim()) {
     importFileWarnings.push("Import file: File is empty or only contains whitespace.");
@@ -2187,9 +2203,10 @@ export async function createImportBatchForUser(
   state.imports.unshift(batch);
   state.studies.unshift(...importedStudies);
   state.reports.unshift(...importedReports);
+  await onProgress?.({ label: "Checking duplicate candidates", detail: `Comparing ${records} imported citations with the review. Larger imports can take longer.` });
   syncDedupCandidatesForProject(state, projectId);
   if (importedReports.length > 0) {
-    await retrieveImportedPdfReports(state, projectId, batch.id, importedReports, currentUser);
+    await retrieveImportedPdfReports(state, projectId, batch.id, importedReports, currentUser, onProgress);
   }
   state.projects = state.projects.map((candidate) =>
     candidate.id === projectId
@@ -2209,7 +2226,9 @@ export async function createImportBatchForUser(
       ? `; retrieved ${refreshedBatch.pdfsRetrieved ?? 0} of ${refreshedBatch.pdfLinks ?? 0} linked PDFs`
       : "";
   appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}${pdfSummary}`, project.id);
+  await onProgress?.({ label: "Saving import", detail: "Saving citations, duplicate candidates, and retrieval results." });
   writeState(state);
+  await onProgress?.({ label: "Preparing updated review", detail: "The import is saved. Preparing the updated citation list." });
 
   return {
     ...buildPayload(state, userId),
@@ -3916,12 +3935,28 @@ async function retrieveImportedPdfReports(
   projectId: string,
   importId: string,
   reports: Report[],
-  user: Pick<AppUser, "id" | "name">
+  user: Pick<AppUser, "id" | "name">,
+  onProgress?: (progress: LoadProgress) => void | Promise<void>
 ) {
+  const linkedReports = reports.filter((report) => report.sourcePdfUrl);
+  let completed = 0;
+  let successful = 0;
+  const reportProgress = () => onProgress?.({
+    label: "Retrieving linked PDFs",
+    detail: `${completed} of ${linkedReports.length} links checked · ${successful} retrieved · ${completed - successful} unavailable.`,
+    percent: linkedReports.length ? Math.round(completed / linkedReports.length * 100) : 100
+  });
+  await reportProgress();
   const results = await mapWithConcurrency(
-    reports.filter((report) => report.sourcePdfUrl),
+    linkedReports,
     pdfRetrievalConcurrency,
-    (report) => retrievePdfForReportFromUrl(state, projectId, report.id, report.sourcePdfUrl ?? "", user)
+    async (report) => {
+      const result = await retrievePdfForReportFromUrl(state, projectId, report.id, report.sourcePdfUrl ?? "", user);
+      completed += 1;
+      if (result) successful += 1;
+      await reportProgress();
+      return result;
+    }
   );
   const retrieved = results.filter(Boolean).length;
   const failed = results.length - retrieved;
@@ -4141,9 +4176,12 @@ function resyncAllProjectWorkflowState(state: PersistedState) {
 }
 
 function countProjectWorkflowConflicts(state: PersistedState, project: ReviewProject) {
+  const projectDecisions = state.decisions.filter((decision) => decision.projectId === project.id && decision.isCurrent);
+  const decisionsByStudy = groupByKey(projectDecisions, (decision) => decision.studyId);
+  const decisionsByReport = groupByKey(projectDecisions, (decision) => decision.reportId);
   const projectStudies = state.studies.filter((study) => study.projectId === project.id);
   const titleAbstractConflicts = projectStudies.filter((study) => {
-    const currentDecisions = state.decisions.filter(
+    const currentDecisions = (decisionsByStudy.get(study.id) ?? []).filter(
       (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
     );
     const evaluation = evaluateStage(
@@ -4159,7 +4197,7 @@ function countProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
     if (report.projectId !== project.id) {
       return false;
     }
-    const currentDecisions = state.decisions.filter(
+    const currentDecisions = (decisionsByReport.get(report.id) ?? []).filter(
       (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
     );
     const evaluation = evaluateStage(
@@ -4243,12 +4281,16 @@ function syncDedupCandidatesForProject(state: PersistedState, projectId: string)
       .filter((candidate) => isDedupCandidateForProject(candidate, projectId))
       .map((candidate) => [dedupPairKey(candidate.recordA.id, candidate.recordB.id), candidate])
   );
+  const studiesById = new Map<string, Study>();
+  for (const study of projectStudies) {
+    if (!studiesById.has(study.id)) studiesById.set(study.id, study);
+  }
   const pairKeys = collectDedupPairKeys(projectStudies);
   const generatedCandidates = Array.from(pairKeys)
     .map((pairKey) => {
       const [leftId, rightId] = pairKey.split("|");
-      const left = projectStudies.find((study) => study.id === leftId);
-      const right = projectStudies.find((study) => study.id === rightId);
+      const left = studiesById.get(leftId);
+      const right = studiesById.get(rightId);
       if (!left || !right) {
         return null;
       }

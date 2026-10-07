@@ -1,3 +1,4 @@
+import { groupByKey } from "./collectionIndexes";
 import {
   projectCounts as seedProjectCounts,
   type DedupCandidate,
@@ -75,17 +76,16 @@ export function getCountsForProject(
   );
   const includedStudyIds = new Set(projectStudies.filter((study) => study.projectId === project.id && study.stage === "extraction").map((study) => study.id));
   const includedReports = projectReports.filter((report) => includedStudyIds.has(report.studyId));
+  const submittedCountsByReport = new Map<string, number>();
+  if (activeExtractionTemplate) {
+    for (const response of extractionResponses) {
+      if (response.projectId === project.id && response.templateId === activeExtractionTemplate.id && response.isSubmitted) {
+        submittedCountsByReport.set(response.reportId, (submittedCountsByReport.get(response.reportId) ?? 0) + 1);
+      }
+    }
+  }
   const studiesExtracted = activeExtractionTemplate
-    ? includedReports.filter((report) => {
-        const submittedVotes = extractionResponses.filter(
-          (response) =>
-            response.projectId === project.id &&
-            response.reportId === report.id &&
-            response.templateId === activeExtractionTemplate.id &&
-            response.isSubmitted
-        ).length;
-        return submittedVotes >= project.extractionRequiredVotes;
-      }).length
+    ? includedReports.filter((report) => (submittedCountsByReport.get(report.id) ?? 0) >= project.extractionRequiredVotes).length
     : 0;
 
   return (
@@ -196,20 +196,16 @@ export function randomizeReviewQueueItems<T extends { id: string }>(
   }
 ) {
   const { projectId, currentUserId, phase, isPinned, salt = "" } = options;
-  return items.slice().sort((left, right) => {
-    const leftPinned = isPinned?.(left) ? 1 : 0;
-    const rightPinned = isPinned?.(right) ? 1 : 0;
-    if (leftPinned !== rightPinned) {
-      return rightPinned - leftPinned;
-    }
-
-    const leftKey = reviewQueueHash(`${projectId}:${currentUserId}:${phase}:${salt}:${left.id}`);
-    const rightKey = reviewQueueHash(`${projectId}:${currentUserId}:${phase}:${salt}:${right.id}`);
-    if (leftKey !== rightKey) {
-      return leftKey - rightKey;
-    }
-    return left.id.localeCompare(right.id);
-  });
+  const prefix = `${projectId}:${currentUserId}:${phase}:${salt}:`;
+  return items.map((item) => ({
+    item,
+    pinned: isPinned?.(item) ? 1 : 0,
+    key: reviewQueueHash(`${prefix}${item.id}`)
+  })).sort((left, right) => {
+    if (left.pinned !== right.pinned) return right.pinned - left.pinned;
+    if (left.key !== right.key) return left.key - right.key;
+    return left.item.id.localeCompare(right.item.id);
+  }).map(({ item }) => item);
 }
 
 export function isFullTextReportComplete(report: Report, project: ReviewProject) {
@@ -242,10 +238,12 @@ export function isFullTextEvaluationComplete(evaluation: StageEvaluation | undef
 }
 
 export function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {
+  const decisionsByItem = groupByKey(
+    decisions.filter((decision) => decision.projectId === project.id && decision.stage === "title_abstract" && decision.isCurrent),
+    (decision) => decision.studyId
+  );
   const activeStudies = studies.filter((study) => {
-    const currentDecisions = decisions.filter(
-      (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent
-    );
+    const currentDecisions = decisionsByItem.get(study.id) ?? [];
     const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
     const voteCount = study.titleAbstractVoteCount ?? currentDecisions.length;
     const requiredVotes = study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes;
@@ -278,10 +276,12 @@ export function getActiveTitleAbstractStudies(project: ReviewProject, studies: S
 }
 
 export function getActiveFullTextReports(project: ReviewProject, reports: Report[], decisions: Decision[], currentUserId: string) {
+  const decisionsByItem = groupByKey(
+    decisions.filter((decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent),
+    (decision) => decision.reportId
+  );
   const activeReports = reports.filter((report) => {
-    const currentDecisions = decisions.filter(
-      (decision) => decision.projectId === project.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
-    );
+    const currentDecisions = decisionsByItem.get(report.id) ?? [];
     const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
     const voteCount = report.fullTextVoteCount ?? currentDecisions.length;
     const requiredVotes = report.fullTextRequiredVotes ?? project.fullTextRequiredVotes;
@@ -326,14 +326,12 @@ export function getActiveExtractionReports(
   templateId: string,
   currentUserId: string
 ) {
+  const responsesByReport = groupByKey(
+    extractionResponses.filter((response) => response.projectId === project.id && response.templateId === templateId && response.isSubmitted),
+    (response) => response.reportId
+  );
   const activeReports = reports.filter((report) => {
-    const submittedResponses = extractionResponses.filter(
-      (response) =>
-        response.projectId === project.id &&
-        response.reportId === report.id &&
-        response.templateId === templateId &&
-        response.isSubmitted
-    );
+    const submittedResponses = responsesByReport.get(report.id) ?? [];
     const currentUserHasSubmitted = submittedResponses.some((response) => response.userId === currentUserId);
     const metadataMatchesTemplate = report.extractionTemplateId === templateId;
     const submittedCount = metadataMatchesTemplate ? report.extractionVoteCount ?? submittedResponses.length : submittedResponses.length;
