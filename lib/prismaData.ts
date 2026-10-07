@@ -84,6 +84,7 @@ export type ImportBatch = {
   pdfsRetrieved?: number;
   pdfRetrievalFailures?: number;
   uploadedBy: string;
+  uploadedByUserId?: string;
   uploadedAt: string;
 };
 
@@ -279,6 +280,7 @@ export type HighlightRule = {
 export type WorkflowEvent = {
   id: string;
   actor: string;
+  actorId?: string;
   action: string;
   entity: string;
   time: string;

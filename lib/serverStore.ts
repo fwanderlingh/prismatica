@@ -2194,6 +2194,7 @@ export async function createImportBatchForUser(
     pdfsRetrieved: 0,
     pdfRetrievalFailures: 0,
     uploadedBy: currentUser.name,
+    uploadedByUserId: currentUser.id,
     uploadedAt: now.toISOString().slice(0, 16).replace("T", " ")
   };
   const importedReports = importedStudies
@@ -2225,7 +2226,7 @@ export async function createImportBatchForUser(
     refreshedBatch && (refreshedBatch.pdfLinks ?? 0) > 0
       ? `; retrieved ${refreshedBatch.pdfsRetrieved ?? 0} of ${refreshedBatch.pdfLinks ?? 0} linked PDFs`
       : "";
-  appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}${pdfSummary}`, project.id);
+  appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}${pdfSummary}`, project.id, currentUser.id);
   await onProgress?.({ label: "Saving import", detail: "Saving citations, duplicate candidates, and retrieval results." });
   writeState(state);
   await onProgress?.({ label: "Preparing updated review", detail: "The import is saved. Preparing the updated citation list." });
@@ -3535,7 +3536,8 @@ export function updateDedupCandidateForUser(
     state,
     currentUser.name,
     getDedupCandidateStatusEventLabel(status),
-    candidateId
+    candidateId,
+    currentUser.id
   );
   const updatedCandidate = state.dedupCandidates.find((candidate) => candidate.id === candidateId);
   const event = state.events[0];
@@ -3584,7 +3586,8 @@ export function rejectPendingDedupCandidatesForUser(userId: string, projectId: s
     state,
     currentUser.name,
     `Included both citations for ${pendingCandidates.length} duplicate ${pendingCandidates.length === 1 ? "pair" : "pairs"}`,
-    projectId
+    projectId,
+    currentUser.id
   );
   const event = state.events[0];
   const changedCandidates = state.dedupCandidates.filter((candidate) => pendingCandidateIds.has(candidate.id));
@@ -4520,10 +4523,11 @@ function syncProjectAfterImportChange(state: PersistedState, projectId: string, 
   });
 }
 
-function appendEvent(state: PersistedState, actor: string, action: string, entity: string) {
+function appendEvent(state: PersistedState, actor: string, action: string, entity: string, actorId?: string) {
   const nextEvent: WorkflowEvent = {
     id: createId("evt"),
     actor,
+    actorId,
     action,
     entity,
     time: new Date().toISOString()

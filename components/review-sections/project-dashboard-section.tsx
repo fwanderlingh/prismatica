@@ -8,6 +8,8 @@ type WorkflowConflict = ProjectWorkflowConflict & {
 
 type ProjectUserStatRow = {
   user: AppUser;
+  importedRecords: number;
+  duplicatePairsResolved: number;
   screened: number;
   uploadedPdf: number;
   fullTextReviews: number;
@@ -238,6 +240,8 @@ export function ProjectDashboardSection({
             <thead>
               <tr>
                 <th>Reviewer</th>
+                <th>Imported records</th>
+                <th>Duplicate pairs resolved</th>
                 <th>Screened</th>
                 <th>Uploaded PDF</th>
                 <th>Full Text Reviews</th>
@@ -251,6 +255,8 @@ export function ProjectDashboardSection({
                     <strong>{row.user.name}</strong>
                     <span>{row.user.title}</span>
                   </td>
+                  <td>{row.importedRecords}</td>
+                  <td>{row.duplicatePairsResolved}</td>
                   <td>{row.screened}</td>
                   <td>{row.uploadedPdf}</td>
                   <td>{row.fullTextReviews}</td>

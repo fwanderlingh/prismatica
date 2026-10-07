@@ -432,6 +432,8 @@ type ExtractionTemplateForm = {
 
 type ProjectUserStats = {
   user: AppUser;
+  importedRecords: number;
+  duplicatePairsResolved: number;
   screened: number;
   uploadedPdf: number;
   fullTextReviews: number;
@@ -919,7 +921,7 @@ export function PrismaReviewApp() {
   const auditPageCount = Math.max(1, Math.ceil(projectEvents.length / AUDIT_PAGE_SIZE));
   const currentAuditPage = Math.min(auditPage, auditPageCount);
   const pagedProjectEvents = projectEvents.slice((currentAuditPage - 1) * AUDIT_PAGE_SIZE, currentAuditPage * AUDIT_PAGE_SIZE);
-  const projectUserStats = getProjectUserStats(selectedProject, users, decisions, projectReportQueue, extractionResponses, projectEvents);
+  const projectUserStats = getProjectUserStats(selectedProject, users, imports, decisions, projectReportQueue, extractionResponses, projectEvents);
   const studyIndex = Math.max(activeScreeningStudies.findIndex((study) => study.id === selectedScreeningStudyId), 0);
   const currentStudy = activeScreeningStudies[studyIndex] ?? activeScreeningStudies[0] ?? projectScreeningStudies[0] ?? screeningStudies[0];
   const isCurrentStudyInActiveScreeningQueue = activeScreeningStudies.some((study) => study.id === currentStudy.id);
@@ -4200,12 +4202,14 @@ function getWorkflowStepState(key: ViewKey, stage: ReviewProject["stage"]) {
 function getProjectUserStats(
   project: ReviewProject,
   users: AppUser[],
+  imports: ImportBatch[],
   decisions: Decision[],
   reports: Report[],
   extractionResponses: ExtractionResponse[],
   events: WorkflowEvent[]
 ): ProjectUserStats[] {
   const memberIds = new Set([project.ownerId, ...project.ownerIds, ...project.memberIds]);
+  const projectImports = imports.filter((batch) => batch.projectId === project.id);
   const projectReports = reports.filter((report) => report.projectId === project.id);
   const projectReportIds = new Set(projectReports.map((report) => report.id));
   return users
@@ -4221,8 +4225,23 @@ function getProjectUserStats(
           projectReportIds.has(event.entity) &&
           !uploadedReportIds.has(event.entity)
       ).length;
+      const importedRecords = projectImports
+        .filter((batch) => batch.uploadedByUserId === user.id || (!batch.uploadedByUserId && batch.uploadedBy === user.name))
+        .reduce((total, batch) => total + batch.records, 0);
+      const duplicatePairsResolved = events.reduce((total, event) => {
+        if (event.actorId ? event.actorId !== user.id : event.actor !== user.name) {
+          return total;
+        }
+        if (event.action === "Excluded duplicate citation" || event.action === "Included both duplicate candidates") {
+          return total + 1;
+        }
+        const bulkResolution = event.action.match(/^Included both citations for (\d+) duplicate pairs?$/);
+        return total + (bulkResolution ? Number(bulkResolution[1]) : 0);
+      }, 0);
       return {
         user,
+        importedRecords,
+        duplicatePairsResolved,
         screened: countCurrentDecisions(decisions, project.id, user.id, "title_abstract"),
         uploadedPdf: uploadedReportIds.size + legacyUploadEvents,
         fullTextReviews: countCurrentDecisions(decisions, project.id, user.id, "full_text"),
