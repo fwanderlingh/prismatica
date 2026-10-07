@@ -8,6 +8,7 @@ import { normalizeAuditHistoryLimit } from "./auditHistory";
 import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
 import { randomizeReviewQueueItems } from "./workflowSelectors";
+import { formatAuthorList } from "./reviewDisplay";
 import {
   type AppUser,
   type Decision,
@@ -4728,7 +4729,7 @@ function formatRetrievalStatus(value: Report["retrievalStatus"]) {
 }
 
 function formatStudyCitation(study: Study) {
-  const authors = study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed";
+  const authors = study.authors.length > 0 ? formatAuthorList(study.authors) : "No authors parsed";
   const year = study.year > 0 ? study.year : "Year needs review";
   return `${authors}. ${study.journal}. ${year}.`;
 }

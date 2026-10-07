@@ -14,6 +14,7 @@ import {
 } from "@/lib/prismaData";
 import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 import { ReportPicker } from "@/components/review-sections/review-queue";
+import { formatAuthorList } from "@/lib/reviewDisplay";
 
 type FormSubmitEvent = {
   preventDefault: () => void;
@@ -525,7 +526,7 @@ export function ExtractionSection({
           <h2>{activeReportForExtraction?.title ?? "Included report"}</h2>
           <p className="subtle">
             {activeStudyForExtraction
-              ? `${activeStudyForExtraction.authors.join(", ") || "No authors parsed"} · ${activeStudyForExtraction.journal} · ${
+              ? `${formatAuthorList(activeStudyForExtraction.authors) || "No authors parsed"} · ${activeStudyForExtraction.journal} · ${
                   activeStudyForExtraction.year > 0 ? activeStudyForExtraction.year : "Year needs review"
                 }`
               : "Select an included report to extract data."}

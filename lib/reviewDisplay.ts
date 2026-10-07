@@ -2,6 +2,10 @@ import type { Report, Study } from "@/lib/prismaData";
 
 type ArticleDisplaySource = Pick<Study, "importItemId"> | undefined;
 
+export function formatAuthorList(authors: string[]) {
+  return authors.join("; ");
+}
+
 export function getArticleDisplayId(study?: ArticleDisplaySource, fallbackId?: number | string) {
   const value = study?.importItemId ?? fallbackId;
   return value === undefined || value === null || value === "" ? "unassigned" : String(value);

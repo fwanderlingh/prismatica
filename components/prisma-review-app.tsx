@@ -87,6 +87,7 @@ import { readFileWithProgress, readImportProgress, type LoadProgress as LoadingP
 import { LoadProgress } from "./review-sections/load-progress";
 import type { ApiErrorPayload, AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
 import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
+import { formatAuthorList } from "@/lib/reviewDisplay";
 import {
   getActiveExtractionReports,
   getActiveFullTextReports,
@@ -4252,7 +4253,7 @@ function formatDecision(value: DecisionValue) {
 }
 
 function formatStudySubtitle(study: Study) {
-  const authors = study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed";
+  const authors = study.authors.length > 0 ? formatAuthorList(study.authors) : "No authors parsed";
   const year = study.year > 0 ? study.year : "Year needs review";
   return `${authors} · ${study.journal || "Journal missing"} · ${year}`;
 }

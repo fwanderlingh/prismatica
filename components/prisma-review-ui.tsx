@@ -14,6 +14,7 @@ import {
   XCircle
 } from "lucide-react";
 import type { PrismaCounts, Study } from "@/lib/prismaData";
+import { formatAuthorList } from "@/lib/reviewDisplay";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
@@ -106,7 +107,7 @@ export function RecordComparison({ title, source, articleId, study }: { title: s
         </div>
         <div>
           <dt>Authors</dt>
-          <dd>{study.authors.join(", ")}</dd>
+          <dd>{formatAuthorList(study.authors)}</dd>
         </div>
         <div>
           <dt>Journal</dt>

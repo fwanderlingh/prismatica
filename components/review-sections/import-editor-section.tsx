@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, Database, FileSearch, FileText, PenLine, Trash2, X } from "lucide-react";
 import type { ImportBatch, Study } from "@/lib/prismaData";
 import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
+import { formatAuthorList } from "@/lib/reviewDisplay";
 
 type FormSubmitEvent = {
   preventDefault: () => void;
@@ -152,7 +153,7 @@ export function ImportEditorSection({
                 <span className="entryReference">{recordLabel(study)}</span>
                 <strong>{study.title}</strong>
                 <span>
-                  {study.authors.length > 0 ? study.authors.join(", ") : "No authors parsed"} · {study.journal} ·{" "}
+                  {study.authors.length > 0 ? formatAuthorList(study.authors) : "No authors parsed"} · {study.journal} ·{" "}
                   {study.year > 0 ? study.year : "Year not provided"}
                 </span>
               </div>
