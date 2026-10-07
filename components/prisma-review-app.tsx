@@ -921,7 +921,7 @@ export function PrismaReviewApp() {
   const auditPageCount = Math.max(1, Math.ceil(projectEvents.length / AUDIT_PAGE_SIZE));
   const currentAuditPage = Math.min(auditPage, auditPageCount);
   const pagedProjectEvents = projectEvents.slice((currentAuditPage - 1) * AUDIT_PAGE_SIZE, currentAuditPage * AUDIT_PAGE_SIZE);
-  const projectUserStats = getProjectUserStats(selectedProject, users, imports, decisions, projectReportQueue, extractionResponses, projectEvents);
+  const projectUserStats = getProjectUserStats(selectedProject, users, imports, decisions, projectReportQueue, extractionResponses, projectDedupCandidates);
   const studyIndex = Math.max(activeScreeningStudies.findIndex((study) => study.id === selectedScreeningStudyId), 0);
   const currentStudy = activeScreeningStudies[studyIndex] ?? activeScreeningStudies[0] ?? projectScreeningStudies[0] ?? screeningStudies[0];
   const isCurrentStudyInActiveScreeningQueue = activeScreeningStudies.some((study) => study.id === currentStudy.id);
@@ -4206,44 +4206,30 @@ function getProjectUserStats(
   decisions: Decision[],
   reports: Report[],
   extractionResponses: ExtractionResponse[],
-  events: WorkflowEvent[]
+  dedupCandidates: DedupCandidate[]
 ): ProjectUserStats[] {
   const memberIds = new Set([project.ownerId, ...project.ownerIds, ...project.memberIds]);
   const projectImports = imports.filter((batch) => batch.projectId === project.id);
   const projectReports = reports.filter((report) => report.projectId === project.id);
-  const projectReportIds = new Set(projectReports.map((report) => report.id));
+  const projectDedupCandidates = dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === project.id);
   return users
     .filter((user) => memberIds.has(user.id))
     .map((user) => {
-      const uploadedReportIds = new Set(
-        projectReports.filter((report) => report.uploadedByUserId === user.id).map((report) => report.id)
-      );
-      const legacyUploadEvents = events.filter(
-        (event) =>
-          event.actor === user.name &&
-          event.action.startsWith("Uploaded PDF") &&
-          projectReportIds.has(event.entity) &&
-          !uploadedReportIds.has(event.entity)
-      ).length;
+      const uploadedPdf = projectReports.filter((report) => report.uploadedByUserId === user.id).length;
       const importedRecords = projectImports
         .filter((batch) => batch.uploadedByUserId === user.id || (!batch.uploadedByUserId && batch.uploadedBy === user.name))
         .reduce((total, batch) => total + batch.records, 0);
-      const duplicatePairsResolved = events.reduce((total, event) => {
-        if (event.actorId ? event.actorId !== user.id : event.actor !== user.name) {
-          return total;
-        }
-        if (event.action === "Excluded duplicate citation" || event.action === "Included both duplicate candidates") {
-          return total + 1;
-        }
-        const bulkResolution = event.action.match(/^Included both citations for (\d+) duplicate pairs?$/);
-        return total + (bulkResolution ? Number(bulkResolution[1]) : 0);
-      }, 0);
+      const duplicatePairsResolved = projectDedupCandidates.filter(
+        (candidate) =>
+          candidate.resolvedByUserId === user.id &&
+          (candidate.status === "confirmed" || candidate.status === "rejected" || candidate.status === "auto_confirmed")
+      ).length;
       return {
         user,
         importedRecords,
         duplicatePairsResolved,
         screened: countCurrentDecisions(decisions, project.id, user.id, "title_abstract"),
-        uploadedPdf: uploadedReportIds.size + legacyUploadEvents,
+        uploadedPdf,
         fullTextReviews: countCurrentDecisions(decisions, project.id, user.id, "full_text"),
         extractions: extractionResponses.filter(
           (response) => response.projectId === project.id && response.userId === user.id && response.isSubmitted

@@ -245,6 +245,7 @@ export type DedupCandidate = {
   method: string;
   status: "pending" | "confirmed" | "rejected" | "auto_confirmed";
   excludedStudyId?: string;
+  resolvedByUserId?: string;
   explanation: {
     title: number;
     author: number;

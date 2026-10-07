@@ -3523,7 +3523,8 @@ export function updateDedupCandidateForUser(
       ...candidate,
       projectId,
       status,
-      excludedStudyId: status === "confirmed" || status === "auto_confirmed" ? selectedExcludedStudyId : undefined
+      excludedStudyId: status === "confirmed" || status === "auto_confirmed" ? selectedExcludedStudyId : undefined,
+      resolvedByUserId: status === "pending" ? undefined : currentUser.id
     };
   });
 
@@ -3579,7 +3580,9 @@ export function rejectPendingDedupCandidatesForUser(userId: string, projectId: s
 
   const pendingCandidateIds = new Set(pendingCandidates.map((candidate) => candidate.id));
   state.dedupCandidates = state.dedupCandidates.map((candidate) =>
-    pendingCandidateIds.has(candidate.id) ? { ...candidate, projectId, status: "rejected", excludedStudyId: undefined } : candidate
+    pendingCandidateIds.has(candidate.id)
+      ? { ...candidate, projectId, status: "rejected", excludedStudyId: undefined, resolvedByUserId: currentUser.id }
+      : candidate
   );
   syncProjectWorkflowCounts(state, project.id);
   appendEvent(
@@ -4390,6 +4393,7 @@ function buildDedupCandidate(projectId: string, left: Study, right: Study, exist
     method: exactMetadataMatch ? "Exact DOI + citation metadata" : doiMatch ? "Normalized DOI + citation metadata" : "Fuzzy title + first author + year",
     status: existingCandidate?.status ?? "pending",
     excludedStudyId: existingCandidate?.excludedStudyId,
+    resolvedByUserId: existingCandidate?.resolvedByUserId,
     explanation: {
       title: Math.round(titleScore * 100) / 100,
       author: Math.round(authorScore * 100) / 100,

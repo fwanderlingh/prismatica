@@ -1983,6 +1983,39 @@ table {
   min-width: calc(620px * var(--ui-scale));
 }
 
+.reviewerActivityTable {
+  min-width: calc(900px * var(--ui-scale));
+  table-layout: fixed;
+}
+
+.reviewerActivityTable .reviewerColumn {
+  width: 19%;
+}
+
+.reviewerActivityTable .importedRecordsColumn {
+  width: 13%;
+}
+
+.reviewerActivityTable .dedupResolvedColumn {
+  width: 18%;
+}
+
+.reviewerActivityTable .screenedColumn {
+  width: 10%;
+}
+
+.reviewerActivityTable .uploadedPdfColumn {
+  width: 12%;
+}
+
+.reviewerActivityTable .fullTextColumn {
+  width: 16%;
+}
+
+.reviewerActivityTable .extractionsColumn {
+  width: 12%;
+}
+
 th,
 td {
   padding: calc(12px * var(--ui-scale)) calc(10px * var(--ui-scale));

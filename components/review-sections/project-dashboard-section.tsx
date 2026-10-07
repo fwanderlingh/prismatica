@@ -193,7 +193,7 @@ export function ProjectDashboardSection({
                     : "warning"
               }
             />
-            <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Server-enforced visibility model" : "Disabled"} tone="secure" />
+            <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Enabled" : "Disabled"} tone="secure" />
             <StatusRow label="Maybe policy" value={formatMaybePolicy(selectedProject.maybePolicy)} tone="info" />
             <StatusRow label="Unresolved conflicts" value={`${selectedProject.conflicts} open conflicts`} tone="warning" />
           </div>
@@ -236,7 +236,16 @@ export function ProjectDashboardSection({
       <section className="panel">
         <SectionTitle icon={Users} title="Reviewer Activity" action="Per-user project stats" />
         <div className="tableWrap">
-          <table>
+          <table className="reviewerActivityTable">
+            <colgroup>
+              <col className="reviewerColumn" />
+              <col className="importedRecordsColumn" />
+              <col className="dedupResolvedColumn" />
+              <col className="screenedColumn" />
+              <col className="uploadedPdfColumn" />
+              <col className="fullTextColumn" />
+              <col className="extractionsColumn" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Reviewer</th>

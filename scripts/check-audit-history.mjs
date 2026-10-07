@@ -68,6 +68,7 @@ try {
   payload = store.updateDedupCandidateForUser(admin.id, pair.id, 'confirmed', pair.recordB.id);
   assert.equal(payload.events[0].action, 'Excluded duplicate citation');
   assert.equal(payload.events.length, 131);
+  assert.equal(payload.dedupCandidates.find(candidate => candidate.id === pair.id).resolvedByUserId, admin.id);
   payload = store.getAppStateForUser(admin.id);
   assert.equal(payload.events[0].entity, pair.id, 'dedup event survives storage normalization');
   const projectEvents = getProjectAuditEvents([...payload.events, event(999, 'other-project')], project.id, payload.studies, payload.reports, payload.dedupCandidates);
@@ -75,8 +76,10 @@ try {
   assert.ok(!projectEvents.some(e => e.entity === 'other-project'));
   payload = store.updateDedupCandidateForUser(admin.id, pair.id, 'pending');
   assert.equal(payload.events[0].action, 'Reopened duplicate candidate');
+  assert.equal(payload.dedupCandidates.find(candidate => candidate.id === pair.id).resolvedByUserId, undefined);
   payload = store.rejectPendingDedupCandidatesForUser(admin.id, project.id);
   assert.match(payload.events[0].action, /Included both citations for 1 duplicate pair/);
+  assert.equal(payload.dedupCandidates.find(candidate => candidate.id === pair.id).resolvedByUserId, admin.id);
 
   // Import stage reporting must not change persistence or report a saved result early.
   writeFixture(fixture(100));
@@ -121,14 +124,16 @@ try {
     throw new Error(`Unexpected database operation: ${action}`);
   };
   process.env.PRISMATICA_STORAGE_MODE = 'postgres';
-  for (const status of ['confirmed', 'rejected', 'pending']) {
+  for (const status of ['confirmed', 'rejected', 'auto_confirmed', 'pending']) {
     store.updateDedupCandidateForUser(admin.id, pair.id, status);
     assert.equal(savedMutation.event.entity, pair.id);
     assert.ok(!savedMutation.event.id.startsWith('old-'), 'persist the new event, not the oldest');
+    assert.equal(savedMutation.candidates[0].candidate.resolvedByUserId, status === 'pending' ? undefined : admin.id);
   }
   store.rejectPendingDedupCandidatesForUser(admin.id, project.id);
   assert.equal(savedMutation.event.entity, project.id);
   assert.match(savedMutation.event.action, /Included both citations/);
+  assert.equal(savedMutation.candidates[0].candidate.resolvedByUserId, admin.id);
 
   // Exercise the SQL append/prune path with an isolated client double.
   const pgSource = fs.readFileSync(path.join(root, 'scripts/postgres-state-io.mjs'), 'utf8');
