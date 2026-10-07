@@ -436,3 +436,7 @@ a simulated PostgreSQL client; it does not start a server or contact a database.
 
 Global review preferences are stored in `review_settings` and exposed through
 `/api/admin/review-settings` using the `reviewSettings` application-state field.
+
+## License
+
+Prismatica is distributed under the [MIT License](./LICENSE).

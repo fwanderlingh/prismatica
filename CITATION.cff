@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use Prismatica, please cite it using the metadata in this file."
+type: software
+title: "Prismatica"
+authors:
+  - family-names: Wanderlingh
+    given-names: Francesco
+version: 1.0.0
+license: MIT
+repository-code: "https://github.com/fwanderlingh/prismatica"
