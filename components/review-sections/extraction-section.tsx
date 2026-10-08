@@ -498,7 +498,7 @@ export function ExtractionSection({
                 }}
               >
                 <BookOpen size={16} />
-                Full Text
+                Full text
               </button>
             ) : null}
           </div>

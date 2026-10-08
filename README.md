@@ -226,6 +226,14 @@ Prismatica uses server-side checks for the main web and API security boundaries:
 - Unsafe API methods (`POST`, `PUT`, `PATCH`, `DELETE`) are protected by a same-origin `Origin`/`Referer` check in `proxy.ts`. Extra trusted origins can be added with comma-separated `PRISMATICA_ALLOWED_ORIGINS`.
 - PDF uploads are restricted to PDF content, validated by an admin-configurable size limit (25 MB by default) and header, and served with private no-store caching and `X-Content-Type-Options: nosniff`.
 
+PDF uploads use base64 JSON, so request bodies are approximately one-third larger
+than the PDF file. `next.config.mjs` sets `experimental.proxyClientMaxBodySize` to
+150 MB to accommodate the admin form's maximum 100 MB PDF setting. The saved PDF
+limit (for example, 25 MB) remains enforced by the client and API. If configuring
+larger files outside the admin form, increase the proxy buffer limit accordingly.
+Changes to the Next.js configuration require a server restart and, in production,
+a rebuild before restarting.
+
 ### PDF Object Storage: MinIO
 
 Set `PRISMATICA_OBJECT_STORAGE_PROVIDER=minio` with the `PRISMATICA_S3_*` variables above to store new PDF uploads in MinIO or another S3-compatible service. Object keys use:

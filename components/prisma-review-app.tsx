@@ -196,7 +196,7 @@ const projectNavItems: NavItem[] = [
   { key: "imports", label: "Imports", path: "/project/current/imports", Icon: Import },
   { key: "dedup", label: "Dedup", path: "/project/current/dedup", Icon: GitMerge },
   { key: "screening", label: "Screening", path: "/project/current/screen/title-abstract", Icon: FileSearch },
-  { key: "fullText", label: "Full Text", path: "/project/current/full-text", Icon: BookOpen },
+  { key: "fullText", label: "Full text", path: "/project/current/full-text", Icon: BookOpen },
   { key: "extraction", label: "Extraction", path: "/project/current/extraction", Icon: ClipboardCheck },
   { key: "consensus", label: "Consensus", path: "/project/current/extraction/consensus", Icon: GitMerge },
   //{ key: "risk", label: "Risk of Bias", path: "/project/current/risk-of-bias", Icon: ShieldCheck },
@@ -305,7 +305,7 @@ function buildPathForState(view: ViewKey, projectId: string) {
 function getViewLabel(view: ViewKey) {
   const subpageLabels: Partial<Record<ViewKey, string>> = {
     screeningReviewed: "Screening Reviewed",
-    fullTextReviewed: "Full Text Reviewed",
+    fullTextReviewed: "Full text reviewed",
     extractionReviewed: "Extraction Reviewed"
   };
   return subpageLabels[view] ?? globalNavItems.find((item) => item.key === view)?.label ?? projectNavItems.find((item) => item.key === view)?.label ?? "Review";
@@ -680,6 +680,8 @@ export function PrismaReviewApp() {
   const [exportMessage, setExportMessage] = useState("");
   const [isExportingConsensusCsv, setIsExportingConsensusCsv] = useState(false);
   const [fullTextReason, setFullTextReason] = useState("");
+  const [screeningCheckoutIssue, setScreeningCheckoutIssue] = useState<{ key: string; error: string } | null>(null);
+  const [fullTextCheckoutIssue, setFullTextCheckoutIssue] = useState<{ key: string; error: string } | null>(null);
   const [fullTextMessage, setFullTextMessage] = useState("");
   const [pendingFullTextAction, setPendingFullTextAction] = useState<"upload" | "retrieval" | "include" | "exclude" | null>(null);
   const [importMessage, setImportMessage] = useState("");
@@ -1501,6 +1503,8 @@ export function PrismaReviewApp() {
       studyId: currentStudy.id,
       checkoutId: createClientId("title-abstract-checkout")
     };
+    const issueKey = `${selectedProject.id}:${currentStudy.id}`;
+    setScreeningCheckoutIssue(null);
 
     async function acquireCheckout() {
       try {
@@ -1511,10 +1515,12 @@ export function PrismaReviewApp() {
         if (!isCancelled) {
           applyAppState(payload);
           setScreeningMessage(payload.message ?? "");
+          setScreeningCheckoutIssue({ key: issueKey, error: payload.message ?? "" });
         }
       } catch (error) {
         if (!isCancelled) {
           setScreeningMessage(getErrorMessage(error));
+          setScreeningCheckoutIssue({ key: issueKey, error: getErrorMessage(error) });
         }
       }
     }
@@ -1555,6 +1561,8 @@ export function PrismaReviewApp() {
       checkoutId: createClientId("full-text-checkout"),
       stage: "full_text"
     };
+    const issueKey = `${selectedProject.id}:${activeReport.id}`;
+    setFullTextCheckoutIssue(null);
 
     async function acquireCheckout() {
       try {
@@ -1564,9 +1572,12 @@ export function PrismaReviewApp() {
         });
         if (!isCancelled) {
           applyAppState(payload);
+          setFullTextCheckoutIssue({ key: issueKey, error: payload.message ?? "" });
         }
-      } catch {
-        // Checkout refresh failures should not interrupt an in-progress full-text reading session.
+      } catch (error) {
+        if (!isCancelled) {
+          setFullTextCheckoutIssue({ key: issueKey, error: getErrorMessage(error) });
+        }
       }
     }
 
@@ -3379,6 +3390,7 @@ export function PrismaReviewApp() {
         openConflict={openConflict}
         onOpenSettings={() => navigateToProjectView("settings")}
         onOpenAudit={() => navigateToProjectView("audit")}
+        onNavigate={navigateToProjectView}
       />
     );
   }
@@ -3484,6 +3496,7 @@ export function PrismaReviewApp() {
         setScreeningNote={setScreeningNote}
         screeningMessage={screeningMessage}
         canRecordScreeningDecision={Boolean(currentStudy.titleAbstractCheckedOutByCurrentUser || currentUserDecision)}
+        checkoutError={screeningCheckoutIssue?.key === `${selectedProject.id}:${currentStudy.id}` ? screeningCheckoutIssue.error : ""}
         currentUserDecision={currentUserDecision}
         currentStageDecisions={currentStageDecisions}
         formatDecision={formatDecision}
@@ -3534,6 +3547,7 @@ export function PrismaReviewApp() {
         selectedProject={selectedProject}
         currentUser={currentUser}
         fullTextMessage={fullTextMessage}
+        checkoutError={fullTextCheckoutIssue?.key === `${selectedProject.id}:${activeReport.id}` ? fullTextCheckoutIssue.error : ""}
         setActiveReportId={setActiveReportId}
         setFullTextMessage={setFullTextMessage}
         pdfInputRef={pdfInputRef}
@@ -4105,7 +4119,7 @@ function formatProjectPhase(stage: ReviewProject["stage"]) {
     return "Screening";
   }
   if (stage === "full_text") {
-    return "Inclusion";
+    return "Full text";
   }
   if (stage === "extraction") {
     return "Data Extraction";

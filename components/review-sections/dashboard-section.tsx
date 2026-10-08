@@ -31,7 +31,7 @@ function getProjectActivePhaseAction(stage: ReviewProject["stage"]): ProjectActi
     return { view: "imports", label: "Import", Icon: ImportIcon };
   }
   if (stage === "full_text") {
-    return { view: "fullText", label: "Full Text", Icon: BookOpen };
+    return { view: "fullText", label: "Full text", Icon: BookOpen };
   }
   if (stage === "extraction") {
     return { view: "extraction", label: "Extract", Icon: ClipboardCheck };

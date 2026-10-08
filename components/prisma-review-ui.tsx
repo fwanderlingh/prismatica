@@ -81,6 +81,18 @@ export function EmptyState({ icon: Icon, title, description }: { icon: LucideIco
   );
 }
 
+export function ReviewReservationNotice({ item, error = "" }: { item: "record" | "report"; error?: string }) {
+  return (
+    <div className={error ? "reviewReservationNotice unavailable" : "reviewReservationNotice"} role="status" aria-live="polite" aria-atomic="true">
+      {error ? <AlertTriangle size={20} aria-hidden="true" /> : <span className="inlineSpinner" aria-hidden="true" />}
+      <div>
+        <strong>{error ? "Review access is unavailable" : `Reserving this ${item} for your review…`}</strong>
+        <p>{error ? `${error} Try another ${item} or refresh the page.` : "Decision buttons will become available once your review slot is reserved."}</p>
+      </div>
+    </div>
+  );
+}
+
 export function ScoreBar({ label, value }: { label: string; value: number }) {
   return (
     <div className="scoreBar">

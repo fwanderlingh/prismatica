@@ -93,7 +93,7 @@ export function getCountsForProject(
       recordsIdentifiedDatabase: project.recordsTotal,
       recordsIdentifiedRegisters: 0,
       recordsIdentifiedOther: 0,
-      duplicateRecordsRemoved: projectDedupCandidates.filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed").length,
+      duplicateRecordsRemoved: getConfirmedDuplicateStudyIds(projectDedupCandidates).size,
       automationRemoved: 0,
       removedOtherReasons: 0,
       recordsScreened: project.recordsScreened,
@@ -107,6 +107,10 @@ export function getCountsForProject(
       studiesIncludedMetaAnalysis: 0
     }
   );
+}
+
+export function getScreeningRecordTotal(project: ReviewProject, counts: PrismaCounts) {
+  return Math.max(0, project.recordsTotal - counts.duplicateRecordsRemoved - counts.automationRemoved - counts.removedOtherReasons);
 }
 
 export function getProjectPhaseProgress(
@@ -146,8 +150,8 @@ export function getProjectPhaseProgress(
   }
 
   if (project.stage === "screening") {
-    const total = project.recordsTotal;
-    const value = Math.min(project.recordsScreened, total);
+    const total = getScreeningRecordTotal(project, counts);
+    const value = Math.max(0, Math.min(counts.recordsScreened, total));
     const percent = getProgressPercent(value, total);
     return {
       percent,

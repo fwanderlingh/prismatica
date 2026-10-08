@@ -1582,6 +1582,14 @@ a.primaryButton[target="_blank"]:focus-visible {
   font-size: 0.82rem;
 }
 
+.workflowPanel .sectionTitle {
+  flex-wrap: wrap;
+}
+
+.workflowPanel .sectionTitle > span {
+  flex: 0 1 auto;
+}
+
 .workflowMap {
   display: grid;
   grid-template-columns: repeat(6, minmax(calc(112px * var(--ui-scale)), 1fr));
@@ -3304,6 +3312,33 @@ textarea:disabled {
   color: #8b989f;
   /*cursor: not-allowed;*/
   background: var(--surface-tint);
+}
+
+.reviewReservationNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(12px * var(--ui-scale));
+  margin-bottom: calc(14px * var(--ui-scale));
+  padding: calc(16px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--toast-warning-border);
+  border-radius: var(--radius);
+  background: var(--toast-warning-bg);
+  color: var(--toast-warning-text);
+}
+
+.reviewReservationNotice > svg,
+.reviewReservationNotice > .inlineSpinner {
+  flex-shrink: 0;
+  margin-top: calc(2px * var(--ui-scale));
+}
+
+.reviewReservationNotice strong {
+  display: block;
+}
+
+.reviewReservationNotice p {
+  margin: calc(6px * var(--ui-scale)) 0 0;
+  line-height: 1.45;
 }
 
 .compactButtons {

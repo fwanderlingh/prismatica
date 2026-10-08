@@ -1,6 +1,7 @@
-import { Activity, AlertTriangle, Bell, ChevronRight, History, Settings, Users } from "lucide-react";
-import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser } from "@/lib/prismaData";
+import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from "lucide-react";
+import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
 import { Badge, EmptyState, Metric, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+import { getProjectPhaseProgress, getScreeningRecordTotal } from "@/lib/workflowSelectors";
 
 type WorkflowConflict = ProjectWorkflowConflict & {
   studyIndex?: number;
@@ -41,6 +42,7 @@ type ProjectDashboardSectionProps = {
   formatNumber: (value: number) => string;
   onOpenSettings: () => void;
   onOpenAudit: () => void;
+  onNavigate: (view: ViewKey) => void;
 };
 
 export function ProjectDashboardSection({
@@ -67,9 +69,24 @@ export function ProjectDashboardSection({
   formatAuditTime,
   formatNumber,
   onOpenSettings,
-  onOpenAudit
+  onOpenAudit,
+  onNavigate
 }: ProjectDashboardSectionProps) {
   const alertCount = workflowConflicts.length;
+  const phaseProgress = getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber);
+  const screeningTotal = getScreeningRecordTotal(selectedProject, activeCounts);
+  const phaseActions: Record<ReviewProject["stage"], { label: string; view: ViewKey }> = {
+    setup: { label: "Import records", view: "imports" },
+    import: { label: "Import records", view: "imports" },
+    screening: { label: "Continue screening", view: "screening" },
+    full_text: { label: "Review full text", view: "fullText" },
+    extraction: { label: "Continue extraction", view: "extraction" },
+    complete: { label: "Review exports", view: "exports" }
+  };
+  const phaseAction = phaseActions[selectedProject.stage];
+  const nextActionLabel = alertCount > 0
+    ? `Resolve ${alertCount} conflict${alertCount === 1 ? "" : "s"}`
+    : phaseAction.label;
 
   return (
     <div className="viewStack">
@@ -84,20 +101,21 @@ export function ProjectDashboardSection({
         <div className="overviewSideStack">
           <div className="toolbarCluster">
             <button
-              className="ghostButton"
+              className="primaryButton"
               type="button"
-              title={alertCount > 0 ? "Open the first unresolved workflow conflict" : "No unresolved workflow conflicts"}
-              disabled={alertCount === 0}
+              title={alertCount > 0 ? "Open the first unresolved workflow conflict" : phaseAction.label}
               onClick={() => {
                 if (alertCount > 0) {
                   openConflict(workflowConflicts[0]);
+                } else {
+                  onNavigate(phaseAction.view);
                 }
               }}
             >
-              <Bell size={17} />
-              Alerts ({alertCount})
+              {alertCount > 0 ? <AlertTriangle size={17} /> : <ChevronRight size={17} />}
+              {nextActionLabel}
             </button>
-            <button className="primaryButton" type="button" title="Open project settings" onClick={onOpenSettings}>
+            <button className="ghostButton" type="button" title="Open project settings" onClick={onOpenSettings}>
               <Settings size={17} />
               Settings
             </button>
@@ -151,14 +169,18 @@ export function ProjectDashboardSection({
       ) : null}
 
       <section className="dashboardGrid">
-        <div className="panel largePanel">
-          <SectionTitle icon={Activity} title="Review Workflow" action="Live state machine" />
+        <div className="panel largePanel workflowPanel">
+          <SectionTitle
+            icon={Activity}
+            title="Review Workflow"
+            action={`${formatProjectPhase(selectedProject.stage)} · ${phaseProgress.label}`}
+          />
           <div className="workflowMap" aria-label="Review workflow">
             {[
               ["Import", `${formatNumber(recordsIdentified)} records`, getWorkflowStepState("imports", selectedProject.stage)],
               ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
-              ["Screen", `${activeCounts.recordsScreened} records`, getWorkflowStepState("screening", selectedProject.stage)],
-              ["Inclusion", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
+              ["Screen", `${formatNumber(activeCounts.recordsScreened)} of ${formatNumber(screeningTotal)} screened`, getWorkflowStepState("screening", selectedProject.stage)],
+              ["Full text", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
               [
                 "Extract",
                 `${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`,
@@ -182,6 +204,11 @@ export function ProjectDashboardSection({
           </div>
           <div className="stateRows">
             <StatusRow label="Review phase" value={formatProjectPhase(selectedProject.stage)} tone={projectPhaseStatusTone(selectedProject.stage)} />
+            <StatusRow
+              label="Passed title/abstract screening"
+              value={`${formatNumber(activeCounts.reportsSought)} advanced to full text`}
+              tone="info"
+            />
             <StatusRow
               label="Extraction progress"
               value={`${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`}
@@ -253,7 +280,7 @@ export function ProjectDashboardSection({
                 <th>Duplicate pairs resolved</th>
                 <th>Screened</th>
                 <th>Uploaded PDF</th>
-                <th>Full Text Reviews</th>
+                <th>Full text reviews</th>
                 <th>Extractions</th>
               </tr>
             </thead>

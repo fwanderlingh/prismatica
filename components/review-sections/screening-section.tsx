@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
 import type { Decision, Study } from "@/lib/prismaData";
-import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
+import { Badge, EmptyState, ReviewReservationNotice, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
 import { ReviewQueueItem } from "@/components/review-sections/review-queue";
 import { formatAuthorList } from "@/lib/reviewDisplay";
@@ -31,6 +31,7 @@ type ScreeningSectionProps = {
   setScreeningNote: (value: string) => void;
   screeningMessage: string;
   canRecordScreeningDecision: boolean;
+  checkoutError: string;
   currentUserDecision: Decision | undefined;
   currentStageDecisions: Decision[];
   pendingScreeningDecision: Exclude<DecisionValue, "not_retrieved"> | null;
@@ -63,6 +64,7 @@ export function ScreeningSection({
   setScreeningNote,
   screeningMessage,
   canRecordScreeningDecision,
+  checkoutError,
   currentUserDecision,
   currentStageDecisions,
   pendingScreeningDecision,
@@ -105,7 +107,7 @@ export function ScreeningSection({
   const screeningCheckoutTimer =
     currentStudy.titleAbstractCheckedOutByCurrentUser && currentStudy.titleAbstractCheckoutExpiresAt
       ? formatCheckoutTimer(currentStudy.titleAbstractCheckoutExpiresAt, now)
-      : "Acquiring checkout...";
+      : canRecordScreeningDecision ? "Ready to review" : checkoutError ? "Review unavailable" : "Preparing your review";
 
   if (projectScreeningStudies.length === 0) {
     const hasCompletedScreeningQueue = totalScreeningStudyCount > 0;
@@ -220,6 +222,7 @@ export function ScreeningSection({
 
         <aside className="panel actionPanel">
           <SectionTitle icon={PanelRight} title="Decision" action={screeningCheckoutTimer} />
+          {!canRecordScreeningDecision ? <ReviewReservationNotice item="record" error={checkoutError} /> : null}
           <div className="decisionState">
             <span>My current vote</span>
             <strong>{currentUserDecision ? formatDecision(currentUserDecision.decisionValue) : "No vote"}</strong>

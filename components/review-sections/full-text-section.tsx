@@ -11,7 +11,7 @@ import {
 import { type AppUser, type Decision, type Report, type ReviewProject, screeningStudies, type Study } from "@/lib/prismaData";
 import { type DecisionValue, evaluateStage } from "@/lib/workflow";
 import type { ProjectPhaseProgress } from "@/lib/workflowSelectors";
-import { EmptyState, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
+import { EmptyState, ReviewReservationNotice, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
 import { ReportNavigation, ReportPicker } from "@/components/review-sections/review-queue";
 
 type FullTextUpdateInput = {
@@ -31,6 +31,7 @@ type FullTextSectionProps = {
   selectedProject: ReviewProject;
   currentUser: AppUser;
   fullTextMessage: string;
+  checkoutError: string;
   setActiveReportId: (reportId: string) => void;
   setFullTextMessage: (message: string) => void;
   pdfInputRef: RefObject<HTMLInputElement | null>;
@@ -63,6 +64,7 @@ export function FullTextSection({
   selectedProject,
   currentUser,
   fullTextMessage,
+  checkoutError,
   setActiveReportId,
   setFullTextMessage,
   pdfInputRef,
@@ -357,7 +359,7 @@ export function FullTextSection({
             <StatusRow label="Full-text votes" value={`${fullTextVoteCount}/${fullTextRequiredVotes}`} tone={fullTextVoteCount >= fullTextRequiredVotes ? "secure" : "warning"} />
             <StatusRow
               label="Reviewer slot"
-              value={hasFullTextCheckout || activeFullTextDecision ? "Checked out" : "Waiting"}
+              value={canRecordFullTextDecision ? "Reserved for you" : checkoutError ? "Unavailable" : "Preparing your review"}
               tone={hasFullTextCheckout || activeFullTextDecision ? "secure" : "warning"}
             />
             <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
@@ -397,6 +399,7 @@ export function FullTextSection({
             </div>
           ) : null}
 
+          {!canRecordFullTextDecision ? <ReviewReservationNotice item="report" error={checkoutError} /> : null}
           <div className="decisionButtons compactButtons">
             <button
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
