@@ -21,6 +21,7 @@ const softwareBibtex = [
   "  author = {Wanderlingh, Francesco},",
   "  title = {{PRISMATICA}: an open-source web platform for {PRISMA}-guided systematic reviews},",
   "  year = {2026},",
+  "  doi = {10.5281/zenodo.23264488},",
   "  howpublished = {\\url{https://github.com/fwanderlingh/prismatica}},",
   "  note = {Version 1.1.0}",
   "}"
