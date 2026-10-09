@@ -115,6 +115,7 @@ import {
   renderDoiLink
 } from "./prisma-review-ui";
 import { FullTextSection } from "./review-sections/full-text-section";
+import { PdfUploadSection } from "./review-sections/pdf-upload-section";
 import { ExtractionSection } from "./review-sections/extraction-section";
 import { ConsensusSection } from "./review-sections/consensus-section";
 import { DashboardSection } from "./review-sections/dashboard-section";
@@ -213,6 +214,7 @@ const reviewPhaseNavKeys = new Set<ViewKey>([
   "screeningReviewed",
   "fullText",
   "fullTextReviewed",
+  "pdfUpload",
   "extraction",
   "extractionReviewed",
   "consensus"
@@ -226,6 +228,7 @@ const viewKeySet = new Set<ViewKey>([
   "screeningReviewed",
   "fullText",
   "fullTextReviewed",
+  "pdfUpload",
   "extraction",
   "extractionReviewed",
   "consensus",
@@ -283,6 +286,8 @@ function buildPathForState(view: ViewKey, projectId: string) {
       return `/projects/${encodeURIComponent(projectId)}/full-text`;
     case "fullTextReviewed":
       return `/projects/${encodeURIComponent(projectId)}/full-text/reviewed`;
+    case "pdfUpload":
+      return `/projects/${encodeURIComponent(projectId)}/full-text/pdf-upload`;
     case "extraction":
       return `/projects/${encodeURIComponent(projectId)}/extraction`;
     case "extractionReviewed":
@@ -306,6 +311,7 @@ function getViewLabel(view: ViewKey) {
   const subpageLabels: Partial<Record<ViewKey, string>> = {
     screeningReviewed: "Screening Reviewed",
     fullTextReviewed: "Full text reviewed",
+    pdfUpload: "PDFs Upload",
     extractionReviewed: "Extraction Reviewed"
   };
   return subpageLabels[view] ?? globalNavItems.find((item) => item.key === view)?.label ?? projectNavItems.find((item) => item.key === view)?.label ?? "Review";
@@ -348,6 +354,7 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
       "screen/title-abstract": "screening",
       "full-text": "fullText",
       "full-text/reviewed": "fullTextReviewed",
+      "full-text/pdf-upload": "pdfUpload",
       extraction: "extraction",
       "extraction/reviewed": "extractionReviewed",
       "extraction/consensus": "consensus",
@@ -3256,32 +3263,39 @@ export function PrismaReviewApp() {
       return;
     }
 
-    const maxPdfSizeBytes = reviewSettings.pdfUploadMaxSizeMb * 1024 * 1024;
-    if (file.size > maxPdfSizeBytes) {
-      setFullTextMessage(`PDF file must be ${reviewSettings.pdfUploadMaxSizeMb} MB or smaller.`);
-      return;
-    }
-
     setFullTextMessage(`Uploading ${file.name}...`);
     setPendingFullTextAction("upload");
     try {
-      const contentBase64 = arrayBufferToBase64(await file.arrayBuffer());
-      const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/reports/${activeReport.id}/pdf`, {
-        method: "POST",
-        body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type || "application/pdf",
-          size: file.size,
-          contentBase64
-        })
-      });
-      applyAppState(payload);
+      await uploadPdfForReport(activeReport.id, file);
       setFullTextMessage(`${file.name} uploaded.`);
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
     } finally {
       setPendingFullTextAction(null);
     }
+  }
+
+  async function uploadPdfForReport(reportId: string, file: File) {
+    if (file.size > reviewSettings.pdfUploadMaxSizeMb * 1024 * 1024) {
+      throw new Error(`PDF file must be ${reviewSettings.pdfUploadMaxSizeMb} MB or smaller.`);
+    }
+    if (file.size === 0 || (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf"))) {
+      throw new Error("Choose a non-empty PDF file.");
+    }
+    const contentBase64 = arrayBufferToBase64(await file.arrayBuffer());
+    const payload = await apiRequest<AppMutationPayload>(`/api/projects/${encodeURIComponent(selectedProject.id)}/reports/${encodeURIComponent(reportId)}/pdf`, {
+      method: "POST",
+      body: JSON.stringify({ fileName: file.name, mimeType: "application/pdf", size: file.size, contentBase64 })
+    });
+    applyAppState(payload);
+  }
+
+  async function deletePdfForReport(reportId: string, checksum?: string) {
+    const payload = await apiRequest<AppMutationPayload>(`/api/projects/${encodeURIComponent(selectedProject.id)}/reports/${encodeURIComponent(reportId)}/pdf`, {
+      method: "DELETE",
+      body: JSON.stringify({ checksum })
+    });
+    applyAppState(payload);
   }
 
   function renderActiveView() {
@@ -3302,6 +3316,20 @@ export function PrismaReviewApp() {
         return renderFullText();
       case "fullTextReviewed":
         return renderFullTextReviewed();
+      case "pdfUpload":
+        return (
+          <PdfUploadSection
+            key={selectedProject.id}
+            projectTitle={selectedProject.title}
+            projectId={selectedProject.id}
+            reports={projectReportQueue}
+            studies={projectScreeningStudies}
+            maxSizeMb={reviewSettings.pdfUploadMaxSizeMb}
+            uploadPdf={uploadPdfForReport}
+            deletePdf={deletePdfForReport}
+            onBack={() => navigateToProjectView("fullText")}
+          />
+        );
       case "extraction":
         return renderExtraction();
       case "extractionReviewed":
@@ -3563,6 +3591,7 @@ export function PrismaReviewApp() {
         studies={studies}
         reviewedCount={reviewedFullTextItems.length}
         onOpenReviewed={() => navigateToProjectView("fullTextReviewed")}
+        onOpenPdfUpload={() => navigateToProjectView("pdfUpload")}
       />
     );
   }
@@ -4170,7 +4199,7 @@ function getProjectPhaseAccessView(view: ViewKey): ViewKey {
   if (view === "screeningReviewed") {
     return "screening";
   }
-  if (view === "fullTextReviewed") {
+  if (view === "fullTextReviewed" || view === "pdfUpload") {
     return "fullText";
   }
   if (view === "extractionReviewed") {

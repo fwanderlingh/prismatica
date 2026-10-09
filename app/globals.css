@@ -3314,11 +3314,110 @@ textarea:disabled {
   background: var(--surface-tint);
 }
 
+.pdfUploadFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: calc(16px * var(--ui-scale));
+  margin-bottom: calc(16px * var(--ui-scale));
+}
+
+.pdfUploadFilters > label:first-child {
+  display: grid;
+  gap: calc(6px * var(--ui-scale));
+  flex: 1 1 240px;
+}
+
+.pdfMissingFilter {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale));
+}
+
+.pdfMissingFilter input {
+  width: auto;
+}
+
+.pdfUploadTable td {
+  vertical-align: top;
+}
+
+.pdfUploadTable td:first-child {
+  min-width: 220px;
+}
+
+.pdfUploadTable select {
+  min-width: 220px;
+  max-width: 420px;
+}
+
+.pdfPapersTable {
+  table-layout: fixed;
+  min-width: 960px;
+}
+
+.pdfPapersTable td {
+  overflow-wrap: anywhere;
+}
+
+.pdfPaperActions {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--ui-scale));
+}
+
+.pdfPaperActions > .ghostButton:not(.iconOnly) {
+  min-width: 0;
+  white-space: normal;
+}
+
+.ghostButton.pdfDeleteButton {
+  flex-shrink: 0;
+  color: var(--toast-error-border);
+}
+
+.doiLinkPill > a {
+  display: inline-block;
+  max-width: 100%;
+  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--blue);
+  border-radius: 999px;
+  background: var(--blue-soft);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.pdfUploadError {
+  color: var(--toast-error-text);
+}
+
+.pdfBatchNotice {
+  margin-top: calc(14px * var(--ui-scale));
+}
+
+textarea.exclusionReasonsMissing {
+  border: calc(2px * var(--ui-scale)) solid var(--toast-error-border);
+  scroll-margin-top: calc(100px * var(--ui-scale));
+}
+
+.exclusionReasonsNotice {
+  margin: calc(12px * var(--ui-scale)) 0;
+}
+
+.exclusionReasonsNotice > svg {
+  flex-shrink: 0;
+}
+
+.exclusionReasonsNotice p {
+  margin: calc(6px * var(--ui-scale)) 0 0;
+  font-weight: 400;
+}
+
 .reviewReservationNotice {
   display: flex;
   align-items: flex-start;
   gap: calc(12px * var(--ui-scale));
-  margin-bottom: calc(14px * var(--ui-scale));
+  margin: calc(14px * var(--ui-scale)) 0;
   padding: calc(16px * var(--ui-scale));
   border: calc(1px * var(--ui-scale)) solid var(--toast-warning-border);
   border-radius: var(--radius);

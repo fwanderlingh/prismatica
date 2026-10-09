@@ -123,6 +123,7 @@ export function SettingsSection({
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
   const canSubmitDelete = canManageProject && deleteConfirmationInput.trim() === DELETE_CONFIRMATION_TEXT;
   const settingsMessageIsSuccess = projectSettingsMessage === "Project settings saved.";
+  const hasExclusionReasons = projectSettingsForm.exclusionReasonsText.trim().length > 0;
 
   return (
     <div className="viewStack">
@@ -296,12 +297,24 @@ export function SettingsSection({
             <label className="wideField">
               <span>Full-text exclusion reasons (one per line)</span>
               <textarea
+                id="project-settings-exclusion-reasons"
+                className={!hasExclusionReasons ? "exclusionReasonsMissing" : undefined}
+                aria-invalid={!hasExclusionReasons || undefined}
+                aria-describedby={!hasExclusionReasons ? "project-settings-exclusion-reasons-error" : undefined}
                 value={projectSettingsForm.exclusionReasonsText}
                 onChange={(event) => onSettingsExclusionReasonsTextChange(event.target.value)}
                 disabled={!canManageProject}
                 placeholder={"Wrong population\nWrong intervention\nWrong comparator"}
               />
             </label>
+            {!hasExclusionReasons ? (
+              <div className="validationItem blocked exclusionReasonsNotice" id="project-settings-exclusion-reasons-error" role="status">
+                <AlertTriangle size={18} aria-hidden="true" />
+                <span>{canManageProject
+                  ? "Exclusions are unavailable until you add at least one reason (one per line) and save settings."
+                  : "Exclusions are unavailable. Ask a project owner to add and save at least one exclusion reason."}</span>
+              </div>
+            ) : null}
           </div>
         </section>
       </form>

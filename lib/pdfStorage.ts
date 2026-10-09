@@ -35,6 +35,7 @@ export type PdfStorageAdapter = {
   buildStoragePath(input: ReportPdfLocationInput): string;
   writePdf(storagePath: string, buffer: Buffer, metadata?: ReportPdfWriteMetadata): Promise<void>;
   readPdf(input: ReportPdfReadInput): Promise<ReportPdfReadResult | null>;
+  deletePdf(input: ReportPdfReadInput): Promise<void>;
 };
 
 type PdfStorageOptions = {
@@ -123,13 +124,24 @@ function createLocalPdfStorage(options: PdfStorageOptions): PdfStorageAdapter {
         buffer: fs.readFileSync(/*turbopackIgnore: true*/ storagePath),
         storagePath
       };
+    },
+    async deletePdf(input) {
+      const storagePath = resolveLocalStoragePath(options.dataFilePath, input.report, input.projectId, input.reportId);
+      if (!storagePath) return;
+      const directory = fs.realpathSync(reportPdfStorageDirectory(options.dataFilePath, input.projectId));
+      const relativePath = path.relative(directory, fs.realpathSync(storagePath));
+      if (relativePath.startsWith(`..${path.sep}`) || relativePath === ".." || path.isAbsolute(relativePath)) {
+        throw new Error("PDF storage path is outside the project directory.");
+      }
+      fs.unlinkSync(/*turbopackIgnore: true*/ storagePath);
     }
   };
 }
 
 function createMinioPdfStorage(options: PdfStorageOptions): PdfStorageAdapter {
   const objectStorage = createObjectStorageFromEnv();
-  const localFallback = minioLocalFallbackEnabled() ? createLocalPdfStorage(options) : null;
+  const localStorage = createLocalPdfStorage(options);
+  const localFallback = minioLocalFallbackEnabled() ? localStorage : null;
 
   return {
     provider: "minio",
@@ -147,6 +159,27 @@ function createMinioPdfStorage(options: PdfStorageOptions): PdfStorageAdapter {
           "report-id": metadata?.reportId
         }
       });
+    },
+    async deletePdf(input) {
+      const prefix = `reports/${slugify(input.projectId) || "project"}/${slugify(input.reportId) || "report"}-`;
+      const keys = new Set<string>();
+      if (input.report.storagePath && !path.isAbsolute(input.report.storagePath)) {
+        if (!input.report.storagePath.startsWith(prefix)) {
+          throw new Error("PDF object key does not belong to this report.");
+        }
+        keys.add(input.report.storagePath);
+      }
+      if (input.report.checksum) {
+        keys.add(this.buildStoragePath({
+          projectId: input.projectId,
+          reportId: input.reportId,
+          checksum: input.report.checksum,
+          fileName: input.report.fileName || input.report.pdfName || "report.pdf"
+        }));
+      }
+      for (const key of keys) await objectStorage.deleteObject(key);
+      // Remove migration copies as well so enabling fallback cannot restore a deleted PDF.
+      await localStorage.deletePdf(input);
     },
     async readPdf(input) {
       const candidates = [

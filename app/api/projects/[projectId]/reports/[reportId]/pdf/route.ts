@@ -1,5 +1,5 @@
 import { jsonError, jsonOk, pdfFileResponse, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
-import { getReportPdfForUser, uploadReportPdfForUser } from "@/lib/serverStore";
+import { deleteReportPdfForUser, getReportPdfForUser, uploadReportPdfForUser } from "@/lib/serverStore";
 
 export async function GET(_request: Request, context: { params: Promise<{ projectId: string; reportId: string }> }) {
   try {
@@ -25,6 +25,17 @@ export async function POST(request: Request, context: { params: Promise<{ projec
         contentBase64: String(body.contentBase64 ?? "")
       })
     );
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ projectId: string; reportId: string }> }) {
+  try {
+    const userId = await requireSessionUserId();
+    const { projectId, reportId } = await context.params;
+    const body = await readJsonBody(request);
+    return jsonOk(await deleteReportPdfForUser(userId, projectId, reportId, typeof body.checksum === "string" ? body.checksum : undefined));
   } catch (error) {
     return jsonError(error);
   }

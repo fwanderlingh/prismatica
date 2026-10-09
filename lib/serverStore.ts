@@ -3221,6 +3221,28 @@ export async function uploadReportPdfForUser(
   return buildPayload(state, userId);
 }
 
+export async function deleteReportPdfForUser(userId: string, projectId: string, reportId: string, expectedChecksum?: string): Promise<AppMutationPayload> {
+  const state = readState();
+  const currentUser = getUser(state, userId);
+  requireProjectMember(state, projectId, userId);
+  if (!currentUser) throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+  if (!report) throw new ApiError("Report not found.", 404);
+  if (expectedChecksum && report.checksum !== expectedChecksum) {
+    throw new ApiError("This PDF has been replaced. Refresh the page before deleting it.", 409);
+  }
+  await pdfStorage.deletePdf({ report, projectId, reportId });
+  const fileName = report.fileName || report.pdfName || "report.pdf";
+  state.reports = state.reports.map((candidate) => candidate.id === reportId && candidate.projectId === projectId
+    ? { ...candidate, fileName: undefined, pdfName: undefined, mimeType: undefined, size: undefined,
+        checksum: undefined, storagePath: undefined, uploadedByUserId: undefined, uploadedByUserName: undefined,
+        isPdfValidated: false, validationNotes: [] }
+    : candidate);
+  appendEvent(state, currentUser.name, `Deleted PDF ${fileName}`, reportId);
+  writeState(state);
+  return { ...buildPayload(state, userId), message: "PDF deleted." };
+}
+
 export async function getReportPdfForUser(userId: string, projectId: string, reportId: string) {
   const state = readState();
   requireProjectMember(state, projectId, userId);

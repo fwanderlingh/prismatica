@@ -9,6 +9,7 @@ export type ViewKey =
   | "screeningReviewed"
   | "fullText"
   | "fullTextReviewed"
+  | "pdfUpload"
   | "extraction"
   | "extractionReviewed"
   | "consensus"

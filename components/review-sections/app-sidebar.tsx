@@ -200,7 +200,7 @@ function getProjectNavKey(view: ViewKey) {
   if (view === "screeningReviewed") {
     return "screening";
   }
-  if (view === "fullTextReviewed") {
+  if (view === "fullTextReviewed" || view === "pdfUpload") {
     return "fullText";
   }
   if (view === "extractionReviewed") {

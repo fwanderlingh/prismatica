@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "./serverAuth";
 import { ApiError } from "./serverStore";
+import { createContentDisposition } from "./contentDisposition";
 
 const authRateLimitMaxAttempts = 10;
 const authRateLimitWindowMs = 60 * 1000;
@@ -105,11 +106,10 @@ export function jsonOk<T>(payload: T) {
 }
 
 export function pdfFileResponse(file: { buffer: Uint8Array; fileName: string; mimeType: string }) {
-  const fileName = file.fileName.replace(/["\r\n]/g, "_") || "report.pdf";
   return new Response(new Uint8Array(file.buffer), {
     headers: {
       "Cache-Control": "private, no-store",
-      "Content-Disposition": `inline; filename="${fileName}"`,
+      "Content-Disposition": createContentDisposition("inline", file.fileName, "report.pdf"),
       "Content-Length": String(file.buffer.byteLength),
       "Content-Type": file.mimeType || "application/pdf",
       "X-Content-Type-Options": "nosniff"

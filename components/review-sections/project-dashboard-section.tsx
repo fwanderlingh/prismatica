@@ -179,7 +179,7 @@ export function ProjectDashboardSection({
             {[
               ["Import", `${formatNumber(recordsIdentified)} records`, getWorkflowStepState("imports", selectedProject.stage)],
               ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
-              ["Screen", `${formatNumber(activeCounts.recordsScreened)} of ${formatNumber(screeningTotal)} screened`, getWorkflowStepState("screening", selectedProject.stage)],
+              ["Screen", `${formatNumber(activeCounts.recordsScreened)}/${formatNumber(screeningTotal)} screened`, getWorkflowStepState("screening", selectedProject.stage)],
               ["Full text", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
               [
                 "Extract",
@@ -220,7 +220,7 @@ export function ProjectDashboardSection({
                     : "warning"
               }
             />
-            <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Enabled" : "Disabled"} tone="secure" />
+            <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Enabled" : "Disabled"} tone="info" />
             <StatusRow label="Maybe policy" value={formatMaybePolicy(selectedProject.maybePolicy)} tone="info" />
             <StatusRow label="Unresolved conflicts" value={`${selectedProject.conflicts} open conflicts`} tone="warning" />
           </div>

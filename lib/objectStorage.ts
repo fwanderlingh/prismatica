@@ -1,5 +1,5 @@
 import { Readable } from "stream";
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 export type ObjectStorageProvider = "local" | "minio";
 
@@ -16,6 +16,7 @@ export type ObjectStorage = {
   putObject(input: PutObjectInput): Promise<void>;
   getObject(key: string): Promise<Uint8Array | null>;
   hasObject(key: string): Promise<boolean>;
+  deleteObject(key: string): Promise<void>;
 };
 
 type MinioConfig = {
@@ -149,6 +150,10 @@ class MinioObjectStorage implements ObjectStorage {
       throw error;
     }
   }
+
+  async deleteObject(key: string) {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
 }
 
 export function createObjectStorageFromEnv(): ObjectStorage {
@@ -167,6 +172,9 @@ export function createObjectStorageFromEnv(): ObjectStorage {
     },
     async hasObject() {
       return false;
+    },
+    async deleteObject() {
+      throw new Error("Local object storage adapter is not implemented. Use filesystem PDF storage.");
     }
   };
 }

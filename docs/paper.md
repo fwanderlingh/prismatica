@@ -35,7 +35,6 @@ Evidence reviews also involve a sequence of related decisions whose provenance a
 
 The author reports using Copilot SDK and the Codex plugin in VS Code, with GPT-5 and GPT-6, to assist with software development and drafting this manuscript. 
 
-<!-- Before submission, the author must verify the model/version details and scope of use, review and validate all AI-assisted code and text, and confirm that the software's core design decisions were made by the human author. -->
 
 # Acknowledgements
 

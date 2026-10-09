@@ -30,6 +30,7 @@ const validProjectSubroutes = new Set([
   "screen/title-abstract",
   "full-text",
   "full-text/reviewed",
+  "full-text/pdf-upload",
   "extraction",
   "extraction/reviewed",
   "extraction/consensus",

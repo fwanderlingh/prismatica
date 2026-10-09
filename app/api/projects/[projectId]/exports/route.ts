@@ -1,5 +1,6 @@
 import { jsonError, requireSessionUserId } from "@/lib/serverRoute";
 import { getConsensusExtractionCsvForUser } from "@/lib/serverStore";
+import { createContentDisposition } from "@/lib/contentDisposition";
 
 export async function GET(_request: Request, context: { params: Promise<{ projectId: string }> }) {
   try {
@@ -10,7 +11,7 @@ export async function GET(_request: Request, context: { params: Promise<{ projec
     return new Response(exported.csv, {
       headers: {
         "Cache-Control": "private, no-store",
-        "Content-Disposition": `attachment; filename="${exported.fileName.replace(/["\r\n]/g, "_")}"`,
+        "Content-Disposition": createContentDisposition("attachment", exported.fileName, "extraction.csv"),
         "Content-Type": "text/csv; charset=utf-8",
         "X-Content-Type-Options": "nosniff"
       }

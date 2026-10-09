@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type RefObject } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   BookOpen,
@@ -47,6 +48,7 @@ type FullTextSectionProps = {
   studies: Study[];
   reviewedCount: number;
   onOpenReviewed: () => void;
+  onOpenPdfUpload: () => void;
 };
 
 type PdfLoadState = "idle" | "loading" | "ready" | "error";
@@ -79,7 +81,8 @@ export function FullTextSection({
   exclusionReasons,
   studies,
   reviewedCount,
-  onOpenReviewed
+  onOpenReviewed,
+  onOpenPdfUpload
 }: FullTextSectionProps) {
   const [now, setNow] = useState(Date.now());
   const pdfViewerUrl = activeReport.fileName
@@ -121,10 +124,16 @@ export function FullTextSection({
             <h1>Report Review</h1>
             <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
           </div>
-          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
-            <History size={16} />
-            Reviewed {reviewedCount}
-          </button>
+          <div className="buttonRow">
+            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+              <History size={16} />
+              Reviewed {reviewedCount}
+            </button>
+            <button className="ghostButton" type="button" onClick={onOpenPdfUpload}>
+              <Upload size={16} />
+              PDFs Upload
+            </button>
+          </div>
         </section>
         <section className="panel">
           <EmptyState
@@ -228,10 +237,16 @@ export function FullTextSection({
         </div>
         <ReportPicker
           action={
-            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
-              <History size={16} />
-              Reviewed {reviewedCount}
-            </button>
+            <div className="buttonRow">
+              <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+                <History size={16} />
+                Reviewed {reviewedCount}
+              </button>
+              <button className="ghostButton" type="button" onClick={onOpenPdfUpload}>
+                <Upload size={16} />
+                PDFs Upload
+              </button>
+            </div>
           }
           activeFallbackId={activeReportFallbackId}
           activeStudy={matchedCurrentReportStudy}
@@ -400,6 +415,15 @@ export function FullTextSection({
           ) : null}
 
           {!canRecordFullTextDecision ? <ReviewReservationNotice item="report" error={checkoutError} /> : null}
+          {!hasConfiguredExclusionReasons ? (
+            <div className="validationItem blocked exclusionReasonsNotice" id="missing-exclusion-reasons" role="status">
+              <AlertTriangle size={18} aria-hidden="true" />
+              <div>
+                <strong>Exclude is unavailable: no exclusion reasons have been set.</strong>
+                <p>A project owner must add and save at least one reason in <Link href={`/projects/${encodeURIComponent(selectedProject.id)}/settings#project-settings-exclusion-reasons`}>Settings → Full-text exclusion reasons</Link>.</p>
+              </div>
+            </div>
+          ) : null}
           <div className="decisionButtons compactButtons">
             <button
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
@@ -413,6 +437,7 @@ export function FullTextSection({
             <button
               className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
               type="button"
+              aria-describedby={!hasConfiguredExclusionReasons ? "missing-exclusion-reasons" : undefined}
               disabled={!canRecordFullTextDecision || !hasConfiguredExclusionReasons || isFullTextActionPending}
               onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
             >
@@ -432,17 +457,18 @@ export function FullTextSection({
           </label>
           <select
             id="exclusion-reason"
+            aria-describedby={!hasConfiguredExclusionReasons ? "missing-exclusion-reasons" : undefined}
             value={fullTextReason}
             disabled={!canRecordFullTextDecision || !hasConfiguredExclusionReasons || isFullTextActionPending}
             onChange={(event) => setFullTextReason(event.target.value)}
           >
+            {!hasConfiguredExclusionReasons ? <option value="">No exclusion reasons configured</option> : null}
             {exclusionReasons.map((reason) => (
               <option value={reason} key={reason}>
                 {reason}
               </option>
             ))}
           </select>
-          {!hasConfiguredExclusionReasons ? <p className="subtle">No reasons set.</p> : null}
 
           <div className={canRecordFullTextDecision && !hasFullTextConflict ? "validationBox muted" : "validationBox"}>
             {canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
