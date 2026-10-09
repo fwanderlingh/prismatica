@@ -15,6 +15,7 @@ type BreadcrumbItem = {
 
 type AppShellProps = {
   pageKey: string;
+  navigationTarget?: string | null;
   isSidebarCollapsed: boolean;
   isMobileNavOpen: boolean;
   brandLogoAlt: string;
@@ -36,6 +37,7 @@ type AppShellProps = {
 
 export function AppShell({
   pageKey,
+  navigationTarget = null,
   isSidebarCollapsed,
   isMobileNavOpen,
   brandLogoAlt,
@@ -97,8 +99,14 @@ export function AppShell({
       previousPageRef.current = pageKey;
       setIsUserMenuOpen(false);
       mainRef.current?.focus({ preventScroll: true });
+      // The workspace lives in a shared layout, so Next's page scroll handling
+      // may leave its previous offset intact. Reset after our navigation commits;
+      // history restoration and section links keep their own scroll behavior.
+      if (navigationTarget === pageKey && !window.location.hash) {
+        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+      }
     }
-  }, [pageKey]);
+  }, [pageKey, navigationTarget]);
 
   function focusMenuItem(position: "first" | "last") {
     const items = userMenuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');

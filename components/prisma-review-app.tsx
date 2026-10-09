@@ -2,6 +2,7 @@
 
 import { buildPathForState } from "@/lib/navigation";
 import { NavigationProvider } from "@/components/navigation-link";
+import { useReviewQueueScroll, type SavedQueueDecision } from "@/components/use-review-queue-scroll";
 
 import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -621,6 +622,7 @@ export function PrismaReviewApp() {
   const [isRejectingAllDedupCandidates, setIsRejectingAllDedupCandidates] = useState(false);
   const [dedupMessage, setDedupMessage] = useState("");
   const [selectedScreeningStudyId, setSelectedScreeningStudyId] = useState("");
+  const [savedQueueDecision, setSavedQueueDecision] = useState<SavedQueueDecision | null>(null);
   const [decisionActions, setDecisionActions] = useState<DecisionAction[]>([]);
   const [pendingScreeningDecision, setPendingScreeningDecision] = useState<Exclude<DecisionValue, "not_retrieved"> | null>(null);
   const [isUndoingScreeningDecision, setIsUndoingScreeningDecision] = useState(false);
@@ -890,6 +892,16 @@ export function PrismaReviewApp() {
   const studyIndex = Math.max(activeScreeningStudies.findIndex((study) => study.id === selectedScreeningStudyId), 0);
   const currentStudy = activeScreeningStudies[studyIndex] ?? activeScreeningStudies[0] ?? projectScreeningStudies[0] ?? screeningStudies[0];
   const isCurrentStudyInActiveScreeningQueue = activeScreeningStudies.some((study) => study.id === currentStudy.id);
+  const reviewQueueKey = `${selectedProject.id}:${activeView}`;
+  const reviewQueueItemId = activeView === "screening"
+    ? (isCurrentStudyInActiveScreeningQueue ? currentStudy.id : "")
+    : activeView === "fullText"
+      ? (isActiveReportInActiveFullTextQueue ? activeReport.id : "")
+      : activeView === "extraction" || activeView === "consensus"
+        ? activeExtractionReport?.id ?? ""
+        : "";
+  // Duplicate review owns its selection locally and handles its scroll below.
+  useReviewQueueScroll(activeView === "dedup" ? "" : reviewQueueKey, reviewQueueItemId, savedQueueDecision);
   const currentUserDecision = useMemo(
     () =>
       decisions.find(
@@ -2537,6 +2549,7 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setExtractionMessage("Extraction submitted.");
+      setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: activeExtractionReport.id });
     } catch (error) {
       setExtractionMessage(getErrorMessage(error));
     } finally {
@@ -2564,6 +2577,7 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setConsensusMessage("Consensus finalized.");
+      setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: activeExtractionReport.id });
     } catch (error) {
       setConsensusMessage(getErrorMessage(error));
     } finally {
@@ -2982,6 +2996,7 @@ export function PrismaReviewApp() {
       const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
       const currentStudyNextIndex = nextActiveStudies.findIndex((study) => study.id === currentStudy.id);
       setSelectedScreeningStudyId(nextActiveStudies[currentStudyNextIndex >= 0 ? currentStudyNextIndex : 0]?.id ?? "");
+      setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: currentStudy.id });
     } catch (error) {
       setScreeningMessage(getErrorMessage(error));
     } finally {
@@ -3114,6 +3129,9 @@ export function PrismaReviewApp() {
             ? "Both citations included."
             : "Selected citation excluded as a duplicate."
       );
+      if (status !== "pending") {
+        setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: candidateId });
+      }
     } catch (error) {
       const message = getErrorMessage(error);
       if (/already decided by another reviewer/i.test(message)) {
@@ -3205,6 +3223,9 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setFullTextMessage(input.decisionValue ? "Full-text decision saved." : "Retrieval status updated.");
+      if (input.decisionValue || input.retrievalStatus === "not_retrieved") {
+        setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: activeReport.id });
+      }
     } catch (error) {
       setFullTextMessage(getErrorMessage(error));
     } finally {
@@ -3447,6 +3468,8 @@ export function PrismaReviewApp() {
   function renderDedup() {
     return (
       <DedupSection
+        queueKey={reviewQueueKey}
+        savedQueueDecision={savedQueueDecision}
         projectImportBatches={projectImportBatches}
         projectScreeningStudies={projectScreeningStudies}
         recordsIdentified={recordsIdentified}
@@ -3998,6 +4021,7 @@ export function PrismaReviewApp() {
     <NavigationProvider projectId={selectedProject.id}>
       <AppShell
         pageKey={pathname ?? ""}
+        navigationTarget={pendingRoutePath}
         isSidebarCollapsed={isSidebarCollapsed}
         isMobileNavOpen={isMobileNavOpen}
         brandLogoAlt={BRAND_LOGO_ALT}

@@ -3,6 +3,7 @@ import { Check, GitMerge, PenLine, RotateCcw, X } from "lucide-react";
 import type { DedupCandidate, ImportBatch, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, RecordComparison, ScoreBar, SectionTitle } from "@/components/prisma-review-ui";
 import { ReviewQueueDisclosure, ArticleIdLabel } from "@/components/review-sections/review-queue";
+import { useReviewQueueScroll, type SavedQueueDecision } from "@/components/use-review-queue-scroll";
 
 type DedupStatusFilter = "pending" | "confirmed" | "rejected";
 type DedupStudyEditForm = {
@@ -16,6 +17,8 @@ type DedupStudyEditForm = {
 };
 
 type DedupSectionProps = {
+  queueKey?: string;
+  savedQueueDecision?: SavedQueueDecision | null;
   projectImportBatches: Pick<ImportBatch, "id" | "filename" | "records">[];
   projectScreeningStudies: Study[];
   recordsIdentified: number;
@@ -33,6 +36,8 @@ type DedupSectionProps = {
 };
 
 export function DedupSection({
+  queueKey = "dedup",
+  savedQueueDecision = null,
   projectImportBatches,
   projectScreeningStudies,
   recordsIdentified,
@@ -93,6 +98,7 @@ export function DedupSection({
   }, [activeStatus, pendingShuffleSeed, selectedCandidateId, visibleCandidates]);
 
   const selectedCandidate = visibleCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? visibleCandidates[0];
+  useReviewQueueScroll(queueKey, selectedCandidate?.id ?? "", savedQueueDecision);
 
   if (projectDedupCandidates.length === 0) {
     const hasImportedRecords = projectImportBatches.some((batch) => batch.records > 0) || projectScreeningStudies.length > 0 || recordsIdentified > 0;

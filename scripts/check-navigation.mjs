@@ -65,6 +65,10 @@ try {
   assert.match(shellHtml, /<main id="main-content" tabindex="-1"/);
   assert.match(shellHtml, /<a class="breadcrumbLink" href="\/dashboard"/);
   assert.match(shellHtml, /aria-current="page">Screening/);
+  const pendingHtml = html(loadSection("app-shell").AppShell, { ...shellProps, isMainPending: true, mainPendingLabel: "Opening review" });
+  assert.match(pendingHtml, /aria-busy="true"/);
+  assert.match(pendingHtml, /class="mainLoadingOverlay" role="status"/);
+  assert.match(pendingHtml, /Opening review/);
 
   const screeningProps = { projectScreeningStudies: data.screeningStudies, totalScreeningStudyCount: 10, screeningProgress: 20, screenedByMe: 2,
     decisions: [], selectedProjectId: project.id, currentUserId: user.id, studyIndex: 0, setStudyIndex: noop, titleAbstractEvaluations: new Map(),
@@ -115,6 +119,7 @@ try {
     useEffect(fn, deps) { const i = cursor++, previous = hooks[i]; if (!previous || deps.some((dep, j) => dep !== previous.deps[j])) { previous?.cleanup?.(); hooks[i] = { deps }; pendingEffects.push(() => hooks[i].cleanup = fn()); } }
   };
   const mockedFiles = new Set(sections.map(name => path.join(temp, `components/review-sections/${name}.js`)));
+  mockedFiles.add(path.join(temp, "components/use-review-queue-scroll.js"));
   Module._load = function(name, parent, ...args) { return name === "react" && mockedFiles.has(parent?.filename) ? fakeReact : originalLoad.call(this, name, parent, ...args); };
   for (const file of mockedFiles) delete require.cache[file];
   function nodes(node, result = []) { if (Array.isArray(node)) node.forEach(n => nodes(n, result)); else if (node?.props) { result.push(node); nodes(node.props.children, result); } return result; }
@@ -123,7 +128,9 @@ try {
   const listeners = new Map();
   globalThis.document = { activeElement: trigger, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name),
     querySelectorAll: () => [before, trigger, after], querySelector: () => after };
-  globalThis.window = { matchMedia: () => ({ matches: true }) };
+  const scrollCalls = [];
+  globalThis.window = { matchMedia: () => ({ matches: true }), location: { hash: "" }, scrollY: 900,
+    scrollTo(options) { scrollCalls.push(options); this.scrollY = options.top; } };
   const { AppShell } = loadSection("app-shell");
   function renderShell(props = shellProps) {
     cursor = 0; const tree = AppShell(props);
@@ -137,6 +144,7 @@ try {
   const keyEvent = (key, extra = {}) => ({ key, preventDefault() { this.defaultPrevented = true; }, ...extra });
   function menuKey(tree, key, extra) { const event = keyEvent(key, extra); nodes(tree).find(n => n.props.role === "menu").props.onKeyDown(event); return event; }
   let tree = renderShell();
+  assert.equal(window.scrollY, 900); // Mounting preserves a restored position.
   nodes(tree).find(n => n.props.className === "skipLink").props.onClick(); assert.equal(document.activeElement, main);
   const account = nodes(tree).find(n => n.props.className?.includes("userMenuTrigger"));
   account.props.onClick(); tree = renderShell(); assert.equal(document.activeElement, items[0]);
@@ -151,6 +159,25 @@ try {
   menuKey(tree, "Tab"); renderShell(); assert.equal(document.activeElement, after);
   account.props.onKeyDown(keyEvent("ArrowDown")); tree = renderShell(); assert.equal(document.activeElement, items[0]);
   menuKey(tree, "Tab", { shiftKey: true }); renderShell(); assert.equal(document.activeElement, before);
+  const pendingTree = renderShell({ ...shellProps, navigationTarget: "/projects/review", isMainPending: true });
+  assert.ok(nodes(pendingTree).some(node => node.props.className === "mainLoadingOverlay"));
+  assert.equal(window.scrollY, 900); // Wait until the destination is rendered.
+  renderShell({ ...shellProps, pageKey: "/projects/review", navigationTarget: "/projects/review" });
+  assert.equal(window.scrollY, 0);
+  assert.deepEqual(scrollCalls, [{ top: 0, left: 0, behavior: "instant" }]);
+  assert.equal(document.activeElement, main);
+  window.scrollY = 400;
+  renderShell({ ...shellProps, pageKey: "/projects/review" });
+  renderShell({ ...shellProps, pageKey: "/projects/review" });
+  assert.equal(window.scrollY, 400); // Updates within a page do not move the reader.
+  window.scrollY = 900;
+  renderShell(shellProps);
+  assert.equal(window.scrollY, 900); // Back/Forward has no navigation target.
+  assert.equal(scrollCalls.length, 1);
+  window.location.hash = "#exclusion-reasons";
+  renderShell({ ...shellProps, pageKey: "/projects/review/settings", navigationTarget: "/projects/review/settings" });
+  assert.equal(scrollCalls.length, 1); // Keep links to a specific section intact.
+  window.location.hash = "";
   renderShell({ ...shellProps, pageKey: "/about" }); assert.equal(document.activeElement, main);
   renderShell({ ...shellProps, pageKey: "/about", isMobileNavOpen: true }); assert.equal(document.activeElement, after);
   let mobileClosed = false;
@@ -159,6 +186,48 @@ try {
   assert.equal(getMenuItemIndex("ArrowUp", -1, ["Profile", "About"]), 1);
   assert.equal(getMenuItemIndex("z", 0, ["Profile", "About"]), undefined);
   assert.equal(getMenuItemIndex("ArrowDown", 0, []), undefined);
+
+  const { useReviewQueueScroll } = require(path.join(temp, "components/use-review-queue-scroll.js"));
+  let mobileViewport = true, reducedMotion = false;
+  const originalMatchMedia = window.matchMedia;
+  window.matchMedia = query => ({ matches: query.includes("prefers-reduced-motion") ? reducedMotion : mobileViewport });
+  function renderQueueScroll(queueKey, itemId, savedDecision = null) {
+    cursor = 0;
+    useReviewQueueScroll(queueKey, itemId, savedDecision);
+    pendingEffects.splice(0).forEach(fn => fn());
+  }
+  for (const phase of ["screening", "fullText", "extraction", "consensus", "dedup"]) {
+    hooks = []; pendingEffects = []; scrollCalls.length = 0; window.scrollY = 900;
+    const queueKey = `review:${phase}`;
+    renderQueueScroll(queueKey, "first");
+    assert.equal(window.scrollY, 900); // Opening a queue preserves its position.
+    renderQueueScroll(queueKey, "second");
+    assert.equal(scrollCalls.length, 0); // Manual selection or a failed save has no signal.
+    const saved = { queueKey, itemId: "second" };
+    renderQueueScroll(queueKey, "third", saved);
+    assert.deepEqual(scrollCalls, [{ top: 0, left: 0, behavior: "smooth" }]);
+    renderQueueScroll(queueKey, "third", saved);
+    renderQueueScroll(queueKey, "fourth", saved);
+    assert.equal(scrollCalls.length, 1); // A save is handled once; later selections do not scroll.
+    renderQueueScroll(queueKey, "fourth", { queueKey, itemId: "fourth" });
+    renderQueueScroll(queueKey, "fifth");
+    assert.equal(scrollCalls.length, 1); // A saved vote that retains the item does not scroll.
+    renderQueueScroll(queueKey, "", { queueKey, itemId: "fifth" });
+    assert.equal(scrollCalls.length, 2); // Reveal the queue completion message too.
+    renderQueueScroll("other-review:screening", "other", { queueKey, itemId: "fifth" });
+    assert.equal(scrollCalls.length, 2); // An in-flight save cannot scroll another page/project.
+    mobileViewport = false;
+    renderQueueScroll(queueKey, "next", { queueKey, itemId: "previous" });
+    assert.equal(scrollCalls.length, 2); // Desktop keeps its current scroll position.
+    mobileViewport = true; reducedMotion = true;
+    renderQueueScroll(queueKey, "last", { queueKey, itemId: "next" });
+    assert.deepEqual(scrollCalls.at(-1), { top: 0, left: 0, behavior: "instant" });
+    reducedMotion = false;
+    hooks = []; pendingEffects = [];
+    renderQueueScroll(queueKey, "last", saved);
+    assert.equal(scrollCalls.length, 3); // Remounting does not replay an earlier save.
+  }
+  window.matchMedia = originalMatchMedia;
 
   hooks = []; cursor = 0;
   const { ReviewQueueDisclosure } = loadSection("review-queue");
@@ -202,7 +271,26 @@ try {
   }
   assert.equal(declaration(".appFrame.sidebar-collapsed .navLabel", "display", 768), undefined);
   assert.equal(declaration(".appFrame.sidebar-collapsed .navLabel", "display", 1440), "none");
-  console.log("Navigation checks passed: link URLs, locked phases, skip link, menu opening/focus/arrows/typeahead/activation/Escape/Tab, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
+  for (const width of [320, 768, 860]) {
+    assert.equal(declaration(".contentHeader", "position", width), "sticky");
+    assert.equal(declaration(".contentHeader", "top", width), "0");
+    assert.equal(declaration(".contentHeader", "background", width), "var(--surface)");
+    assert.equal(declaration(".contentHeader", "backdrop-filter", width), "none");
+    assert.equal(declaration(".contentHeader", "-webkit-backdrop-filter", width), "none");
+    assert.equal(declaration(".contentHeader", "z-index", width), "40");
+    assert.equal(declaration(".contentHeader .topbarNavToggle", "display", width), "inline-flex");
+    assert.equal(declaration(".contentHeader .topbarBrand", "display", width), "inline-flex");
+  }
+  assert.equal(declaration(".contentHeader", "backdrop-filter", 1440), "blur(calc(10px * var(--ui-scale)))");
+  for (const width of [320, 768, 1440]) {
+    assert.equal(declaration(".mainLoadingOverlay", "position", width), "fixed");
+    assert.equal(declaration(".mainLoadingOverlay", "inset", width), "0");
+    assert.equal(declaration(".mainLoadingOverlay", "place-items", width), "center");
+    assert.equal(declaration(".mainLoadingPanel", "max-width", width), "100%");
+    assert.equal(declaration(".mainLoadingPanel", "max-height", width), "100%");
+    assert.equal(declaration(".mainLoadingPanel", "overflow-y", width), "auto");
+  }
+  console.log("Navigation checks passed: link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
 } finally {
   Module._resolveFilename = originalResolve; Module._load = originalLoad;
   if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;

@@ -697,14 +697,12 @@ h3 {
 }
 
 .mainLoadingOverlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 12;
+  z-index: 80;
   display: grid;
-  align-items: start;
-  justify-items: center;
-  min-height: calc(320px * var(--ui-scale));
-  padding-top: clamp(calc(76px * var(--ui-scale)), 18vh, calc(170px * var(--ui-scale)));
+  place-items: center;
+  padding: 20px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg) 74%, transparent), color-mix(in srgb, var(--bg) 50%, transparent));
   backdrop-filter: blur(calc(2px * var(--ui-scale)));
@@ -713,6 +711,8 @@ h3 {
 .mainLoadingPanel {
   display: flex;
   align-items: center;
+  max-height: 100%;
+  overflow-y: auto;
   gap: calc(13px * var(--ui-scale));
   /*min-width: min(100%, calc(280px * var(--ui-scale)));*/
   padding: calc(14px * var(--ui-scale)) calc(16px * var(--ui-scale));
@@ -4443,6 +4443,10 @@ button:disabled {
   }
 
   .contentHeader {
+    z-index: 40;
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: calc(10px * var(--ui-scale));
     padding: calc(14px * var(--ui-scale));
