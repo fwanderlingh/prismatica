@@ -98,7 +98,7 @@ export function getCountsForProject(
       removedOtherReasons: 0,
       recordsScreened: project.recordsScreened,
       recordsExcluded: Math.max(project.recordsScreened - projectReports.length, 0),
-      reportsSought: projectReports.length,
+      reportsSought: projectReports.filter((report) => report.retrievalStatus !== "not_sought").length,
       reportsNotRetrieved: projectReports.filter((report) => report.retrievalStatus === "not_retrieved").length,
       reportsAssessed: new Set(fullTextCurrentDecisions.map((decision) => decision.reportId ?? decision.studyId)).size,
       reportsExcludedWithReasons,
@@ -145,7 +145,7 @@ export function getProjectPhaseProgress(
     const percent = getProgressPercent(value, total);
     return {
       percent,
-      label: `${percent}% full-text reviewed · ${formatValue(value)} of ${formatValue(total)} reports`
+      label: `${percent}% full-text completed · ${formatValue(value)} of ${formatValue(total)} reports`
     };
   }
 
@@ -213,6 +213,9 @@ export function randomizeReviewQueueItems<T extends { id: string }>(
 }
 
 export function isFullTextReportComplete(report: Report, project: ReviewProject) {
+  if (report.retrievalStatus === "not_retrieved") {
+    return true;
+  }
   if (report.fullTextStatus === "advance_extraction" || report.fullTextStatus === "excluded_full_text") {
     return true;
   }
@@ -285,6 +288,9 @@ export function getActiveFullTextReports(project: ReviewProject, reports: Report
     (decision) => decision.reportId
   );
   const activeReports = reports.filter((report) => {
+    if (report.retrievalStatus === "not_retrieved") {
+      return false;
+    }
     const currentDecisions = decisionsByItem.get(report.id) ?? [];
     const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
     const voteCount = report.fullTextVoteCount ?? currentDecisions.length;

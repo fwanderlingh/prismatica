@@ -56,6 +56,13 @@ export async function getSessionUserId() {
   return decodeSession(sessionCookie.value)?.userId ?? null;
 }
 
+// Use a one-way key for presence; never store the authentication cookie itself.
+export async function getSessionPresenceKey() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(sessionCookieName)?.value;
+  return token && decodeSession(token) ? crypto.createHash("sha256").update(token).digest("hex") : null;
+}
+
 export async function setSessionCookie(userId: string) {
   const cookieStore = await cookies();
   cookieStore.set(sessionCookieName, encodeSession({ userId, expiresAt: Date.now() + sessionMaxAgeSeconds * 1000 }), {

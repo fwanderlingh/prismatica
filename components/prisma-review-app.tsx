@@ -2,6 +2,7 @@
 
 import { buildPathForState } from "@/lib/navigation";
 import { NavigationProvider } from "@/components/navigation-link";
+import { useUserPresence } from "@/components/use-user-presence";
 import { useReviewQueueScroll, type SavedQueueDecision } from "@/components/use-review-queue-scroll";
 
 import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -712,6 +713,7 @@ export function PrismaReviewApp() {
   });
 
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
+  useUserPresence(isAuthenticated ? currentUser.id : null);
   const { newProjectForm, canCreate, creationStatus, creationSummary, updateNewProjectForm, syncNewProjectUserContext, resetNewProjectForm } = useNewProjectState(currentUser);
   const normalizedTeamUserSearch = teamUserSearch.trim().toLowerCase();
   const normalizedNewProjectMemberSearch = newProjectMemberSearch.trim().toLowerCase();
@@ -993,7 +995,7 @@ export function PrismaReviewApp() {
     );
 
     return projectReportQueue
-      .filter((report) => currentDecisionsByReportId.has(report.id))
+      .filter((report) => currentDecisionsByReportId.has(report.id) || report.retrievalStatus === "not_retrieved")
       .map((report) => {
         const decision = currentDecisionsByReportId.get(report.id);
         const study = projectScreeningStudies.find((candidate) => candidate.id === report.studyId);
@@ -1001,9 +1003,11 @@ export function PrismaReviewApp() {
           id: report.id,
           title: report.title,
           subtitle: study ? formatStudySubtitle(study) : report.citation,
-          detail: report.fullTextStatusLabel ? `Queue state: ${report.fullTextStatusLabel}` : undefined,
-          statusLabel: decision ? formatDecision(decision.decisionValue) : "Reviewed",
-          statusTone: decision ? decisionTone(decision.decisionValue) : "neutral",
+          detail: report.retrievalStatus === "not_retrieved"
+            ? "Retrieval attempts ended without a full text. Return to resume retrieval."
+            : report.fullTextStatusLabel ? `Queue state: ${report.fullTextStatusLabel}` : undefined,
+          statusLabel: report.retrievalStatus === "not_retrieved" ? "Not retrieved" : decision ? formatDecision(decision.decisionValue) : "Reviewed",
+          statusTone: report.retrievalStatus === "not_retrieved" ? "warning" : decision ? decisionTone(decision.decisionValue) : "neutral",
           completedAt: decision?.createdAt
         };
       });
@@ -3582,10 +3586,10 @@ export function PrismaReviewApp() {
         icon={BookOpen}
         eyebrow="Full-text screening"
         title="Reviewed Reports"
-        description="Completed full-text decisions you can send back to the active report queue."
+        description="Completed full-text decisions and reports not retrieved. Return a report to reopen review or resume retrieval."
         queueLabel="Full-Text Queue"
         emptyTitle="No reviewed reports"
-        emptyDescription="Reports appear here after you record a full-text include or exclude decision."
+        emptyDescription="Reports appear here after a full-text decision or a completed retrieval attempt marked not retrieved."
         items={reviewedFullTextItems}
         message={fullTextMessage}
         pendingItemId={pendingReopenItem?.phase === "fullText" ? pendingReopenItem.id : ""}
@@ -3823,6 +3827,7 @@ export function PrismaReviewApp() {
   function renderAdminReviews() {
     return (
       <AdminReviewsSection
+        currentUserId={currentUser.id}
         dashboardMessage={dashboardMessage}
         websiteVisitCount={websiteVisitCount}
         websiteVisitCountLoading={websiteVisitCountLoading}

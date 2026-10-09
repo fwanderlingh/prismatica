@@ -2,8 +2,10 @@ import { ViewLink } from "@/components/navigation-link";
 import { Activity, AlertTriangle, Check, ChevronRight, LayoutDashboard, Settings, Trash2 } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
 import { Badge, SectionTitle } from "@/components/prisma-review-ui";
+import { ConnectedUsersPanel } from "@/components/connected-users-panel";
 
 type AdminReviewsSectionProps = {
+  currentUserId: string;
   dashboardMessage: string;
   websiteVisitCount: number | null;
   websiteVisitCountLoading: boolean;
@@ -17,6 +19,7 @@ type AdminReviewsSectionProps = {
 };
 
 export function AdminReviewsSection({
+  currentUserId,
   dashboardMessage,
   websiteVisitCount,
   websiteVisitCountLoading,
@@ -46,6 +49,8 @@ export function AdminReviewsSection({
           </div>
         </section>
       ) : null}
+
+      <ConnectedUsersPanel currentUserId={currentUserId} />
 
       <section className="panel">
         <SectionTitle icon={Activity} title="Website Activity" action="Aggregate" />

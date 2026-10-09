@@ -142,7 +142,7 @@ export function FullTextSection({
             title={totalFullTextReportCount > 0 ? "No active full-text reports" : "No full-text reports"}
             description={
               totalFullTextReportCount > 0
-                ? "All available reports have enough votes, are waiting on checked-out reviewers, or need owner resolution."
+                ? "Reports are completed, marked not retrieved, waiting on checked-out reviewers, or awaiting owner resolution. Use Reviewed Reports to reopen completed retrieval attempts."
                 : "No reports are available for full-text review yet."
             }
           />
@@ -183,11 +183,18 @@ export function FullTextSection({
   const hasUploadedPdf = Boolean(activeReport.fileName);
   const uploadedPdfPercent = totalFullTextReportCount > 0 ? Math.round((uploadedPdfCount / totalFullTextReportCount) * 100) : 0;
   const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
-  const retrievalStatusLabel = activeReport.retrievalStatus.replace(/_/g, " ");
+  const retrievalStatusLabel = {
+    not_sought: "Retrieval not started",
+    sought: "Retrieval in progress",
+    retrieved: "Full text available",
+    not_retrieved: "Not retrieved after attempts"
+  }[activeReport.retrievalStatus];
   const hasConfiguredExclusionReasons = exclusionReasons.length > 0;
   const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
   const canRecordFullTextDecision = hasFullTextCheckout || Boolean(activeFullTextDecision);
   const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
+  const retrievalLocked = Boolean(activeReport.storagePath || activeReport.fileName || fullTextVoteCount > 0);
+  const canAssessFullText = activeReport.retrievalStatus === "retrieved";
   const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
   const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
   const fullTextStatusLabel = activeReport.fullTextStatusLabel ?? visibleFullTextEvaluation.label;
@@ -321,14 +328,21 @@ export function FullTextSection({
           <select
             id="retrieval-status"
             value={activeReport.retrievalStatus}
+            aria-describedby="retrieval-status-help"
             disabled={isFullTextActionPending}
             onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
           >
-            <option value="not_sought">Not sought</option>
-            <option value="sought">Sought</option>
-            <option value="retrieved">Retrieved</option>
-            <option value="not_retrieved">Not retrieved</option>
+            <option value="not_sought" disabled={retrievalLocked}>Retrieval not started</option>
+            <option value="sought" disabled={retrievalLocked}>Retrieval in progress</option>
+            <option value="retrieved">Full text available</option>
+            <option value="not_retrieved" disabled={retrievalLocked}>Not retrieved after attempts</option>
           </select>
+          <p className="subtle" id="retrieval-status-help">
+            Mark the full text available when you can read the complete report, including outside this app. PDF upload is optional.
+            Mark not retrieved only when retrieval attempts have ended; this closes the queue item without an eligibility exclusion.
+            {retrievalLocked ? " A stored PDF or current full-text vote requires the report to remain available." : ""}
+            {activeReport.retrievalStatus === "not_sought" ? " This report is pending retrieval and is not yet counted as sought in the PRISMA diagram." : ""}
+          </p>
 
           <div className="decisionState">
             <span>My current full-text vote</span>
@@ -363,7 +377,7 @@ export function FullTextSection({
             <button
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
               type="button"
-              disabled={!canRecordFullTextDecision || isFullTextActionPending}
+              disabled={!canRecordFullTextDecision || !canAssessFullText || isFullTextActionPending}
               onClick={() => updateFullTextReport({ decisionValue: "include" })}
             >
               {pendingFullTextAction === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
@@ -373,7 +387,7 @@ export function FullTextSection({
               className={selectedDecision === "exclude" ? "excludeButton active" : "excludeButton"}
               type="button"
               aria-describedby={!hasConfiguredExclusionReasons ? "missing-exclusion-reasons" : undefined}
-              disabled={!canRecordFullTextDecision || !hasConfiguredExclusionReasons || isFullTextActionPending}
+              disabled={!canRecordFullTextDecision || !canAssessFullText || !hasConfiguredExclusionReasons || isFullTextActionPending}
               onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
             >
               {pendingFullTextAction === "exclude" ? <span className="inlineSpinner" aria-hidden="true" /> : <XCircle size={18} />}
@@ -408,8 +422,8 @@ export function FullTextSection({
           <div className={canRecordFullTextDecision && !hasFullTextConflict ? "validationBox muted" : "validationBox"}>
             {canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
-              {!hasUploadedPdf
-                ? "PDF upload is optional."
+              {!canAssessFullText
+                ? "Confirm that the full text is available before choosing Include or Exclude."
                 : !hasConfiguredExclusionReasons
                 ? "Set project exclusion reasons before recording an exclusion."
                 : hasFullTextConflict

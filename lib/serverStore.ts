@@ -942,6 +942,9 @@ function getTitleAbstractCheckoutCapacity(project: ReviewProject, studyId: strin
 }
 
 function getFullTextCheckoutCapacity(project: ReviewProject, report: Report, decisions: Decision[]) {
+  if (report.retrievalStatus === "not_retrieved") {
+    return 0;
+  }
   const currentDecisions = getCurrentFullTextDecisions(decisions, project.id, report.id);
   const requiredVotes = report.fullTextRequiredVotes ?? project.fullTextRequiredVotes;
   const evaluation = evaluateStage(
@@ -3062,8 +3065,19 @@ export function updateReportForUser(
     throw new ApiError("Report not found.", 404);
   }
 
-  const nextRetrievalStatus = input.retrievalStatus && isRetrievalStatus(input.retrievalStatus) ? input.retrievalStatus : report.retrievalStatus;
+  if (input.retrievalStatus !== undefined && !isRetrievalStatus(input.retrievalStatus)) {
+    throw new ApiError("Choose a valid retrieval status.");
+  }
+  const nextRetrievalStatus = input.retrievalStatus ?? report.retrievalStatus;
+  const hasStoredPdf = Boolean(report.storagePath || report.fileName);
+  const hasFullTextVotes = getCurrentFullTextDecisions(state.decisions, projectId, reportId).length > 0;
+  if (input.retrievalStatus && nextRetrievalStatus !== "retrieved" && (hasStoredPdf || hasFullTextVotes)) {
+    throw new ApiError("A report with a stored PDF or current full-text votes must remain retrieved.");
+  }
   const decisionValue = input.decisionValue;
+  if (decisionValue && nextRetrievalStatus !== "retrieved") {
+    throw new ApiError("Confirm that the full text is retrieved before recording an eligibility decision. PDF upload is optional.");
+  }
   if (decisionValue && !["include", "exclude"].includes(decisionValue)) {
     throw new ApiError("A full-text decision must be include or exclude.");
   }
@@ -3171,6 +3185,11 @@ export function updateReportForUser(
     appendEvent(state, currentUser.name, `Full-text ${formatDecision(decisionValue)}`, reportId);
     syncStudyAfterFullTextDecision(state, project, reportId);
   } else if (input.retrievalStatus && isRetrievalStatus(input.retrievalStatus)) {
+    if (nextRetrievalStatus === "not_retrieved") {
+      state.screeningCheckouts = state.screeningCheckouts.filter(
+        (checkout) => !(getScreeningCheckoutStage(checkout) === "full_text" && checkout.projectId === projectId && checkout.reportId === reportId)
+      );
+    }
     appendEvent(state, currentUser.name, `Updated retrieval status to ${formatRetrievalStatus(nextRetrievalStatus)}`, reportId);
   }
 
@@ -3419,12 +3438,16 @@ export function reopenFullTextDecisionForUser(userId: string, projectId: string,
       decision.stage === "full_text" &&
       decision.isCurrent
   );
-  if (!currentDecision) {
+  if (!currentDecision && report.retrievalStatus !== "not_retrieved") {
     throw new ApiError("No current full-text decision was found for this report.");
   }
 
+  if (report.retrievalStatus === "not_retrieved") {
+    report.retrievalStatus = "sought";
+  }
+
   state.decisions = state.decisions.map((decision) =>
-    decision.id === currentDecision.id ? { ...decision, isCurrent: false } : decision
+    decision.id === currentDecision?.id ? { ...decision, isCurrent: false } : decision
   );
   state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts).filter(
     (checkout) =>
