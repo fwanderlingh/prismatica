@@ -92,7 +92,7 @@ export function AboutSection() {
           <div className="aboutCitation">
             <strong>Citing PRISMATICA</strong>
             <p>If you use PRISMATICA in a systematic review or other research project, please cite the software:</p>
-            <p><em>Francesco Wanderlingh. PRISMATICA: an open-source web platform for PRISMA-guided systematic reviews. Version 1.1.0.</em></p>
+            <p><em>Francesco Wanderlingh. PRISMATICA: an open-source web platform for PRISMA-guided systematic reviews. Version 1.1.0. DOI: 10.5281/zenodo.23264488</em></p>
             <div className="aboutCitationSnippet">
               <div className="aboutCitationToolbar">
                 <strong>BibTeX</strong>

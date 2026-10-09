@@ -19,14 +19,6 @@ Prismatica is designed for teams running evidence reviews, offering a clear work
 - Configurable review thresholds and conflict handling
 - Audit trail and project-level traceability
 
-Administrators can see recently connected signed-in users in **Review Admin → Connected Users**.
-Browsers report presence once per minute, the panel refreshes every minute, and entries expire after five minutes.
-The list includes the administrator's own session and excludes anonymous visitors. Last-seen timestamps use Rome time.
-Presence uses `DATABASE_URL` and the existing `app_users` table; the temporary `website_user_presence` table and index
-are created automatically. A failed check displays an unavailable status instead of implying that nobody is connected.
-Older browser pages start reporting after they load this version of the app.
-Run `npm run check:presence` to test against an isolated temporary PostgreSQL cluster (requires PostgreSQL server binaries and `pg_config`).
-
 ## Quick Start
 
 ### 1) Install dependencies
