@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { ArrowLeft, ArrowRight, History } from "lucide-react";
 import type { Report, ReviewProject, Study, WorkflowEvent } from "@/lib/prismaData";
 import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
@@ -45,10 +46,10 @@ export function AuditTrailSection({
           </p>
         </div>
         <div className="toolbarCluster">
-          <button className="ghostButton" type="button" onClick={onOpenOverview}>
+          <ViewLink view="projectDashboard" className="ghostButton" onNavigate={onOpenOverview}>
             <ArrowLeft size={17} />
             Overview
-          </button>
+          </ViewLink>
         </div>
       </section>
 

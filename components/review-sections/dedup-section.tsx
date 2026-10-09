@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Check, GitMerge, PenLine, RotateCcw, X } from "lucide-react";
 import type { DedupCandidate, ImportBatch, Study } from "@/lib/prismaData";
-import { Badge, EmptyState, RecordComparison, ScoreBar, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
-import { ArticleIdLabel } from "@/components/review-sections/review-queue";
+import { Badge, EmptyState, RecordComparison, ScoreBar, SectionTitle } from "@/components/prisma-review-ui";
+import { ReviewQueueDisclosure, ArticleIdLabel } from "@/components/review-sections/review-queue";
 
 type DedupStatusFilter = "pending" | "confirmed" | "rejected";
 type DedupStudyEditForm = {
@@ -193,52 +193,6 @@ export function DedupSection({
       ) : null}
 
       <section className="dedupGrid">
-        <div className="panel dedupInspectorPanel">
-          <SectionTitle icon={GitMerge} title={`${activeStatusLabel} List`} action={`${visibleCandidates.length} shown`} />
-          {visibleCandidates.length > 0 ? (
-            <div className="dedupCandidateList" aria-label={`${activeStatusLabel} duplicate candidates`}>
-              {visibleCandidates.map((candidate) => {
-                const isSelected = selectedCandidate?.id === candidate.id;
-                return (
-                  <button
-                    className={`queueItem${isSelected ? " active" : ""}`}
-                    key={candidate.id}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => {
-                      setSelectedCandidateId(candidate.id);
-                      setEditingStudyId("");
-                      setStudyEditForm(null);
-                    }}
-                  >
-                    <div className="queueItemTop">
-                      <span className="dedupQueueArticleIds">
-                        <ArticleIdLabel study={candidate.recordA} fallbackId={candidate.recordA.id} />
-                        <span aria-label="compared with">↔</span>
-                        <ArticleIdLabel study={candidate.recordB} fallbackId={candidate.recordB.id} />
-                      </span>
-                      <span className="queueBadges">
-                        <Badge label={`${formatPercent(candidate.score)} match`} tone="info" />
-                      </span>
-                    </div>
-                    <span className="queueItemTitle">{candidate.recordA.title}</span>
-                    <span className="queueItemTitle">{candidate.recordB.title}</span>
-                    <span className="dedupQueueSources">
-                      {getStudyProvenance(candidate.recordA)} vs {getStudyProvenance(candidate.recordB)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState
-              icon={GitMerge}
-              title={dedupEmptyStateTitles[activeStatus]}
-              description={`There are no candidate pairs in the “${activeStatusLabel}” list.`}
-            />
-          )}
-        </div>
-
         <div className="dedupDetailColumn">
           {selectedCandidate ? (
             <>
@@ -255,7 +209,7 @@ export function DedupSection({
                     <ScoreBar label="Year" value={selectedCandidate.explanation.year} />
                   </div>
                   <div className="dedupMatchNotes">
-                    <p className="doiNote">{renderDoiLink(selectedCandidate.explanation.doi, selectedCandidate.explanation.doi)}</p>
+                    <p className="doiNote">{selectedCandidate.explanation.doi}</p>
                     <ul className="plainList">
                       {selectedCandidate.explanation.notes.map((note) => (
                         <li key={note}>{note}</li>
@@ -376,6 +330,53 @@ export function DedupSection({
             </section>
           )}
         </div>
+        <ReviewQueueDisclosure label={`${activeStatusLabel} duplicate queue · ${visibleCandidates.length} pairs`}>
+          <div className="panel dedupInspectorPanel">
+            <SectionTitle icon={GitMerge} title={`${activeStatusLabel} List`} action={`${visibleCandidates.length} shown`} />
+            {visibleCandidates.length > 0 ? (
+              <div className="dedupCandidateList" aria-label={`${activeStatusLabel} duplicate candidates`}>
+                {visibleCandidates.map((candidate) => {
+                  const isSelected = selectedCandidate?.id === candidate.id;
+                  return (
+                    <button
+                      className={`queueItem${isSelected ? " active" : ""}`}
+                      key={candidate.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        setSelectedCandidateId(candidate.id);
+                        setEditingStudyId("");
+                        setStudyEditForm(null);
+                      }}
+                    >
+                      <div className="queueItemTop">
+                        <span className="dedupQueueArticleIds">
+                          <ArticleIdLabel study={candidate.recordA} fallbackId={candidate.recordA.id} />
+                          <span aria-label="compared with">↔</span>
+                          <ArticleIdLabel study={candidate.recordB} fallbackId={candidate.recordB.id} />
+                        </span>
+                        <span className="queueBadges">
+                          <Badge label={`${formatPercent(candidate.score)} match`} tone="info" />
+                        </span>
+                      </div>
+                      <span className="queueItemTitle">{candidate.recordA.title}</span>
+                      <span className="queueItemTitle">{candidate.recordB.title}</span>
+                      <span className="dedupQueueSources">
+                        {getStudyProvenance(candidate.recordA)} vs {getStudyProvenance(candidate.recordB)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState
+                icon={GitMerge}
+                title={dedupEmptyStateTitles[activeStatus]}
+                description={`There are no candidate pairs in the “${activeStatusLabel}” list.`}
+              />
+            )}
+          </div>
+        </ReviewQueueDisclosure>
       </section>
 
       <section className="panel dedupBulkPanel">

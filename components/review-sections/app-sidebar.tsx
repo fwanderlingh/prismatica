@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import type { LucideIcon } from "lucide-react";
 import { PanelRight } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
@@ -61,9 +62,9 @@ export function AppSidebar({
   const activeProjectNavKey = getProjectNavKey(activeView);
 
   return (
-    <aside className={["sidebar", isMobileNavOpen ? "open" : "", isSidebarCollapsed ? "collapsed" : ""].filter(Boolean).join(" ")} aria-label="Project navigation">
+    <aside id="project-navigation" className={["sidebar", isMobileNavOpen ? "open" : "", isSidebarCollapsed ? "collapsed" : ""].filter(Boolean).join(" ")} aria-label="Project navigation">
       <div className="sidebarHeader">
-        <button className="brandBlock brandButton" type="button" title="Go to homepage" onClick={onGoDashboard}>
+        <ViewLink className="brandBlock brandButton" view="dashboard" title="Go to homepage" onNavigate={onGoDashboard}>
           <div className="brandMark brandMarkImage">
             <img src="/icon.svg" alt={brandLogoAlt} width={30} height={30} />
           </div>
@@ -71,7 +72,7 @@ export function AppSidebar({
             <strong>{brandName}</strong>
             <span>{brandTagline}</span>
           </div>
-        </button>
+        </ViewLink>
         <button
           className="ghostButton iconOnly desktopNavToggle"
           type="button"
@@ -86,6 +87,8 @@ export function AppSidebar({
           className="ghostButton iconOnly mobileNavToggle"
           type="button"
           title={isMobileNavOpen ? "Close navigation" : "Open navigation"}
+          aria-label={isMobileNavOpen ? "Close navigation" : "Open navigation"}
+          aria-controls="project-navigation"
           aria-expanded={isMobileNavOpen}
           onClick={onToggleMobileNav}
         >
@@ -93,21 +96,22 @@ export function AppSidebar({
         </button>
       </div>
 
-      <nav className="navList">
+      <nav className="navList" aria-label="Review navigation">
         {isProjectView ? (
           <>
             {homeItem ? (
-              <button
+              <ViewLink
                 className={["navItem", "navItemUtility", activeView === "dashboard" ? "active" : ""].filter(Boolean).join(" ")}
-                type="button"
                 data-tooltip="Home"
                 aria-current={activeView === "dashboard" ? "page" : undefined}
-                onClick={onGoDashboard}
+                view="dashboard"
+                aria-label="Home"
+                onNavigate={onGoDashboard}
                 title={homeItem.path}
               >
                 {homeItem.Icon ? <homeItem.Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                 <span className="navLabel">Home</span>
-              </button>
+              </ViewLink>
             ) : null}
 
             <div className="navSection">
@@ -122,21 +126,22 @@ export function AppSidebar({
                     .filter(Boolean)
                     .join(" ");
                   return (
-                    <button
+                    <ViewLink
                       className={navClassName}
-                      type="button"
                       key={key}
                       data-tooltip={label}
                       aria-current={activeProjectNavKey === key ? "page" : undefined}
                       aria-disabled={isLocked || undefined}
                       disabled={isLocked}
-                      onClick={() => onNavigate(key)}
+                      view={key}
+                      aria-label={label}
+                      onNavigate={() => onNavigate(key)}
                       title={isLocked ? `Previous phase incomplete` : phaseState ? `${phaseState === "current" ? "Current phase" : phaseState}` : path}
                     >
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>
                       {effectivePhaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
-                    </button>
+                    </ViewLink>
                   );
                 })}
             </div>
@@ -151,20 +156,21 @@ export function AppSidebar({
                     .filter(Boolean)
                     .join(" ");
                   return (
-                    <button
+                    <ViewLink
                       className={navClassName}
-                      type="button"
                       key={key}
                       data-tooltip={label}
                       aria-current={activeProjectNavKey === key ? "page" : undefined}
-                      onClick={() => onNavigate(key)}
+                      view={key}
+                      aria-label={label}
+                      onNavigate={() => onNavigate(key)}
                       title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
                     >
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>
                       {key === "exports" && exportFailedCount > 0 ? <span className="navWarnBadge">{exportFailedCount}</span> : null}
                       {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
-                    </button>
+                    </ViewLink>
                   );
                 })}
             </div>
@@ -176,18 +182,19 @@ export function AppSidebar({
             .map(({ key, label, path, Icon }) => {
               const navClassName = ["navItem", activeView === key ? "active" : ""].filter(Boolean).join(" ");
               return (
-                <button
+                <ViewLink
                   className={navClassName}
-                  type="button"
                   key={key}
                   data-tooltip={label}
                   aria-current={activeView === key ? "page" : undefined}
-                  onClick={() => onNavigate(key)}
+                  view={key}
+                  aria-label={label}
+                  onNavigate={() => onNavigate(key)}
                   title={path}
                 >
                   {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                   <span className="navLabel">{label}</span>
-                </button>
+                </ViewLink>
               );
             })
         )}

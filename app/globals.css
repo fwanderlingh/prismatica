@@ -191,11 +191,49 @@ button {
 }
 
 button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: calc(3px * var(--ui-scale)) solid rgba(22, 125, 127, 0.22);
+  outline: calc(3px * var(--ui-scale)) solid var(--teal);
   outline-offset: calc(2px * var(--ui-scale));
+}
+
+.skipLink {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 12px 16px;
+  border: 2px solid var(--teal);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--surface);
+  font-weight: 700;
+  transform: translateY(calc(-100% - 16px));
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+#main-content {
+  scroll-margin-top: 90px;
+}
+
+.navItem,
+.brandButton,
+.breadcrumbLink,
+.userMenuItem,
+a.ghostButton,
+a.primaryButton {
+  text-decoration: none;
+}
+
+[role="link"][aria-disabled="true"] {
+  opacity: 0.58;
+  cursor: not-allowed;
 }
 
 .hiddenFileInput {
@@ -718,98 +756,100 @@ h3 {
   animation: authSpin 0.9s linear infinite;
 }
 
-.appFrame.sidebar-collapsed {
-  grid-template-columns: calc(84px * var(--ui-scale)) minmax(0, 1fr);
-}
+@media (min-width: 861px) {
+  .appFrame.sidebar-collapsed {
+    grid-template-columns: calc(84px * var(--ui-scale)) minmax(0, 1fr);
+  }
 
-.appFrame.sidebar-collapsed .sidebar {
-  gap: calc(14px * var(--ui-scale));
-  padding: calc(18px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  overflow: visible;
-  z-index: 32;
-}
+  .appFrame.sidebar-collapsed .sidebar {
+    gap: calc(14px * var(--ui-scale));
+    padding: calc(18px * var(--ui-scale)) calc(10px * var(--ui-scale));
+    overflow: visible;
+    z-index: 32;
+  }
 
-.appFrame.sidebar-collapsed .sidebarHeader {
-  flex-direction: column;
-  align-items: center;
-  gap: calc(10px * var(--ui-scale));
-}
+  .appFrame.sidebar-collapsed .sidebarHeader {
+    flex-direction: column;
+    align-items: center;
+    gap: calc(10px * var(--ui-scale));
+  }
 
-.appFrame.sidebar-collapsed .brandButton {
-  width: auto;
-}
+  .appFrame.sidebar-collapsed .brandButton {
+    width: auto;
+  }
 
-.appFrame.sidebar-collapsed .brandButton > div:last-child,
-.appFrame.sidebar-collapsed .projectContext,
-.appFrame.sidebar-collapsed .navSectionTitle,
-.appFrame.sidebar-collapsed .navLabel,
-.appFrame.sidebar-collapsed .navWarnBadge,
-.appFrame.sidebar-collapsed .navPhaseMarker {
-  display: none;
-}
+  .appFrame.sidebar-collapsed .brandButton > div:last-child,
+  .appFrame.sidebar-collapsed .projectContext,
+  .appFrame.sidebar-collapsed .navSectionTitle,
+  .appFrame.sidebar-collapsed .navLabel,
+  .appFrame.sidebar-collapsed .navWarnBadge,
+  .appFrame.sidebar-collapsed .navPhaseMarker {
+    display: none;
+  }
 
-.appFrame.sidebar-collapsed .brandMarkImage {
-  padding-left: 0;
-}
+  .appFrame.sidebar-collapsed .brandMarkImage {
+    padding-left: 0;
+  }
 
-.appFrame.sidebar-collapsed .navSection {
-  width: 100%;
-  justify-items: center;
-  padding-inline: calc(2px * var(--ui-scale));
-}
+  .appFrame.sidebar-collapsed .navSection {
+    width: 100%;
+    justify-items: center;
+    padding-inline: calc(2px * var(--ui-scale));
+  }
 
-.appFrame.sidebar-collapsed .navList {
-  justify-items: center;
-}
+  .appFrame.sidebar-collapsed .navList {
+    justify-items: center;
+  }
 
-.appFrame.sidebar-collapsed .navSection + .navSection {
-  margin-top: calc(8px * var(--ui-scale));
-  padding-top: calc(10px * var(--ui-scale));
-  border-top: calc(1px * var(--ui-scale)) solid color-mix(in srgb, var(--border) 85%, transparent);
-}
+  .appFrame.sidebar-collapsed .navSection + .navSection {
+    margin-top: calc(8px * var(--ui-scale));
+    padding-top: calc(10px * var(--ui-scale));
+    border-top: calc(1px * var(--ui-scale)) solid color-mix(in srgb, var(--border) 85%, transparent);
+  }
 
-.appFrame.sidebar-collapsed .navItem {
-  position: relative;
-  justify-content: center;
-  width: calc(48px * var(--ui-scale));
-  min-height: calc(42px * var(--ui-scale));
-  padding: 0;
-}
+  .appFrame.sidebar-collapsed .navItem {
+    position: relative;
+    justify-content: center;
+    width: calc(48px * var(--ui-scale));
+    min-height: calc(42px * var(--ui-scale));
+    padding: 0;
+  }
 
-.appFrame.sidebar-collapsed .navItem[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: calc(100% + 8px * var(--ui-scale));
-  top: 50%;
-  z-index: 60;
-  transform: translateY(-50%);
-  padding: calc(6px * var(--ui-scale)) calc(9px * var(--ui-scale));
-  border: calc(1px * var(--ui-scale)) solid var(--border);
-  border-radius: calc(8px * var(--ui-scale));
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.78rem;
-  font-weight: 700;
-  white-space: nowrap;
-  box-shadow: var(--shadow);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
+  .appFrame.sidebar-collapsed .navItem[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 8px * var(--ui-scale));
+    top: 50%;
+    z-index: 60;
+    transform: translateY(-50%);
+    padding: calc(6px * var(--ui-scale)) calc(9px * var(--ui-scale));
+    border: calc(1px * var(--ui-scale)) solid var(--border);
+    border-radius: calc(8px * var(--ui-scale));
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
 
-.appFrame.sidebar-collapsed .navItem[data-tooltip]:hover::after,
-.appFrame.sidebar-collapsed .navItem[data-tooltip]:focus-visible::after {
-  opacity: 1;
-}
+  .appFrame.sidebar-collapsed .navItem[data-tooltip]:hover::after,
+  .appFrame.sidebar-collapsed .navItem[data-tooltip]:focus-visible::after {
+    opacity: 1;
+  }
 
-.appFrame.sidebar-collapsed .navItemPhase {
-  margin-left: calc(1px * var(--ui-scale));
-  margin-right: calc(1px * var(--ui-scale));
-  background: transparent;
-}
+  .appFrame.sidebar-collapsed .navItemPhase {
+    margin-left: calc(1px * var(--ui-scale));
+    margin-right: calc(1px * var(--ui-scale));
+    background: transparent;
+  }
 
-.appFrame.sidebar-collapsed .navItemPhase > svg {
-  margin-left: calc(1px * var(--ui-scale));
+  .appFrame.sidebar-collapsed .navItemPhase > svg {
+    margin-left: calc(1px * var(--ui-scale));
+  }
 }
 
 .overviewBand,
@@ -1487,6 +1527,81 @@ a.primaryButton[target="_blank"]:focus-visible {
   line-height: 1.55;
 }
 
+.shortcutGuide {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  list-style: none;
+}
+
+.shortcutGuide > li {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 24px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcutGuide > li:nth-child(odd) {
+  background: var(--surface-muted);
+}
+
+.shortcutGuide > li:last-child {
+  border-bottom: 0;
+}
+
+.shortcutDescription {
+  min-width: 0;
+  width: 440px;
+  max-width: 100%;
+}
+
+.shortcutDescription strong {
+  color: var(--text-strong);
+  font-size: 0.92rem;
+}
+
+.shortcutDescription p {
+  margin-top: 3px;
+  font-size: 0.82rem;
+}
+
+.shortcutKeys,
+.shortcutKeyGroup {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.shortcutKeys {
+  flex-shrink: 0;
+}
+
+.shortcutKeys kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 4px 9px;
+  color: var(--teal);
+  border: 1px solid var(--teal);
+  border-radius: 5px;
+  background: var(--teal-soft);
+  box-shadow: 0 2px 0 var(--border);
+  font: 750 0.85rem/1.2 var(--font-sans);
+  white-space: nowrap;
+}
+
+.shortcutSeparator {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .aboutPurposeLogo {
   display: flex;
   justify-content: center;
@@ -1592,10 +1707,12 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .workflowMap {
   display: grid;
+  margin: 0;
+  list-style: none;
   grid-template-columns: repeat(6, minmax(calc(112px * var(--ui-scale)), 1fr));
   gap: calc(10px * var(--ui-scale));
   overflow-x: auto;
-  padding-bottom: calc(2px * var(--ui-scale));
+  padding: 0 0 calc(2px * var(--ui-scale));
 }
 
 .workflowNode {
@@ -2422,6 +2539,7 @@ td span {
 
 .dedupGrid {
   grid-template-columns: calc(360px * var(--ui-scale)) minmax(0, 1fr);
+  grid-template-areas: "queue detail";
 }
 
 .dedupInspectorPanel {
@@ -2468,6 +2586,7 @@ td span {
 }
 
 .dedupDetailColumn {
+  grid-area: detail;
   display: grid;
   align-content: start;
   gap: calc(16px * var(--ui-scale));
@@ -2724,7 +2843,26 @@ td span {
 .screeningLayout {
   display: grid;
   grid-template-columns: calc(290px * var(--ui-scale)) minmax(0, 1fr) calc(288px * var(--ui-scale));
+  grid-template-areas: "queue citation decision";
   gap: calc(16px * var(--ui-scale));
+}
+
+.screeningLayout > .citationPanel {
+  grid-area: citation;
+}
+
+.screeningLayout > .actionPanel {
+  grid-area: decision;
+}
+
+.reviewQueueDisclosure {
+  grid-area: queue;
+  min-width: 0;
+  align-self: start;
+}
+
+.reviewQueueDisclosure > summary {
+  display: none;
 }
 
 .queuePanel {
@@ -2879,13 +3017,21 @@ td span {
   margin: calc(16px * var(--ui-scale)) 0;
 }
 
-.metaStrip span {
+.metaStrip > span,
+.doiLinkPill {
   padding: calc(6px * var(--ui-scale)) calc(9px * var(--ui-scale));
   border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: calc(999px * var(--ui-scale));
   color: var(--text-soft);
   background: var(--surface-muted);
   font-size: 0.82rem;
+}
+
+.doiLinkPill {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 
 .metaStrip .emptyMetaValue {
@@ -3034,6 +3180,7 @@ textarea {
 .fullTextLayout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) calc(360px * var(--ui-scale));
+  grid-template-areas: "pdf decision";
   gap: calc(16px * var(--ui-scale));
   min-height: calc(660px * var(--ui-scale));
 }
@@ -3041,8 +3188,22 @@ textarea {
 .extractionWorkspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) calc(420px * var(--ui-scale));
+  grid-template-areas: "pdf extraction";
   gap: calc(16px * var(--ui-scale));
   min-height: calc(760px * var(--ui-scale));
+}
+
+.fullTextLayout > .pdfPane,
+.extractionWorkspace > .pdfPane {
+  grid-area: pdf;
+}
+
+.fullTextLayout > .fullTextPanel {
+  grid-area: decision;
+}
+
+.extractionWorkspace > .extractionFormPanel {
+  grid-area: extraction;
 }
 
 .pdfPane {
@@ -3368,23 +3529,12 @@ textarea:disabled {
 
 .pdfPaperActions > .ghostButton:not(.iconOnly) {
   min-width: 0;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .ghostButton.pdfDeleteButton {
   flex-shrink: 0;
   color: var(--toast-error-border);
-}
-
-.doiLinkPill > a {
-  display: inline-block;
-  max-width: 100%;
-  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale));
-  border: calc(1px * var(--ui-scale)) solid var(--blue);
-  border-radius: 999px;
-  background: var(--blue-soft);
-  font-size: 0.82rem;
-  overflow-wrap: anywhere;
 }
 
 .pdfUploadError {
@@ -4157,6 +4307,15 @@ button:disabled {
 }
 
 @media (max-width: 1180px) {
+  .workflowMap {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .workflowNode::after {
+    display: none;
+  }
+
   .metricGrid,
   .qualityGrid,
   .reviewGrid,
@@ -4178,12 +4337,52 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .dedupDetailColumn {
-    order: 1;
+  .screeningLayout {
+    grid-template-areas: "citation" "decision" "queue";
   }
 
-  .dedupInspectorPanel {
-    order: 2;
+  .dedupGrid {
+    grid-template-areas: "detail" "queue";
+  }
+
+  .fullTextLayout {
+    grid-template-areas: "decision" "pdf";
+  }
+
+  .extractionWorkspace {
+    grid-template-areas: "extraction" "pdf";
+  }
+
+  .reviewQueueDisclosure > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    padding: 12px 14px;
+    color: var(--text-strong);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .reviewQueueDisclosure > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .reviewQueueDisclosure > summary svg {
+    flex-shrink: 0;
+  }
+
+  .reviewQueueDisclosure[open] > summary svg {
+    transform: rotate(180deg);
+  }
+
+  .reviewQueueDisclosure > .panel {
+    margin-top: 12px;
   }
 
   .comparisonGrid {
@@ -4195,18 +4394,16 @@ button:disabled {
   }
 
   .dedupCandidateList {
-    max-height: none;
-    overflow-y: visible;
-    padding-right: 0;
+    max-height: min(420px, 60vh);
+    overflow-y: auto;
   }
 
   .queuePanel {
-    max-height: none;
+    max-height: min(420px, 60vh);
   }
 
   .queuePanel .queueList {
-    overflow-y: visible;
-    padding-right: 0;
+    overflow-y: auto;
   }
 
   .provenanceStack {
@@ -4220,6 +4417,15 @@ button:disabled {
 }
 
 @media (max-width: 860px) {
+  .workflowMap {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .workflowNode strong {
+    margin-top: 8px;
+  }
+
   .loginShell {
     grid-template-columns: 1fr;
     gap: calc(10px * var(--ui-scale));
@@ -4420,6 +4626,20 @@ button:disabled {
 }
 
 @media (max-width: 520px) {
+  .shortcutGuide > li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .workflowMap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workflowNode {
+    min-height: 0;
+  }
+
   .navList {
     grid-template-columns: 1fr;
   }

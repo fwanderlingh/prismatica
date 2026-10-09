@@ -1,3 +1,5 @@
+import { ViewLink } from "@/components/navigation-link";
+import type { ViewKey } from "@/lib/prismaData";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, ArrowLeft, Check, RotateCcw } from "lucide-react";
 import { Badge, EmptyState, SectionTitle } from "@/components/prisma-review-ui";
@@ -18,6 +20,7 @@ type ReviewedItemsSectionProps = {
   title: string;
   description: string;
   queueLabel: string;
+  queueView: ViewKey;
   emptyTitle: string;
   emptyDescription: string;
   items: ReviewedQueueItem[];
@@ -34,6 +37,7 @@ export function ReviewedItemsSection({
   title,
   description,
   queueLabel,
+  queueView,
   emptyTitle,
   emptyDescription,
   items,
@@ -56,10 +60,10 @@ export function ReviewedItemsSection({
           <p className="subtle">{description}</p>
         </div>
         <div className="buttonRow">
-          <button className="ghostButton" type="button" onClick={onOpenQueue}>
+          <ViewLink view={queueView} className="ghostButton" onNavigate={onOpenQueue}>
             <ArrowLeft size={17} />
             {queueLabel}
-          </button>
+          </ViewLink>
         </div>
       </section>
 

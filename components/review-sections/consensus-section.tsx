@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { AlertTriangle, Check, ClipboardCheck, GitMerge } from "lucide-react";
 import {
   type AppUser,
@@ -169,10 +170,10 @@ export function ConsensusSection({
             <strong>{pendingConsensusCount} pending</strong>
             <p className="subtle">{finalizedConsensusCount} finalized records</p>
           </div>
-          <button className="ghostButton" type="button" onClick={() => setActiveView("extraction")}>
+          <ViewLink className="ghostButton" view="extraction" onNavigate={() => setActiveView("extraction")}>
             <ClipboardCheck size={16} />
             Back To Extraction
-          </button>
+          </ViewLink>
           <label className="fieldLabel" htmlFor="consensus-report-picker">
             Study/report
           </label>

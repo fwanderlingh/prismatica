@@ -1,5 +1,18 @@
-import { GitMerge, Info, ListChecks } from "lucide-react";
+import { Fragment } from "react";
+import { Accessibility, GitMerge, Info, ListChecks } from "lucide-react";
 import { SectionTitle } from "@/components/prisma-review-ui";
+
+const navigationShortcuts = [
+  { title: "Move between links and controls", detail: "Go forward or back through the page.", keys: [["Tab"], ["Shift", "Tab"]] },
+  { title: "Skip to main content", detail: "Reveal the first link on the page, then activate it to bypass the header and sidebar.", keys: [["Tab"], ["Enter"]], separator: "then" },
+  { title: "Open the account menu or select an item", detail: "With the account button or a menu item focused.", keys: [["Enter"], ["Space"]] },
+  { title: "Move through the account menu", detail: "Go to the previous or next item.", keys: [["↑"], ["↓"]] },
+  { title: "Jump to the first or last menu item", detail: "With the account menu open.", keys: [["Home"], ["End"]] },
+  { title: "Find a menu item by its initial", detail: "Jump to Profile or About in the account menu.", keys: [["P"], ["A"]] },
+  { title: "Close the account menu", detail: "Return focus to its button. Tab or Shift + Tab also closes the menu and moves to another control.", keys: [["Esc"]] }
+];
+
+const keyLabels: Record<string, string> = { "↑": "Up arrow", "↓": "Down arrow", Esc: "Escape" };
 
 export function AboutSection() {
   return (
@@ -58,7 +71,7 @@ export function AboutSection() {
           {[
             ["Project governance", "Review setup, membership, owner controls, blind mode, vote thresholds, and registration security."],
             ["Citation workflow", "RIS/BibTeX import, parser warning review, deduplication workspace, and title/abstract screening."],
-            ["Full-text review", "Report queues, PDF upload, DOI links, retrieval status, exclusion reasons, and conflict handling."],
+            ["Full-text review", "Report queues, individual and bulk PDF upload, DOI links, retrieval status, exclusion reasons, and conflict handling."],
             ["Audit and export", "Append-only workflow events, paged audit history, PRISMA count preview, and export validation checks."]
           ].map(([title, description]) => (
             <article className="aboutFeature" key={title}>
@@ -67,6 +80,39 @@ export function AboutSection() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="panel aboutPanel">
+        <SectionTitle icon={Accessibility} title="Website Navigation" action="Keyboard guide" />
+        <p>
+          Use the sidebar and breadcrumbs to open pages, including in a new tab. You can also navigate with your keyboard:
+          focus outlines show your position, and Enter follows a focused page link.
+        </p>
+        <ul className="shortcutGuide" aria-label="Navigation shortcuts">
+          {navigationShortcuts.map(({ title, detail, keys, separator = "or" }) => (
+            <li key={title}>
+              <div className="shortcutDescription">
+                <strong>{title}</strong>
+                <p>{detail}</p>
+              </div>
+              <span className="shortcutKeys">
+                {keys.map((group, groupIndex) => (
+                  <Fragment key={group.join("+")}>
+                    {groupIndex > 0 ? <span className="shortcutSeparator">{separator}</span> : null}
+                    <span className="shortcutKeyGroup">
+                      {group.map((key, keyIndex) => (
+                        <Fragment key={key}>
+                          {keyIndex > 0 ? <span className="shortcutSeparator">+</span> : null}
+                          <kbd aria-label={keyLabels[key]}>{key}</kbd>
+                        </Fragment>
+                      ))}
+                    </span>
+                  </Fragment>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="panel aboutPanel">

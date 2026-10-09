@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from "lucide-react";
 import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
 import { Badge, EmptyState, Metric, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
@@ -100,25 +101,21 @@ export function ProjectDashboardSection({
         </div>
         <div className="overviewSideStack">
           <div className="toolbarCluster">
-            <button
-              className="primaryButton"
-              type="button"
-              title={alertCount > 0 ? "Open the first unresolved workflow conflict" : phaseAction.label}
-              onClick={() => {
-                if (alertCount > 0) {
-                  openConflict(workflowConflicts[0]);
-                } else {
-                  onNavigate(phaseAction.view);
-                }
-              }}
-            >
-              {alertCount > 0 ? <AlertTriangle size={17} /> : <ChevronRight size={17} />}
-              {nextActionLabel}
-            </button>
-            <button className="ghostButton" type="button" title="Open project settings" onClick={onOpenSettings}>
+            {alertCount > 0 ? (
+              <ViewLink className="primaryButton" view={workflowConflicts[0].stage === "full_text" && workflowConflicts[0].reportId ? "fullText" : "screening"} title="Open the first unresolved workflow conflict" onNavigate={() => openConflict(workflowConflicts[0])}>
+                <AlertTriangle size={17} />
+                {nextActionLabel}
+              </ViewLink>
+            ) : (
+              <ViewLink className="primaryButton" view={phaseAction.view} onNavigate={() => onNavigate(phaseAction.view)}>
+                <ChevronRight size={17} />
+                {nextActionLabel}
+              </ViewLink>
+            )}
+            <ViewLink view="settings" className="ghostButton" title="Open project settings" onNavigate={onOpenSettings}>
               <Settings size={17} />
               Settings
-            </button>
+            </ViewLink>
           </div>
         </div>
       </section>
@@ -158,10 +155,10 @@ export function ProjectDashboardSection({
                     )}
                   </div>
                 </div>
-                <button className="ghostButton" type="button" onClick={() => openConflict(conflict)}>
+                <ViewLink className="ghostButton" view={conflict.stage === "full_text" && conflict.reportId ? "fullText" : "screening"} onNavigate={() => openConflict(conflict)}>
                   <ChevronRight size={17} />
                   Resolve
-                </button>
+                </ViewLink>
               </article>
             ))}
           </div>
@@ -175,7 +172,7 @@ export function ProjectDashboardSection({
             title="Review Workflow"
             action={`${formatProjectPhase(selectedProject.stage)} · ${phaseProgress.label}`}
           />
-          <div className="workflowMap" aria-label="Review workflow">
+          <ol className="workflowMap" aria-label="Review workflow">
             {[
               ["Import", `${formatNumber(recordsIdentified)} records`, getWorkflowStepState("imports", selectedProject.stage)],
               ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
@@ -196,12 +193,12 @@ export function ProjectDashboardSection({
                     : "complete"
               ]
             ].map(([label, value, status]) => (
-              <div className={`workflowNode ${status}`} key={label}>
+              <li className={`workflowNode ${status}`} key={label}>
                 <span>{label}</span>
                 <strong>{value}</strong>
-              </div>
+              </li>
             ))}
-          </div>
+          </ol>
           <div className="stateRows">
             <StatusRow label="Review phase" value={formatProjectPhase(selectedProject.stage)} tone={projectPhaseStatusTone(selectedProject.stage)} />
             <StatusRow
@@ -244,10 +241,10 @@ export function ProjectDashboardSection({
                 ))}
               </div>
               <div className="auditTrailActions">
-                <button className="ghostButton" type="button" onClick={onOpenAudit}>
+                <ViewLink view="audit" className="ghostButton" onNavigate={onOpenAudit}>
                   <History size={17} />
                   Full Audit
-                </button>
+                </ViewLink>
               </div>
             </>
           ) : (

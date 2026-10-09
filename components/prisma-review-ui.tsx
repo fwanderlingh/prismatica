@@ -141,11 +141,11 @@ export function RecordComparison({ title, source, articleId, study }: { title: s
 export function renderDoiLink(value: string, label?: string) {
   const normalizedValue = value.trim().replace(/^https?:\/\/doi\.org\//i, "").replace(/^doi:\s*/i, "");
   if (!normalizedValue) {
-    return label ?? "Missing";
+    return <span className="doiLinkPill">{label ?? "Missing"}</span>;
   }
 
   return (
-    <a href={`https://doi.org/${normalizedValue}`} target="_blank" rel="noreferrer">
+    <a className="doiLinkPill" href={`https://doi.org/${normalizedValue}`} target="_blank" rel="noreferrer">
       {label ?? normalizedValue}
     </a>
   );

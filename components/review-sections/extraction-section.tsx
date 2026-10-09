@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, History, Plus, Trash2 } from "lucide-react";
 import {
@@ -242,10 +243,10 @@ export function ExtractionSection({
             <h1>Dual Independent Extraction</h1>
             <p className="subtle">Extraction forms and assignments become available after studies are included.</p>
           </div>
-          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+          <ViewLink view="extractionReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
             <History size={16} />
             Reviewed {reviewedCount}
-          </button>
+          </ViewLink>
         </section>
         <section className="settingsGrid">
           <div className="panel">
@@ -301,10 +302,10 @@ export function ExtractionSection({
             <h1>Extraction Schema</h1>
             <p className="subtle">Project owners define the extraction fields before reviewers extract data from included reports.</p>
           </div>
-          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+          <ViewLink view="extractionReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
             <History size={16} />
             Reviewed {reviewedCount}
-          </button>
+          </ViewLink>
         </section>
 
         {extractionMessage ? (
@@ -340,10 +341,10 @@ export function ExtractionSection({
             <button className="ghostButton" type="button" onClick={cancelEditingExtractionTemplate}>
               Cancel
             </button>
-            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+            <ViewLink view="extractionReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
-            </button>
+            </ViewLink>
           </div>
         </section>
 
@@ -376,15 +377,15 @@ export function ExtractionSection({
               </button>
             ) : null}
             {totalExtractionReportCount > 0 ? (
-              <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
+              <ViewLink view="consensus" className="ghostButton" onNavigate={() => setActiveView("consensus")}>
                 <GitMerge size={16} />
                 Resolve Conflicts
-              </button>
+              </ViewLink>
             ) : null}
-            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+            <ViewLink view="extractionReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
-            </button>
+            </ViewLink>
           </div>
         </section>
         <section className="panel">
@@ -451,14 +452,14 @@ export function ExtractionSection({
                   Edit Schema
                 </button>
               ) : null}
-              <button className="ghostButton" type="button" onClick={() => setActiveView("consensus")}>
+              <ViewLink view="consensus" className="ghostButton" onNavigate={() => setActiveView("consensus")}>
                 <GitMerge size={16} />
                 Resolve Conflicts
-              </button>
-              <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+              </ViewLink>
+              <ViewLink view="extractionReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
                 <History size={16} />
                 Reviewed {reviewedCount}
-              </button>
+              </ViewLink>
             </div>
           }
           activeFallbackId={activeExtractionFallbackId}
@@ -483,40 +484,6 @@ export function ExtractionSection({
       ) : null}
 
       <section className="extractionWorkspace">
-        <div className="pdfPane">
-          <div className="pdfToolbar">
-            <strong className="pdfTitle" title={activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}>
-              {activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}
-            </strong>
-            {activeReportForExtraction ? (
-              <button
-                className="ghostButton"
-                type="button"
-                onClick={() => {
-                  setActiveReportId(activeReportForExtraction.id);
-                  setActiveView("fullText");
-                }}
-              >
-                <BookOpen size={16} />
-                Full text
-              </button>
-            ) : null}
-          </div>
-          <div className={extractionPdfUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="Extraction PDF review pane">
-            {extractionPdfUrl ? (
-              <iframe className="pdfViewer" src={extractionPdfUrl} title={`${activeReportForExtraction?.title ?? "Included report"} PDF`} />
-            ) : (
-              <div className="paperPage emptyPdfPage">
-                <p className="paperEyebrow">PDF unavailable</p>
-                <h2>{activeReportForExtraction?.title ?? "No included report selected"}</h2>
-                <div className="paperLine wide" />
-                <div className="paperLine" />
-                <div className="paperLine short" />
-              </div>
-            )}
-          </div>
-        </div>
-
         <aside className="panel extractionFormPanel">
           <SectionTitle
             icon={ClipboardCheck}
@@ -614,6 +581,40 @@ export function ExtractionSection({
             </button>
           </form>
         </aside>
+
+        <div className="pdfPane">
+          <div className="pdfToolbar">
+            <strong className="pdfTitle" title={activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}>
+              {activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}
+            </strong>
+            {activeReportForExtraction ? (
+              <ViewLink
+                className="ghostButton"
+                view="fullText"
+                onNavigate={() => {
+                  setActiveReportId(activeReportForExtraction.id);
+                  setActiveView("fullText");
+                }}
+              >
+                <BookOpen size={16} />
+                Full text
+              </ViewLink>
+            ) : null}
+          </div>
+          <div className={extractionPdfUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="Extraction PDF review pane">
+            {extractionPdfUrl ? (
+              <iframe className="pdfViewer" src={extractionPdfUrl} title={`${activeReportForExtraction?.title ?? "Included report"} PDF`} />
+            ) : (
+              <div className="paperPage emptyPdfPage">
+                <p className="paperEyebrow">PDF unavailable</p>
+                <h2>{activeReportForExtraction?.title ?? "No included report selected"}</h2>
+                <div className="paperLine wide" />
+                <div className="paperLine" />
+                <div className="paperLine short" />
+              </div>
+            )}
+          </div>
+        </div>
       </section>
     </div>
   );

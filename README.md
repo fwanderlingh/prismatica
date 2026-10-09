@@ -54,12 +54,47 @@ This uses Next.js experimental local HTTPS support.
 - Dedup candidate review with side-by-side comparisons
 - Title/abstract screening with append-only decisions, undo route support, and temporary checkout-based queue control
 - Full-text review with PDF upload, validation, streaming, DOI linking, and temporary checkout-based queue control
+- Dedicated bulk PDF upload page with paper assignment, DOI link pills, filtering, and per-file results
 - Conflict handling in full-text and extraction phases
 - Extraction templates (text, single-choice, multi-choice)
 - Extraction submissions with temporary checkout-based queue control, consensus routes, and configurable extraction voting
 - Export and report validation endpoints
 - Theme preferences (light, dark, system)
 - Path-based routing and refined UI components
+- Accessible navigation links, a skip link, keyboard menus, visible focus, and responsive review layouts
+
+### Accessibility and Mobile Layout
+
+Page navigation uses links, including support for opening views in a new tab.
+Press **Tab** to reveal **Skip to main content**, which bypasses the header and
+sidebar. Keyboard focus is visible on links and controls, and page changes move
+focus to the main content.
+
+The account menu supports **Enter/Space** to open or activate an item,
+**Up/Down** to open or move through items, **Home/End** to reach the first or last
+item, and letters to find an item by its initial. **Escape** closes the menu and
+returns focus to its button; **Tab/Shift+Tab** closes it and moves focus out.
+Opening mobile navigation focuses its first link; **Escape** closes it and
+returns focus to the navigation toggle.
+
+On smaller screens, screening and duplicate queues start collapsed below the
+review panels. Full-text decision controls and extraction forms appear before
+their PDF viewers. The workflow diagram adapts from six columns to three, two,
+or one as the screen narrows.
+
+### Bulk PDF Upload
+
+In **Full text**, open **PDFs Upload** beside **Reviewed** to manage PDFs for all
+full-text papers, including papers already reviewed. The table has DOI link
+pills for retrieval, search, pagination, and an **Only papers missing PDFs** filter.
+
+1. Choose **Select PDFs** and select one or more files, or choose a PDF from a paper's row.
+2. Assign each selected file to its paper. Choosing a paper with an existing PDF replaces its attachment.
+3. Choose **Upload … PDFs** to upload the batch. Each file shows its result, and failed files can be retried without uploading successful files again.
+
+Files upload individually in sequence, with the configured size limit applied
+to each PDF. Existing PDFs can also be replaced or deleted from the table;
+deletion uses a browser confirmation. PDF upload is optional for full-text decisions.
 
 
 ## Workflow Overview
@@ -131,7 +166,8 @@ npm run dev:https    # Dev server with experimental HTTPS
 npm run build        # Production build
 npm run start        # Production server (defaults)
 npm run start:prod   # Production server bound to 127.0.0.1:3000
-npm run check        # TypeScript type-check
+npm run check        # TypeScript and API authentication checks
+npm run check:navigation # Navigation, keyboard, and responsive layout checks
 ```
 
 ## Accounts and Access

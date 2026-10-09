@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { BookOpen, Building2, CalendarClock, ChevronRight, ClipboardCheck, FileSearch, FolderPlus, GitMerge, Import as ImportIcon, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
@@ -90,9 +91,9 @@ export function DashboardSection({
                   <h2>{project.title}</h2>
                   <p>{project.description}</p>
                 </div>
-                <button className="ghostButton iconOnly" type="button" title="Open review project" onClick={() => openProject(project.id)}>
+                <ViewLink view="projectDashboard" projectId={project.id} className="ghostButton iconOnly" aria-label={`Open ${project.title}`} title="Open review project" onNavigate={() => openProject(project.id)}>
                   <ChevronRight size={18} />
-                </button>
+                </ViewLink>
               </div>
               <div className="projectMeta">
                 <span>
@@ -117,13 +118,13 @@ export function DashboardSection({
                 </div>
               </div>
               <div className="buttonRow">
-                <button className="primaryButton" type="button" onClick={() => openProject(project.id, "projectDashboard")}>
+                <ViewLink view="projectDashboard" projectId={project.id} className="primaryButton" onNavigate={() => openProject(project.id, "projectDashboard")}>
                   Open
-                </button>
-                <button className="ghostButton" type="button" onClick={() => openProject(project.id, phaseAction.view)}>
+                </ViewLink>
+                <ViewLink view={phaseAction.view} projectId={project.id} className="ghostButton" onNavigate={() => openProject(project.id, phaseAction.view)}>
                   <ActivePhaseIcon size={17} />
                   {phaseAction.label}
-                </button>
+                </ViewLink>
               </div>
             </article>
           );

@@ -1,7 +1,33 @@
-import type { ReactNode } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, ChevronDown } from "lucide-react";
 import type { Report, Study } from "@/lib/prismaData";
 import { formatArticleQueueId, formatReportQueueOption } from "@/lib/reviewDisplay";
+
+const queueDesktopQuery = "(min-width: 1181px)";
+function subscribeToQueueLayout(onChange: () => void) {
+  const query = window.matchMedia(queueDesktopQuery);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+function isDesktopQueueLayout() {
+  return window.matchMedia(queueDesktopQuery).matches;
+}
+function serverQueueLayout() {
+  return false;
+}
+
+export function ReviewQueueDisclosure({ label, children }: { label: string; children: ReactNode }) {
+  const isDesktop = useSyncExternalStore(subscribeToQueueLayout, isDesktopQueueLayout, serverQueueLayout);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  return (
+    <details className="reviewQueueDisclosure" open={isDesktop || isMobileOpen} onToggle={(event) => {
+      if (!isDesktop) setIsMobileOpen(event.currentTarget.open);
+    }}>
+      <summary>{label}<ChevronDown size={18} aria-hidden="true" /></summary>
+      {children}
+    </details>
+  );
+}
 
 type ArticleIdLabelProps = {
   study?: Pick<Study, "importItemId">;

@@ -1,5 +1,8 @@
 "use client";
 
+import { buildPathForState } from "@/lib/navigation";
+import { NavigationProvider } from "@/components/navigation-link";
+
 import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -258,54 +261,6 @@ function normalizePathname(pathname: string) {
   return pathname;
 }
 
-function buildPathForState(view: ViewKey, projectId: string) {
-  switch (view) {
-    case "dashboard":
-      return "/dashboard";
-    case "newProject":
-      return "/projects/new";
-    case "about":
-      return "/about";
-    case "adminReviews":
-      return "/admin/reviews";
-    case "registeredUsers":
-      return "/admin/users";
-    case "profile":
-      return "/profile";
-    case "projectDashboard":
-      return `/projects/${encodeURIComponent(projectId)}`;
-    case "imports":
-      return `/projects/${encodeURIComponent(projectId)}/imports`;
-    case "dedup":
-      return `/projects/${encodeURIComponent(projectId)}/dedup`;
-    case "screening":
-      return `/projects/${encodeURIComponent(projectId)}/screening`;
-    case "screeningReviewed":
-      return `/projects/${encodeURIComponent(projectId)}/screening/reviewed`;
-    case "fullText":
-      return `/projects/${encodeURIComponent(projectId)}/full-text`;
-    case "fullTextReviewed":
-      return `/projects/${encodeURIComponent(projectId)}/full-text/reviewed`;
-    case "pdfUpload":
-      return `/projects/${encodeURIComponent(projectId)}/full-text/pdf-upload`;
-    case "extraction":
-      return `/projects/${encodeURIComponent(projectId)}/extraction`;
-    case "extractionReviewed":
-      return `/projects/${encodeURIComponent(projectId)}/extraction/reviewed`;
-    case "consensus":
-      return `/projects/${encodeURIComponent(projectId)}/extraction/consensus`;
-    case "risk":
-      return `/projects/${encodeURIComponent(projectId)}/risk`;
-    case "exports":
-      return `/projects/${encodeURIComponent(projectId)}/exports`;
-    case "audit":
-      return `/projects/${encodeURIComponent(projectId)}/audit`;
-    case "settings":
-      return `/projects/${encodeURIComponent(projectId)}/settings`;
-    default:
-      return "/";
-  }
-}
 
 function getViewLabel(view: ViewKey) {
   const subpageLabels: Partial<Record<ViewKey, string>> = {
@@ -1679,8 +1634,9 @@ export function PrismaReviewApp() {
         return;
       }
 
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+      if (target?.closest("input, textarea, select, button, a, [role=menu], [contenteditable=true]")) {
         return;
       }
 
@@ -3556,6 +3512,7 @@ export function PrismaReviewApp() {
         message={screeningMessage}
         pendingItemId={pendingReopenItem?.phase === "screening" ? pendingReopenItem.id : ""}
         actionLabel="Return"
+        queueView="screening"
         onOpenQueue={() => navigateToProjectView("screening")}
         onReturnToQueue={returnScreeningStudyToQueue}
       />
@@ -3610,6 +3567,7 @@ export function PrismaReviewApp() {
         message={fullTextMessage}
         pendingItemId={pendingReopenItem?.phase === "fullText" ? pendingReopenItem.id : ""}
         actionLabel="Return"
+        queueView="fullText"
         onOpenQueue={() => navigateToProjectView("fullText")}
         onReturnToQueue={returnFullTextReportToQueue}
       />
@@ -3672,6 +3630,7 @@ export function PrismaReviewApp() {
         message={extractionMessage}
         pendingItemId={pendingReopenItem?.phase === "extraction" ? pendingReopenItem.id : ""}
         actionLabel="Return"
+        queueView="extraction"
         onOpenQueue={() => navigateToProjectView("extraction")}
         onReturnToQueue={returnExtractionReportToQueue}
       />
@@ -3986,6 +3945,7 @@ export function PrismaReviewApp() {
     ? [
         {
           label: "All Reviews",
+          href: "/dashboard",
           onClick: () => {
             setActiveView("dashboard");
             setIsMobileNavOpen(false);
@@ -3993,6 +3953,7 @@ export function PrismaReviewApp() {
         },
         {
           label: selectedProject.title,
+          href: buildPathForState("projectDashboard", selectedProject.id),
           current: activeView === "projectDashboard",
           onClick:
             activeView === "projectDashboard"
@@ -4021,6 +3982,7 @@ export function PrismaReviewApp() {
       : [
           {
             label: "All Reviews",
+            href: "/dashboard",
             onClick: () => {
               setActiveView("dashboard");
               setIsMobileNavOpen(false);
@@ -4033,58 +3995,61 @@ export function PrismaReviewApp() {
         ];
 
   return (
-    <AppShell
-      isSidebarCollapsed={isSidebarCollapsed}
-      isMobileNavOpen={isMobileNavOpen}
-      brandLogoAlt={BRAND_LOGO_ALT}
-      isMainPending={Boolean(pendingRoutePath)}
-      mainPendingLabel={pendingRouteLabel}
-      currentUser={currentUser}
-      breadcrumbItems={breadcrumbItems}
-      sidebar={
-        <AppSidebar
-          brandName={BRAND_NAME}
-          brandTagline={BRAND_TAGLINE}
-          brandLogoAlt={BRAND_LOGO_ALT}
-          isSidebarCollapsed={isSidebarCollapsed}
-          isMobileNavOpen={isMobileNavOpen}
-          isProjectView={isProjectView}
-          activeView={activeView}
-          currentUser={currentUser}
-          selectedProject={selectedProject}
-          globalNavItems={globalNavItems}
-          projectNavItems={projectNavItems}
-          reviewPhaseNavKeys={reviewPhaseNavKeys}
-          exportFailedCount={exportConsistency.failedCount}
-          getPhaseNavState={getSelectedProjectPhaseNavState}
-          canNavigateToProjectView={canNavigateToProjectView}
-          formatProjectPhase={formatProjectPhase}
-          projectPhaseBadgeTone={projectPhaseBadgeTone}
-          onGoDashboard={() => {
-            setActiveView("dashboard");
-            setIsMobileNavOpen(false);
-          }}
-          onNavigate={navigateToProjectView}
-          onToggleSidebar={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
-          onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
-        />
-      }
-      onGoDashboard={() => {
-        setActiveView("dashboard");
-        setIsMobileNavOpen(false);
-      }}
-      onNavigateProfile={() => {
-        setActiveView("profile");
-        setIsMobileNavOpen(false);
-      }}
-      onNavigateAbout={() => {
-        setActiveView("about");
-        setIsMobileNavOpen(false);
-      }}
-      onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
-    >
-      {renderActiveView()}
-    </AppShell>
+    <NavigationProvider projectId={selectedProject.id}>
+      <AppShell
+        pageKey={pathname ?? ""}
+        isSidebarCollapsed={isSidebarCollapsed}
+        isMobileNavOpen={isMobileNavOpen}
+        brandLogoAlt={BRAND_LOGO_ALT}
+        isMainPending={Boolean(pendingRoutePath)}
+        mainPendingLabel={pendingRouteLabel}
+        currentUser={currentUser}
+        breadcrumbItems={breadcrumbItems}
+        sidebar={
+          <AppSidebar
+            brandName={BRAND_NAME}
+            brandTagline={BRAND_TAGLINE}
+            brandLogoAlt={BRAND_LOGO_ALT}
+            isSidebarCollapsed={isSidebarCollapsed}
+            isMobileNavOpen={isMobileNavOpen}
+            isProjectView={isProjectView}
+            activeView={activeView}
+            currentUser={currentUser}
+            selectedProject={selectedProject}
+            globalNavItems={globalNavItems}
+            projectNavItems={projectNavItems}
+            reviewPhaseNavKeys={reviewPhaseNavKeys}
+            exportFailedCount={exportConsistency.failedCount}
+            getPhaseNavState={getSelectedProjectPhaseNavState}
+            canNavigateToProjectView={canNavigateToProjectView}
+            formatProjectPhase={formatProjectPhase}
+            projectPhaseBadgeTone={projectPhaseBadgeTone}
+            onGoDashboard={() => {
+              setActiveView("dashboard");
+              setIsMobileNavOpen(false);
+            }}
+            onNavigate={navigateToProjectView}
+            onToggleSidebar={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
+          />
+        }
+        onGoDashboard={() => {
+          setActiveView("dashboard");
+          setIsMobileNavOpen(false);
+        }}
+        onNavigateProfile={() => {
+          setActiveView("profile");
+          setIsMobileNavOpen(false);
+        }}
+        onNavigateAbout={() => {
+          setActiveView("about");
+          setIsMobileNavOpen(false);
+        }}
+        onToggleMobileNav={() => setIsMobileNavOpen((open) => !open)}
+      >
+        {renderActiveView()}
+      </AppShell>
+    </NavigationProvider>
   );
 }
 

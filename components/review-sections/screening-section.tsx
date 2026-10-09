@@ -1,9 +1,10 @@
+import { ViewLink } from "@/components/navigation-link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
 import type { Decision, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, ReviewReservationNotice, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
-import { ReviewQueueItem } from "@/components/review-sections/review-queue";
+import { ReviewQueueDisclosure, ReviewQueueItem } from "@/components/review-sections/review-queue";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 
 type StageEvaluation = {
@@ -119,10 +120,10 @@ export function ScreeningSection({
             <h1>Reviewer Queue</h1>
             <p className="subtle">Screening starts after imports are committed and canonical studies are created.</p>
           </div>
-          <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+          <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
             <History size={16} />
             Reviewed {reviewedCount}
-          </button>
+          </ViewLink>
         </section>
         <section className="panel">
           <EmptyState
@@ -153,44 +154,13 @@ export function ScreeningSection({
             <i style={{ width: `${screeningProgress}%` }} />
           </div>
         </div>
-        <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+        <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
           <History size={16} />
           Reviewed {reviewedCount}
-        </button>
+        </ViewLink>
       </section>
 
       <section className="screeningLayout">
-        <aside className="panel queuePanel">
-          <SectionTitle icon={ListChecks} title="Queue" action={`${projectScreeningStudies.length} active`} />
-          <div className="queueList">
-            {projectScreeningStudies.map((study, index) => {
-              const decision = decisionsByStudy.get(study.id);
-              const queueEvaluation = titleAbstractEvaluations.get(study.id);
-              const hasQueueConflict = queueEvaluation?.state === "conflict" || queueEvaluation?.state === "needs_third_vote";
-              return (
-                <ReviewQueueItem
-                  active={index === studyIndex}
-                  badges={
-                    <>
-                      {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
-                      {decision ? (
-                        <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} />
-                      ) : (
-                        <Badge label="open" tone="neutral" />
-                      )}
-                    </>
-                  }
-                  fallbackId={index + 1}
-                  key={study.id}
-                  onSelect={() => setStudyIndex(index)}
-                  study={study}
-                  title={study.title}
-                />
-              );
-            })}
-          </div>
-        </aside>
-
         <article className="panel citationPanel">
           <div className="citationHeader">
             <div>
@@ -204,9 +174,7 @@ export function ScreeningSection({
             <Badge label={stageEvaluation.label} tone={stageEvaluation.state === "conflict" ? "danger" : "info"} />
           </div>
           <div className="metaStrip">
-            <span>
-              DOI {renderDoiLink(currentStudy.doi, currentStudy.doi || "Missing")}
-            </span>
+            {renderDoiLink(currentStudy.doi, `DOI ${currentStudy.doi || "Missing"}`)}
             <span className={currentStudy.keywords.length > 0 ? undefined : "emptyMetaValue"}>
               {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
             </span>
@@ -311,6 +279,39 @@ export function ScreeningSection({
             <span>Other reviewer votes are hidden while blind mode is enabled.</span>
           </div>
         </aside>
+
+        <ReviewQueueDisclosure label={`Screening queue · ${projectScreeningStudies.length} records`}>
+          <aside className="panel queuePanel">
+            <SectionTitle icon={ListChecks} title="Queue" action={`${projectScreeningStudies.length} active`} />
+            <div className="queueList">
+              {projectScreeningStudies.map((study, index) => {
+                const decision = decisionsByStudy.get(study.id);
+                const queueEvaluation = titleAbstractEvaluations.get(study.id);
+                const hasQueueConflict = queueEvaluation?.state === "conflict" || queueEvaluation?.state === "needs_third_vote";
+                return (
+                  <ReviewQueueItem
+                    active={index === studyIndex}
+                    badges={
+                      <>
+                        {hasQueueConflict ? <Badge label={queueEvaluation?.label ?? "Resolve conflict"} tone="danger" /> : null}
+                        {decision ? (
+                          <Badge label={formatDecision(decision.decisionValue)} tone={decisionTone(decision.decisionValue)} />
+                        ) : (
+                          <Badge label="open" tone="neutral" />
+                        )}
+                      </>
+                    }
+                    fallbackId={index + 1}
+                    key={study.id}
+                    onSelect={() => setStudyIndex(index)}
+                    study={study}
+                    title={study.title}
+                  />
+                );
+              })}
+            </div>
+          </aside>
+        </ReviewQueueDisclosure>
       </section>
     </div>
   );

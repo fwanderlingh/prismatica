@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { AlertTriangle, ArrowLeft, FileText, Lock, Mail, Plus, UserPlus, Users, X } from "lucide-react";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle } from "@/components/prisma-review-ui";
@@ -98,10 +99,10 @@ export function NewProjectSection({
           <h1>Create Review Project</h1>
           <p className="subtle">Set up the project shell, blind voting policy, and team membership before importing citations.</p>
         </div>
-        <button className="ghostButton" type="button" onClick={onBack}>
+        <ViewLink view="dashboard" className="ghostButton" onNavigate={onBack}>
           <ArrowLeft size={17} />
           Back
-        </button>
+        </ViewLink>
       </section>
 
       <form className="projectForm" onSubmit={onSubmit}>

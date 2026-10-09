@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { AlertTriangle, ArrowLeft, FileText, Upload, X } from "lucide-react";
 import type { Report, Study } from "@/lib/prismaData";
@@ -124,9 +125,9 @@ export function PdfUploadSection({ projectId, projectTitle, reports, studies, ma
           <p className="subtle">{projectTitle}</p>
           <p>Choose PDFs for the papers below, then upload them together. PDF upload is optional.</p>
         </div>
-        <button className="ghostButton" type="button" disabled={isBusy} onClick={onBack}>
+        <ViewLink view="fullText" className="ghostButton"  disabled={isBusy} onNavigate={onBack}>
           <ArrowLeft size={17} /> Back to full text
-        </button>
+        </ViewLink>
       </section>
 
       <section className="panel">
@@ -202,14 +203,14 @@ export function PdfUploadSection({ projectId, projectTitle, reports, studies, ma
                     return (
                       <tr key={report.id}>
                         <td><strong>{report.title}</strong><p className="subtle">{report.citation}</p></td>
-                        <td>{doi ? <span className="doiLinkPill">{renderDoiLink(doi)}</span> : <Badge label="No DOI" tone="neutral" />}</td>
+                        <td>{doi ? renderDoiLink(doi) : <Badge label="No DOI" tone="neutral" />}</td>
                         <td>
                           {report.fileName ? <a href={`/api/projects/${encodeURIComponent(projectId)}/reports/${encodeURIComponent(report.id)}/pdf`} target="_blank" rel="noreferrer">{report.fileName}</a> : <Badge label="No PDF" tone="neutral" />}
                           {queuedFile ? <p className="subtle">Selected: {queuedFile.file.name}</p> : null}
                         </td>
                         <td>
                           <div className="pdfPaperActions">
-                            <button className="ghostButton" type="button" disabled={isBusy} aria-label={`Choose PDF for ${report.title}`} onClick={() => { targetReport.current = report.id; singleInput.current?.click(); }}><Upload size={16} />{report.fileName ? "Choose replacement" : "Choose PDF"}</button>
+                            <button className="ghostButton" type="button" disabled={isBusy} aria-label={`${report.fileName ? "Replace" : "Choose"} PDF for ${report.title}`} onClick={() => { targetReport.current = report.id; singleInput.current?.click(); }}><Upload size={16} />{report.fileName ? "Replace" : "Choose PDF"}</button>
                             {report.fileName ? <button className="ghostButton iconOnly pdfDeleteButton" type="button" disabled={isBusy} title="Delete PDF" aria-label={`Delete PDF for ${report.title}`} onClick={() => deleteReportPdf(report)}>{deletingReportId === report.id ? <span className="inlineSpinner" aria-hidden="true" /> : <X size={18} />}</button> : null}
                           </div>
                         </td>

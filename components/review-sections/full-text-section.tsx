@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { useEffect, useState, type ChangeEvent, type RefObject } from "react";
 import Link from "next/link";
 import {
@@ -125,14 +126,14 @@ export function FullTextSection({
             <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
           </div>
           <div className="buttonRow">
-            <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+            <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
-            </button>
-            <button className="ghostButton" type="button" onClick={onOpenPdfUpload}>
+            </ViewLink>
+            <ViewLink view="pdfUpload" className="ghostButton" onNavigate={onOpenPdfUpload}>
               <Upload size={16} />
               PDFs Upload
-            </button>
+            </ViewLink>
           </div>
         </section>
         <section className="panel">
@@ -238,14 +239,14 @@ export function FullTextSection({
         <ReportPicker
           action={
             <div className="buttonRow">
-              <button className="ghostButton" type="button" onClick={onOpenReviewed}>
+              <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
                 <History size={16} />
                 Reviewed {reviewedCount}
-              </button>
-              <button className="ghostButton" type="button" onClick={onOpenPdfUpload}>
+              </ViewLink>
+              <ViewLink view="pdfUpload" className="ghostButton" onNavigate={onOpenPdfUpload}>
                 <Upload size={16} />
                 PDFs Upload
-              </button>
+              </ViewLink>
             </div>
           }
           activeFallbackId={activeReportFallbackId}
@@ -283,78 +284,12 @@ export function FullTextSection({
       </section>
 
       <section className="fullTextLayout">
-        <div className="pdfPane">
-          <div className="pdfToolbar">
-            <strong className="pdfTitle" title={pdfDisplayName}>
-              {pdfDisplayName}
-            </strong>
-            <div className="toolbarCluster">
-              <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
-              <button
-                className={hasUploadedPdf ? "ghostButton" : "primaryButton missingPdfUploadButton"}
-                type="button"
-                title={hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
-                disabled={isFullTextActionPending}
-                onClick={() => pdfInputRef.current?.click()}
-              >
-                {pendingFullTextAction === "upload" ? <span className="inlineSpinner" aria-hidden="true" /> : <Upload size={16} />}
-                {pendingFullTextAction === "upload" ? "Uploading..." : hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
-              </button>
-            </div>
-          </div>
-          {showUploadMessage ? (
-            <div className={fullTextMessageClassName}>
-              {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
-              <span>{fullTextMessage}</span>
-            </div>
-          ) : null}
-          <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
-            {pdfViewerUrl ? (
-              <div className="pdfFrameWrap" aria-busy={isPdfLoading}>
-                {isPdfLoading || hasPdfLoadError ? (
-                  <div className={hasPdfLoadError ? "pdfLoadingOverlay pdfLoadingOverlayError" : "pdfLoadingOverlay"} role="status" aria-live="polite">
-                    <div className="pdfLoadingStatus">
-                      {hasPdfLoadError ? <AlertTriangle size={18} /> : <span className="inlineSpinner" aria-hidden="true" />}
-                      <span className="pdfLoadingText">{hasPdfLoadError ? "PDF failed to load." : "Loading PDF..."}</span>
-                    </div>
-                  </div>
-                ) : null}
-                <iframe
-                  key={pdfFrameKey}
-                  className={isPdfLoading ? "pdfViewer pdfViewerLoading" : "pdfViewer"}
-                  src={pdfViewerUrl}
-                  title={`${activeReport.title} PDF`}
-                  onLoad={() => setPdfLoadState("ready")}
-                  onError={() => setPdfLoadState("error")}
-                />
-              </div>
-            ) : (
-              <div className="paperPage emptyPdfPage">
-                <p className="paperEyebrow">{pdfStatus}</p>
-                <h2>{currentReportStudy.title}</h2>
-                {activeReport.validationNotes.length > 0 ? (
-                  <div className="pdfValidationNotes">
-                    {activeReport.validationNotes.slice(0, 4).map((note) => (
-                      <span key={note}>{note}</span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="paperLine wide" />
-                <div className="paperLine" />
-                <div className="paperLine short" />
-              </div>
-            )}
-          </div>
-        </div>
-
         <aside className="panel fullTextPanel">
           <SectionTitle icon={BookOpen} title="Report Metadata" action={reportActionLabel} />
           <h2>{activeReport.title}</h2>
           <p className="subtle">{activeReport.citation}</p>
           <div className="metaStrip">
-            <span>
-              DOI {renderDoiLink(currentReportStudy.doi, currentReportStudy.doi || "Missing")}
-            </span>
+            {renderDoiLink(currentReportStudy.doi, `DOI ${currentReportStudy.doi || "Missing"}`)}
           </div>
 
           <div className="pdfStatusGrid">
@@ -489,6 +424,70 @@ export function FullTextSection({
             </div>
           ) : null}
         </aside>
+
+        <div className="pdfPane">
+          <div className="pdfToolbar">
+            <strong className="pdfTitle" title={pdfDisplayName}>
+              {pdfDisplayName}
+            </strong>
+            <div className="toolbarCluster">
+              <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
+              <button
+                className={hasUploadedPdf ? "ghostButton" : "primaryButton missingPdfUploadButton"}
+                type="button"
+                title={hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
+                disabled={isFullTextActionPending}
+                onClick={() => pdfInputRef.current?.click()}
+              >
+                {pendingFullTextAction === "upload" ? <span className="inlineSpinner" aria-hidden="true" /> : <Upload size={16} />}
+                {pendingFullTextAction === "upload" ? "Uploading..." : hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
+              </button>
+            </div>
+          </div>
+          {showUploadMessage ? (
+            <div className={fullTextMessageClassName}>
+              {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
+              <span>{fullTextMessage}</span>
+            </div>
+          ) : null}
+          <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
+            {pdfViewerUrl ? (
+              <div className="pdfFrameWrap" aria-busy={isPdfLoading}>
+                {isPdfLoading || hasPdfLoadError ? (
+                  <div className={hasPdfLoadError ? "pdfLoadingOverlay pdfLoadingOverlayError" : "pdfLoadingOverlay"} role="status" aria-live="polite">
+                    <div className="pdfLoadingStatus">
+                      {hasPdfLoadError ? <AlertTriangle size={18} /> : <span className="inlineSpinner" aria-hidden="true" />}
+                      <span className="pdfLoadingText">{hasPdfLoadError ? "PDF failed to load." : "Loading PDF..."}</span>
+                    </div>
+                  </div>
+                ) : null}
+                <iframe
+                  key={pdfFrameKey}
+                  className={isPdfLoading ? "pdfViewer pdfViewerLoading" : "pdfViewer"}
+                  src={pdfViewerUrl}
+                  title={`${activeReport.title} PDF`}
+                  onLoad={() => setPdfLoadState("ready")}
+                  onError={() => setPdfLoadState("error")}
+                />
+              </div>
+            ) : (
+              <div className="paperPage emptyPdfPage">
+                <p className="paperEyebrow">{pdfStatus}</p>
+                <h2>{currentReportStudy.title}</h2>
+                {activeReport.validationNotes.length > 0 ? (
+                  <div className="pdfValidationNotes">
+                    {activeReport.validationNotes.slice(0, 4).map((note) => (
+                      <span key={note}>{note}</span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="paperLine wide" />
+                <div className="paperLine" />
+                <div className="paperLine short" />
+              </div>
+            )}
+          </div>
+        </div>
       </section>
     </div>
   );

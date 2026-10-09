@@ -1,3 +1,4 @@
+import { ViewLink } from "@/components/navigation-link";
 import { Activity, AlertTriangle, Check, ChevronRight, LayoutDashboard, Settings, Trash2 } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
 import { Badge, SectionTitle } from "@/components/prisma-review-ui";
@@ -97,16 +98,16 @@ export function AdminReviewsSection({
                     <td>{new Intl.NumberFormat("en-US").format(project.recordsTotal)}</td>
                     <td>{formatEuDate(project.updatedAt)}</td>
                     <td>
-                      <button className="ghostButton" type="button" onClick={() => openProject(project.id)}>
+                      <ViewLink view="projectDashboard" projectId={project.id} className="ghostButton" onNavigate={() => openProject(project.id)}>
                         <ChevronRight size={17} />
                         Open
-                      </button>
+                      </ViewLink>
                     </td>
                     <td>
-                      <button className="ghostButton" type="button" onClick={() => openProject(project.id, "settings")}>
+                      <ViewLink view="settings" projectId={project.id} className="ghostButton" onNavigate={() => openProject(project.id, "settings")}>
                         <Settings size={17} />
                         Edit
-                      </button>
+                      </ViewLink>
                     </td>
                     <td>
                       <button className="dangerButton" type="button" onClick={() => adminDeleteProject(project)}>
