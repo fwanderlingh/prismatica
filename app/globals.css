@@ -1661,14 +1661,28 @@ a.primaryButton[target="_blank"]:focus-visible {
   color: var(--text-strong);
 }
 
+.aboutCitationSnippet {
+  min-width: 0;
+  border: calc(1px * var(--ui-scale)) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.aboutCitationToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(8px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale)) 0;
+}
+
 .aboutCitation pre {
   max-width: 100%;
   overflow-x: auto;
   margin: 0;
   padding: calc(12px * var(--ui-scale));
-  border: calc(1px * var(--ui-scale)) solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-muted);
+  border: 0;
+  background: transparent;
   color: var(--text-strong);
   font: 0.78rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre;

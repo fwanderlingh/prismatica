@@ -1,5 +1,7 @@
-import { Fragment } from "react";
-import { Accessibility, GitMerge, Info, ListChecks } from "lucide-react";
+"use client";
+
+import { Fragment, useState } from "react";
+import { Accessibility, Check, Copy, GitMerge, Info, ListChecks } from "lucide-react";
 import { SectionTitle } from "@/components/prisma-review-ui";
 
 const navigationShortcuts = [
@@ -14,7 +16,44 @@ const navigationShortcuts = [
 
 const keyLabels: Record<string, string> = { "↑": "Up arrow", "↓": "Down arrow", Esc: "Escape" };
 
+const softwareBibtex = [
+  "@misc{prismatica,",
+  "  author = {Wanderlingh, Francesco},",
+  "  title = {{PRISMATICA}: an open-source web platform for {PRISMA}-guided systematic reviews},",
+  "  year = {2026},",
+  "  howpublished = {\\url{https://github.com/fwanderlingh/prismatica}},",
+  "  note = {Version 1.1.0}",
+  "}"
+].join("\n");
+
 export function AboutSection() {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+
+  async function copyBibtex() {
+    try {
+      await navigator.clipboard.writeText(softwareBibtex);
+      setCopyStatus("copied");
+    } catch {
+      // Support browsers where the Clipboard API is unavailable or blocked.
+      const previousFocus = document.activeElement as HTMLElement | null;
+      const textarea = document.createElement("textarea");
+      textarea.value = softwareBibtex;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      textarea.setAttribute("readonly", "");
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        setCopyStatus(document.execCommand("copy") ? "copied" : "error");
+      } catch {
+        setCopyStatus("error");
+      } finally {
+        textarea.remove();
+        previousFocus?.focus({ preventScroll: true });
+      }
+    }
+  }
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -51,16 +90,22 @@ export function AboutSection() {
             github.com/fwanderlingh/prismatica
           </a>
           <div className="aboutCitation">
-            <strong>Cite this website</strong>
-            <pre aria-label="BibTeX citation"><code>{[
-              "@misc{prismatica,",
-              "  author = {Wanderlingh, Francesco},",
-              "  title = {{Prismatica: Open Source PRISMA Review Platform}},",
-              "  year = {2026},",
-              "  howpublished = {\\url{https://github.com/fwanderlingh/prismatica}},",
-              "  note = {Accessed October 6, 2026}",
-              "}"
-            ].join("\n")}</code></pre>
+            <strong>Citing PRISMATICA</strong>
+            <p>If you use PRISMATICA in a systematic review or other research project, please cite the software:</p>
+            <p><em>Francesco Wanderlingh. PRISMATICA: an open-source web platform for PRISMA-guided systematic reviews. Version 1.1.0.</em></p>
+            <div className="aboutCitationSnippet">
+              <div className="aboutCitationToolbar">
+                <strong>BibTeX</strong>
+                <button className="ghostButton" type="button" onClick={copyBibtex} aria-label="Copy BibTeX citation">
+                  {copyStatus === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                  {copyStatus === "copied" ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <pre aria-label="BibTeX citation"><code>{softwareBibtex}</code></pre>
+            </div>
+            <span role="status">
+              {copyStatus === "copied" ? "BibTeX citation copied." : copyStatus === "error" ? "Copy was unavailable. Select the BibTeX text and copy it manually." : ""}
+            </span>
           </div>
         </div>
       </section>

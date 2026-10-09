@@ -1718,18 +1718,23 @@ export function PrismaReviewApp() {
   ]);
 
   useEffect(() => {
-    const theme = currentUser.websiteTheme ?? "system";
+    const theme = isAuthenticated && activeView === "profile"
+      ? accountForm.websiteTheme
+      : currentUser.websiteTheme ?? "system";
     const root = document.documentElement;
     if (theme === "system") {
       root.removeAttribute("data-theme");
       return;
     }
     root.setAttribute("data-theme", theme);
-  }, [currentUser.websiteTheme]);
+  }, [activeView, isAuthenticated, accountForm.websiteTheme, currentUser.websiteTheme]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-width", currentUser.websiteWidth ?? "full");
-  }, [currentUser.websiteWidth]);
+    const width = isAuthenticated && activeView === "profile"
+      ? accountForm.websiteWidth
+      : currentUser.websiteWidth ?? "full";
+    document.documentElement.setAttribute("data-width", width);
+  }, [activeView, isAuthenticated, accountForm.websiteWidth, currentUser.websiteWidth]);
 
   useEffect(() => {
     const hasProjectChanged = previousSettingsProjectIdRef.current !== selectedProject.id;

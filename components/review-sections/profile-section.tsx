@@ -148,6 +148,7 @@ export function ProfileSection({
 
         <section className="panel">
           <SectionTitle icon={Settings} title="Profile Preferences" action="Interface" />
+          <p className="subtle">Changes preview here immediately. Save Preferences to keep them when you leave this page.</p>
           <form className="accountForm" aria-busy={isSavingPreferences} onSubmit={(event) => updateAccount(event, "preferences")}>
             <label>
               <span>Website theme</span>
