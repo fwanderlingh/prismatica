@@ -83,6 +83,7 @@ import {
   type Report,
   type Study,
   type WebsiteTheme,
+  type WebsiteWidth,
   type ViewKey,
   type WorkflowEvent
 } from "@/lib/prismaData";
@@ -679,7 +680,8 @@ export function PrismaReviewApp() {
     title: "",
     currentPassword: "",
     newPassword: "",
-    websiteTheme: "system" as WebsiteTheme
+    websiteTheme: "system" as WebsiteTheme,
+    websiteWidth: "full" as WebsiteWidth
   });
   const bibtexInputRef = useRef<HTMLInputElement>(null);
   const risInputRef = useRef<HTMLInputElement>(null);
@@ -1695,10 +1697,11 @@ export function PrismaReviewApp() {
       title: currentUser.title,
       currentPassword: "",
       newPassword: "",
-      websiteTheme: currentUser.websiteTheme ?? "system"
+      websiteTheme: currentUser.websiteTheme ?? "system",
+      websiteWidth: currentUser.websiteWidth ?? "full"
     }));
     setAccountMessage("");
-  }, [currentUser.id, currentUser.name, currentUser.organization, currentUser.title, currentUser.websiteTheme]);
+  }, [currentUser.id, currentUser.name, currentUser.organization, currentUser.title, currentUser.websiteTheme, currentUser.websiteWidth]);
 
   useEffect(() => {
     setReviewSettingsForm({
@@ -1723,6 +1726,10 @@ export function PrismaReviewApp() {
     }
     root.setAttribute("data-theme", theme);
   }, [currentUser.websiteTheme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-width", currentUser.websiteWidth ?? "full");
+  }, [currentUser.websiteWidth]);
 
   useEffect(() => {
     const hasProjectChanged = previousSettingsProjectIdRef.current !== selectedProject.id;
@@ -1901,7 +1908,7 @@ export function PrismaReviewApp() {
           </div>
           <div className="authLoadingBody">
             <span className="authLoadingSpinner" aria-hidden="true" />
-            <LoadProgress {...workspaceProgress} />
+            <LoadProgress {...workspaceProgress} showTrack={false} />
           </div>
         </section>
       </main>
@@ -2846,7 +2853,8 @@ export function PrismaReviewApp() {
       const requestBody =
         action === "preferences"
           ? {
-              websiteTheme: accountForm.websiteTheme
+              websiteTheme: accountForm.websiteTheme,
+              websiteWidth: accountForm.websiteWidth
             }
           : {
               name: accountForm.name,
@@ -3910,6 +3918,7 @@ export function PrismaReviewApp() {
             websiteTheme: value
           }))
         }
+        onAccountWidthChange={(value) => setAccountForm((previous) => ({ ...previous, websiteWidth: value }))}
         accountMessage={accountMessage}
         accountMessageTarget={accountMessageTarget}
         pendingAccountAction={pendingAccountAction}
@@ -3962,7 +3971,7 @@ export function PrismaReviewApp() {
           </div>
           <div className="authLoadingBody">
             <span className="authLoadingSpinner" aria-hidden="true" />
-            <LoadProgress label="Opening review" detail="Checking access and preparing the requested page." />
+            <LoadProgress label="Opening review" detail="Checking access and preparing the requested page." showTrack={false} />
           </div>
         </section>
       </main>

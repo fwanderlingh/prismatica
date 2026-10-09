@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, LogOut, Settings, UserCircle } from "lucide-react";
-import { type AppUser, type WebsiteTheme } from "@/lib/prismaData";
+import { type AppUser, type WebsiteTheme, type WebsiteWidth } from "@/lib/prismaData";
 import { SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 
 type FormSubmitEvent = {
@@ -15,6 +15,7 @@ type AccountFormShape = {
   currentPassword: string;
   newPassword: string;
   websiteTheme: WebsiteTheme;
+  websiteWidth: WebsiteWidth;
 };
 
 type ProfileSectionProps = {
@@ -28,6 +29,7 @@ type ProfileSectionProps = {
   onAccountCurrentPasswordChange: (value: string) => void;
   onAccountNewPasswordChange: (value: string) => void;
   onAccountThemeChange: (value: WebsiteTheme) => void;
+  onAccountWidthChange: (value: WebsiteWidth) => void;
   accountMessage: string;
   accountMessageTarget: ProfileSaveAction;
   pendingAccountAction: ProfileSaveAction | null;
@@ -44,6 +46,7 @@ export function ProfileSection({
   onAccountCurrentPasswordChange,
   onAccountNewPasswordChange,
   onAccountThemeChange,
+  onAccountWidthChange,
   accountMessage,
   accountMessageTarget,
   pendingAccountAction
@@ -156,6 +159,17 @@ export function ProfileSection({
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
                 <option value="system">System</option>
+              </select>
+            </label>
+            <label>
+              <span>Website width</span>
+              <select
+                value={accountForm.websiteWidth}
+                disabled={isSavingProfile}
+                onChange={(event) => onAccountWidthChange(event.target.value as WebsiteWidth)}
+              >
+                <option value="limited">Standard</option>
+                <option value="full">Full Width</option>
               </select>
             </label>
             {accountMessage && accountMessageTarget === "preferences" ? (

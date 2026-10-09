@@ -14,6 +14,7 @@ type StoredUserRecord = {
   timezone?: string;
   avatarColor?: string;
   websiteTheme?: string;
+  websiteWidth?: string;
   passwordHash: string;
   passwordSalt: string;
   createdAt?: string;
@@ -101,12 +102,12 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
       INSERT INTO app_users (
         id, name, email, is_admin, initials, organization, title,
         timezone, avatar_color, website_theme, password_hash, password_salt,
-        created_at, updated_at
+        created_at, updated_at, website_width
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12,
-        $13, $14
+        $13, $14, $15
       )
       ON CONFLICT (id)
       DO UPDATE SET
@@ -122,7 +123,8 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
         password_hash = EXCLUDED.password_hash,
         password_salt = EXCLUDED.password_salt,
         created_at = EXCLUDED.created_at,
-        updated_at = EXCLUDED.updated_at
+        updated_at = EXCLUDED.updated_at,
+        website_width = EXCLUDED.website_width
     `,
     [
       user.id,
@@ -138,7 +140,8 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
       user.passwordHash,
       user.passwordSalt,
       parseIsoOrNow(user.createdAt),
-      parseIsoOrNow(user.updatedAt)
+      parseIsoOrNow(user.updatedAt),
+      user.websiteWidth === "limited" ? "limited" : "full"
     ]
   );
 }

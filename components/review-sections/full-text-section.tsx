@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   History,
+  Info,
   Upload,
   XCircle
 } from "lucide-react";
@@ -86,6 +87,7 @@ export function FullTextSection({
   onOpenPdfUpload
 }: FullTextSectionProps) {
   const [now, setNow] = useState(Date.now());
+  const [isRetrievalHintOpen, setIsRetrievalHintOpen] = useState(false);
   const pdfViewerUrl = activeReport.fileName
     ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}${pdfViewerPreferences}`
     : "";
@@ -299,32 +301,35 @@ export function FullTextSection({
             {renderDoiLink(currentReportStudy.doi, `DOI ${currentReportStudy.doi || "Missing"}`)}
           </div>
 
-          <div className="pdfStatusGrid">
-            <StatusRow label="PDF" value={pdfStatus} tone={hasUploadedPdf ? "secure" : "danger"} />
-            <StatusRow label="Retrieval status" value={retrievalStatusLabel} tone="info" />
-            <StatusRow
-              label="Full-text status"
-              value={fullTextStatusLabel}
-              tone={
-                hasFullTextConflict || fullTextStatus === "excluded_full_text"
-                  ? "danger"
-                  : fullTextStatus === "advance_extraction"
-                    ? "secure"
-                    : "warning"
-              }
-            />
-            <StatusRow label="Full-text votes" value={`${fullTextVoteCount}/${fullTextRequiredVotes}`} tone={fullTextVoteCount >= fullTextRequiredVotes ? "secure" : "warning"} />
-            <StatusRow
-              label="Reviewer slot"
-              value={canRecordFullTextDecision ? "Reserved for you" : checkoutError ? "Unavailable" : "Preparing your review"}
-              tone={hasFullTextCheckout || activeFullTextDecision ? "secure" : "warning"}
-            />
-            <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
+          <div className="fieldLabel retrievalLabel">
+            <label htmlFor="retrieval-status">Retrieval status</label>
+            <span
+              className="retrievalHelp"
+              onMouseEnter={() => setIsRetrievalHintOpen(true)}
+              onMouseLeave={() => setIsRetrievalHintOpen(false)}
+            >
+              <button
+                className="retrievalInfoButton"
+                type="button"
+                aria-label="About retrieval status"
+                aria-describedby="retrieval-status-help"
+                onFocus={() => setIsRetrievalHintOpen(true)}
+                onBlur={() => setIsRetrievalHintOpen(false)}
+                onClick={() => setIsRetrievalHintOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setIsRetrievalHintOpen(false);
+                }}
+              >
+                <Info size={16} aria-hidden="true" />
+              </button>
+              <span className={`retrievalTooltip${isRetrievalHintOpen ? " isOpen" : ""}`} id="retrieval-status-help" role="tooltip">
+                Mark the full text available when you can read the complete report, including outside this app. PDF upload is optional.
+                Mark not retrieved only when retrieval attempts have ended; this closes the queue item without an eligibility exclusion.
+                {retrievalLocked ? " A stored PDF or current full-text vote requires the report to remain available." : ""}
+                {activeReport.retrievalStatus === "not_sought" ? " This report is pending retrieval and is not yet counted as sought in the PRISMA diagram." : ""}
+              </span>
+            </span>
           </div>
-
-          <label className="fieldLabel" htmlFor="retrieval-status">
-            Retrieval status
-          </label>
           <select
             id="retrieval-status"
             value={activeReport.retrievalStatus}
@@ -337,12 +342,6 @@ export function FullTextSection({
             <option value="retrieved">Full text available</option>
             <option value="not_retrieved" disabled={retrievalLocked}>Not retrieved after attempts</option>
           </select>
-          <p className="subtle" id="retrieval-status-help">
-            Mark the full text available when you can read the complete report, including outside this app. PDF upload is optional.
-            Mark not retrieved only when retrieval attempts have ended; this closes the queue item without an eligibility exclusion.
-            {retrievalLocked ? " A stored PDF or current full-text vote requires the report to remain available." : ""}
-            {activeReport.retrievalStatus === "not_sought" ? " This report is pending retrieval and is not yet counted as sought in the PRISMA diagram." : ""}
-          </p>
 
           <div className="decisionState">
             <span>My current full-text vote</span>
@@ -437,6 +436,29 @@ export function FullTextSection({
               <span>{`Current exclusion reason: ${activeFullTextDecision?.exclusionReasonId ?? fullTextReason}.`}</span>
             </div>
           ) : null}
+
+          <div className="pdfStatusGrid">
+            <StatusRow label="PDF" value={pdfStatus} tone={hasUploadedPdf ? "secure" : "danger"} />
+            <StatusRow label="Retrieval status" value={retrievalStatusLabel} tone="info" />
+            <StatusRow
+              label="Full-text status"
+              value={fullTextStatusLabel}
+              tone={
+                hasFullTextConflict || fullTextStatus === "excluded_full_text"
+                  ? "danger"
+                  : fullTextStatus === "advance_extraction"
+                    ? "secure"
+                    : "warning"
+              }
+            />
+            <StatusRow label="Full-text votes" value={`${fullTextVoteCount}/${fullTextRequiredVotes}`} tone={fullTextVoteCount >= fullTextRequiredVotes ? "secure" : "warning"} />
+            <StatusRow
+              label="Reviewer slot"
+              value={canRecordFullTextDecision ? "Reserved for you" : checkoutError ? "Unavailable" : "Preparing your review"}
+              tone={hasFullTextCheckout || activeFullTextDecision ? "secure" : "warning"}
+            />
+            <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
+          </div>
         </aside>
 
         <div className="pdfPane">

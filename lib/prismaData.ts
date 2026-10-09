@@ -34,9 +34,11 @@ export type AppUser = {
   timezone: string;
   avatarColor: string;
   websiteTheme?: WebsiteTheme;
+  websiteWidth?: WebsiteWidth;
 };
 
 export type WebsiteTheme = "light" | "dark" | "system";
+export type WebsiteWidth = "full" | "limited";
 
 export type ProjectSummary = {
   id: string;

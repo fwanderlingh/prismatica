@@ -137,12 +137,12 @@ async function migrateUsers(client, users) {
         INSERT INTO app_users (
           id, name, email, is_admin, initials, organization, title,
           timezone, avatar_color, website_theme, password_hash, password_salt,
-          created_at, updated_at
+          created_at, updated_at, website_width
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12,
-          $13, $14
+          $13, $14, $15
         )
         ON CONFLICT (id)
         DO UPDATE SET
@@ -158,7 +158,8 @@ async function migrateUsers(client, users) {
           password_hash = EXCLUDED.password_hash,
           password_salt = EXCLUDED.password_salt,
           created_at = EXCLUDED.created_at,
-          updated_at = EXCLUDED.updated_at
+          updated_at = EXCLUDED.updated_at,
+          website_width = EXCLUDED.website_width
       `,
       [
         normalized.id,
@@ -174,7 +175,8 @@ async function migrateUsers(client, users) {
         normalized.passwordHash,
         normalized.passwordSalt,
         normalized.createdAt,
-        normalized.updatedAt
+        normalized.updatedAt,
+        user.websiteWidth === "limited" ? "limited" : "full"
       ]
     );
     importedCount += 1;

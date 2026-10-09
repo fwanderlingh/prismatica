@@ -12,13 +12,15 @@ export async function PATCH(request: Request) {
     const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : undefined;
     const newPassword = typeof body.newPassword === "string" ? body.newPassword : undefined;
     const websiteTheme = typeof body.websiteTheme === "string" ? body.websiteTheme : undefined;
+    const websiteWidth = typeof body.websiteWidth === "string" ? body.websiteWidth : undefined;
     const payload = updateCurrentUserForUser(userId, {
       name,
       organization,
       title,
       currentPassword,
       newPassword,
-      websiteTheme
+      websiteTheme,
+      websiteWidth
     });
     await syncUserByIdToPostgres(userId);
     return jsonOk(payload);

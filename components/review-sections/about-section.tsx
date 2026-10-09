@@ -4,7 +4,7 @@ import { SectionTitle } from "@/components/prisma-review-ui";
 
 const navigationShortcuts = [
   { title: "Move between links and controls", detail: "Go forward or back through the page.", keys: [["Tab"], ["Shift", "Tab"]] },
-  { title: "Skip to main content", detail: "Reveal the first link on the page, then activate it to bypass the header and sidebar.", keys: [["Tab"], ["Enter"]], separator: "then" },
+  { title: "Skip to main content", detail: "On a fresh page load, press Tab then Enter to bypass the header and sidebar. After navigating within the website, focus moves directly to the main content; Tab continues through its controls.", keys: [["Tab"], ["Enter"]], separator: "then" },
   { title: "Open the account menu or select an item", detail: "With the account button or a menu item focused.", keys: [["Enter"], ["Space"]] },
   { title: "Move through the account menu", detail: "Go to the previous or next item.", keys: [["↑"], ["↓"]] },
   { title: "Jump to the first or last menu item", detail: "With the account menu open.", keys: [["Home"], ["End"]] },

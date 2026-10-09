@@ -269,6 +269,10 @@ function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
   return theme === "light" || theme === "dark" ? theme : "system";
 }
 
+function normalizeWebsiteWidth(width: unknown): "full" | "limited" {
+  return width === "limited" ? "limited" : "full";
+}
+
 function createSeedState(): PersistedState {
   return {
     version: 1,
@@ -463,7 +467,8 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
     persistedUsers.map((user) => ({
       ...user,
       isAdmin: Boolean(user.isAdmin),
-      websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme)
+      websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme),
+      websiteWidth: normalizeWebsiteWidth(user.websiteWidth)
     })) as StoredUser[],
     now
   );
@@ -743,7 +748,8 @@ function publicUser(user: StoredUser): AppUser {
     title: user.title,
     timezone: user.timezone,
     avatarColor: user.avatarColor,
-    websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme)
+    websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme),
+    websiteWidth: normalizeWebsiteWidth(user.websiteWidth)
   };
 }
 
@@ -1395,6 +1401,7 @@ export function updateCurrentUserForUser(
     currentPassword?: string;
     newPassword?: string;
     websiteTheme?: string;
+    websiteWidth?: string;
   }
 ): AppStatePayload {
   const state = readState();
@@ -1408,6 +1415,7 @@ export function updateCurrentUserForUser(
   const title = input.title?.trim() ?? user.title;
   const newPassword = input.newPassword?.trim() ?? "";
   const websiteTheme = input.websiteTheme === undefined ? normalizeWebsiteTheme(user.websiteTheme) : normalizeWebsiteTheme(input.websiteTheme);
+  const websiteWidth = input.websiteWidth === undefined ? normalizeWebsiteWidth(user.websiteWidth) : normalizeWebsiteWidth(input.websiteWidth);
 
   if (!name || !organization || !title) {
     throw new ApiError("Name, organization, and role title are required.");
@@ -1434,6 +1442,7 @@ export function updateCurrentUserForUser(
           organization,
           title,
           websiteTheme,
+          websiteWidth,
           ...(passwordUpdate ?? {}),
           updatedAt: new Date().toISOString()
         }
@@ -4614,7 +4623,8 @@ function ensureAdminUser(users: StoredUser[], now: string) {
             title: user.title || "Administrator",
             timezone: user.timezone || "Europe/Rome",
             avatarColor: user.avatarColor || "#42656d",
-            websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme)
+            websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme),
+            websiteWidth: normalizeWebsiteWidth(user.websiteWidth)
           }
         : user
     );

@@ -308,6 +308,8 @@ async function ensureSchema(client) {
     ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS parser_warnings JSONB;
     ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS payload JSONB;
 
+    ALTER TABLE app_users ADD COLUMN IF NOT EXISTS website_width TEXT NOT NULL DEFAULT 'full' CHECK (website_width IN ('full', 'limited'));
+
     ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS title TEXT;
     ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS citation TEXT;
     ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS retrieval_status TEXT;
@@ -533,7 +535,7 @@ async function readRelationalState(client) {
   const usersResult = await client.query(
     `
       SELECT id, name, email, is_admin, initials, organization, title, timezone,
-             avatar_color, website_theme, password_hash, password_salt, created_at, updated_at
+             avatar_color, website_theme, website_width, password_hash, password_salt, created_at, updated_at
       FROM app_users
       ORDER BY created_at ASC, id ASC
     `
@@ -615,6 +617,7 @@ async function readRelationalState(client) {
       timezone: row.timezone,
       avatarColor: row.avatar_color,
       websiteTheme: row.website_theme,
+      websiteWidth: row.website_width === "limited" ? "limited" : "full",
       passwordHash: row.password_hash,
       passwordSalt: row.password_salt,
       createdAt: normalizeTimestamp(row.created_at?.toISOString?.() ?? row.created_at),
@@ -663,9 +666,9 @@ async function writeUsers(client, state) {
         INSERT INTO app_users (
           id, name, email, is_admin, initials, organization, title,
           timezone, avatar_color, website_theme, password_hash, password_salt,
-          created_at, updated_at
+          created_at, updated_at, website_width
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       `,
       [
         user.id,
@@ -681,7 +684,8 @@ async function writeUsers(client, state) {
         user.passwordHash,
         user.passwordSalt,
         normalizeTimestamp(user.createdAt),
-        normalizeTimestamp(user.updatedAt)
+        normalizeTimestamp(user.updatedAt),
+        user.websiteWidth === "limited" ? "limited" : "full"
       ]
     );
   }
