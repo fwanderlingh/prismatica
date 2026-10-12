@@ -122,6 +122,6 @@ export function jsonError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
 
-  console.error(error);
+  console.error(new Date().toISOString(), error);
   return NextResponse.json({ error: "Unexpected server error." }, { status: 500 });
 }
