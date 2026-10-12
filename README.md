@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23264487.svg)](https://doi.org/10.5281/zenodo.23264487)
+
 <p align="center">
   <img src="./app/icon.svg" alt="Prismatica logo" style="max-width:150px">
 </p>
