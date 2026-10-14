@@ -1,3 +1,4 @@
+import type { StoredEmailAuth } from "./serverStore";
 import fs from "fs";
 import { normalizeAuditHistoryLimit } from "./auditHistory";
 import path from "path";
@@ -15,6 +16,7 @@ type StoredUserRecord = {
   avatarColor?: string;
   websiteTheme?: string;
   websiteWidth?: string;
+  emailAuth?: StoredEmailAuth;
   passwordHash: string;
   passwordSalt: string;
   createdAt?: string;
@@ -24,6 +26,7 @@ type StoredUserRecord = {
 type StoredState = {
   authSettings?: {
     registrationEnabled?: boolean;
+    transactionalEmailEnabled?: boolean;
   };
   reviewSettings?: {
     screeningCheckoutWindowMinutes?: number;
@@ -102,12 +105,12 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
       INSERT INTO app_users (
         id, name, email, is_admin, initials, organization, title,
         timezone, avatar_color, website_theme, password_hash, password_salt,
-        created_at, updated_at, website_width
+        created_at, updated_at, website_width, email_auth
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12,
-        $13, $14, $15
+        $13, $14, $15, $16
       )
       ON CONFLICT (id)
       DO UPDATE SET
@@ -124,7 +127,8 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
         password_salt = EXCLUDED.password_salt,
         created_at = EXCLUDED.created_at,
         updated_at = EXCLUDED.updated_at,
-        website_width = EXCLUDED.website_width
+        website_width = EXCLUDED.website_width,
+        email_auth = EXCLUDED.email_auth
     `,
     [
       user.id,
@@ -141,7 +145,8 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
       user.passwordSalt,
       parseIsoOrNow(user.createdAt),
       parseIsoOrNow(user.updatedAt),
-      user.websiteWidth === "limited" ? "limited" : "full"
+      user.websiteWidth === "limited" ? "limited" : "full",
+      JSON.stringify(user.emailAuth ?? {})
     ]
   );
 }
@@ -149,19 +154,21 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
 async function upsertAuthSettings(
   client: Pool,
   registrationEnabled: boolean,
+  transactionalEmailEnabled: boolean,
 ) {
   await client.query(
     `
       INSERT INTO auth_settings (
-        id, registration_enabled, updated_at
+        id, registration_enabled, transactional_email_enabled, updated_at
       )
-      VALUES (1, $1, NOW())
+      VALUES (1, $1, $2, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         registration_enabled = EXCLUDED.registration_enabled,
+        transactional_email_enabled = EXCLUDED.transactional_email_enabled,
         updated_at = NOW()
     `,
-    [registrationEnabled]
+    [registrationEnabled, transactionalEmailEnabled]
   );
 }
 
@@ -219,7 +226,7 @@ export async function syncAuthSettingsToPostgres() {
 
   const client = getPool();
   await ensureSchema(client);
-  await upsertAuthSettings(client, registrationEnabled);
+  await upsertAuthSettings(client, registrationEnabled, state.authSettings?.transactionalEmailEnabled ?? false);
 }
 
 export async function syncReviewSettingsToPostgres() {

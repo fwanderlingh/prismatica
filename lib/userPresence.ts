@@ -19,7 +19,8 @@ export type UserPresenceSnapshot = {
 const globalPool = globalThis as typeof globalThis & { __prismaticaPresencePool?: Pool };
 const pool = globalPool.__prismaticaPresencePool ?? new Pool({
   connectionString: process.env.DATABASE_URL,
-  connectionTimeoutMillis: 3_000,
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 120_000,
   query_timeout: 5_000
 });
 globalPool.__prismaticaPresencePool = pool;

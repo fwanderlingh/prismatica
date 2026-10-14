@@ -1,3 +1,5 @@
+import { TransactionalEmailSettings } from "@/components/transactional-email-settings";
+import { ConnectedUsersPanel } from "@/components/connected-users-panel";
 import { useMemo, useState } from "react";
 import { AlertTriangle, Check, Clock, ShieldCheck, UserPlus, Users } from "lucide-react";
 import type { AppAuthSettings, AppReviewSettings } from "@/lib/apiTypes";
@@ -44,6 +46,7 @@ type RegisteredUsersSectionProps = {
   isUpdatingRegistrationSetting: boolean;
   isUpdatingReviewSettings: boolean;
   updateRegistrationSetting: (enabled: boolean) => void;
+  updateTransactionalEmailSetting: (enabled: boolean) => void;
   onScreeningCheckoutWindowChange: (value: number) => void;
   onExtractionCheckoutWindowChange: (value: number) => void;
   onPdfUploadMaxSizeMbChange: (value: number) => void;
@@ -75,6 +78,7 @@ export function RegisteredUsersSection({
   isUpdatingRegistrationSetting,
   isUpdatingReviewSettings,
   updateRegistrationSetting,
+  updateTransactionalEmailSetting,
   onScreeningCheckoutWindowChange,
   onExtractionCheckoutWindowChange,
   onPdfUploadMaxSizeMbChange,
@@ -101,6 +105,15 @@ export function RegisteredUsersSection({
           <p className="subtle">Review server accounts, reset access for non-admin users, delete spam accounts, and control public registration.</p>
         </div>
       </section>
+
+      <ConnectedUsersPanel currentUserId={currentUser.id} />
+
+      {authSettingsMessage ? (
+        <div role="status" className={authSettingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+          {authSettingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <span>{authSettingsMessage}</span>
+        </div>
+      ) : null}
 
       <section className="settingsGrid">
         <div className="panel">
@@ -219,13 +232,10 @@ export function RegisteredUsersSection({
             <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
             <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
           </div>
-          {authSettingsMessage ? (
-            <div className={authSettingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-              {authSettingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-              <span>{authSettingsMessage}</span>
-            </div>
-          ) : null}
+
         </div>
+
+        <TransactionalEmailSettings enabled={authSettings.transactionalEmailEnabled} pending={isUpdatingRegistrationSetting} onChange={updateTransactionalEmailSetting} />
 
         <div className="panel">
           <SectionTitle icon={Clock} title="Review Settings" action="Global" />

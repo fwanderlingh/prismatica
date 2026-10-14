@@ -1,3 +1,4 @@
+import { setSessionCookie } from "@/lib/serverAuth";
 import { jsonError, jsonOk, readJsonBody, requireSessionUserId } from "@/lib/serverRoute";
 import { syncUserByIdToPostgres } from "@/lib/postgresUsersSync";
 import { updateCurrentUserForUser } from "@/lib/serverStore";
@@ -22,6 +23,7 @@ export async function PATCH(request: Request) {
       websiteTheme,
       websiteWidth
     });
+    if (newPassword?.trim()) await setSessionCookie(userId);
     await syncUserByIdToPostgres(userId);
     return jsonOk(payload);
   } catch (error) {

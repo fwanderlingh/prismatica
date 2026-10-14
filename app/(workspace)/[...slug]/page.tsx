@@ -3,18 +3,9 @@ import { canAccessProjectRoute } from "@/lib/serverStore";
 import { getSessionUserId } from "@/lib/serverAuth";
 
 type CatchAllPageProps = {
-  params:
-    | {
-        slug?: string[];
-      }
-    | Promise<{
-        slug?: string[];
-      }>;
+  params: Promise<{ slug?: string[] }>;
 };
 
-async function resolveParams(params: CatchAllPageProps["params"]) {
-  return params instanceof Promise ? await params : params;
-}
 
 const validStaticRoutes = new Set([
   "about",
@@ -88,7 +79,7 @@ async function assertProjectRouteAccess(projectId: string, slug: string[]) {
 }
 
 export default async function CatchAllPage({ params }: CatchAllPageProps) {
-  const resolvedParams = await resolveParams(params);
+  const resolvedParams = await params;
   const slug = resolvedParams.slug ?? [];
   if (!isKnownCatchAllRoute(slug)) {
     notFound();

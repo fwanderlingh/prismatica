@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { assertEmailConfigured, getEmailConfigurationStatus, sendAccountEmail, type AccountEmailPurpose } from "./transactionalEmail";
 import { groupByKey } from "./collectionIndexes";
 import type { LoadProgress } from "./loadProgress";
 import { execFileSync } from "child_process";
@@ -29,7 +30,18 @@ import {
 } from "./prismaData";
 import { evaluateStage, type DecisionValue } from "./workflow";
 
+type AccountEmailToken = { hash: string; expiresAt: number; passwordHash: string; issuedAt: number };
+
+export type StoredEmailAuth = {
+  verificationRequired?: boolean;
+  verifiedAt?: string;
+  sessionVersion?: string;
+  verification?: AccountEmailToken;
+  "password-reset"?: AccountEmailToken;
+};
+
 type StoredUser = AppUser & {
+  emailAuth?: StoredEmailAuth;
   passwordHash: string;
   passwordSalt: string;
   createdAt: string;
@@ -189,6 +201,7 @@ const pdfStorage = createPdfStorageAdapter({ dataFilePath });
 function defaultAuthSettings(): AppAuthSettings {
   return {
     registrationEnabled: process.env.PRISMATICA_REGISTRATION_ENABLED?.toLowerCase() === "false" ? false : true,
+    transactionalEmailEnabled: false,
   };
 }
 
@@ -205,7 +218,8 @@ function normalizeAuthSettings(settings: Partial<AppAuthSettings> | undefined): 
   const defaults = defaultAuthSettings();
   return {
     ...defaults,
-    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaults.registrationEnabled
+    registrationEnabled: typeof settings?.registrationEnabled === "boolean" ? settings.registrationEnabled : defaults.registrationEnabled,
+    transactionalEmailEnabled: settings?.transactionalEmailEnabled === true
   };
 }
 
@@ -658,12 +672,12 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
     events: Array.isArray(state.events)
       ? state.events.filter((event) => projectIds.has(event.entity) || studyIds.has(event.entity) || reportIds.has(event.entity) || dedupCandidateIds.has(event.entity))
           .sort((left, right) => Date.parse(right.time) - Date.parse(left.time))
-          .slice(0, reviewSettings.auditHistoryLimit)
       : [],
     dedupCandidates: Array.isArray(state.dedupCandidates)
       ? state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)))
       : []
   };
+  normalizedState.events = capEventsPerProject(normalizedState, normalizedState.events, reviewSettings.auditHistoryLimit);
   if (rebuildDerivedState) {
     for (const project of normalizedState.projects) {
       syncDedupCandidatesForProject(normalizedState, project.id);
@@ -1123,8 +1137,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
           reportIds.has(event.entity) ||
           visibleDedupCandidateIds.has(event.entity) ||
           (projectIds.has("demo-review") && !allProjectIds.has(event.entity))
-      )
-      .slice(0, state.reviewSettings.auditHistoryLimit),
+      ),
     dedupCandidates: visibleDedupCandidates
   };
 }
@@ -1272,25 +1285,23 @@ export function getPublicAuthConfig(): PublicAuthConfigPayload {
 export function updateAuthSettingsForUser(adminUserIdInput: string, settings: Partial<AppAuthSettings>): AppMutationPayload {
   const state = readState();
   const adminUser = requireAdminUser(state, adminUserIdInput);
+  if (settings.transactionalEmailEnabled === true) {
+    const status = getEmailConfigurationStatus();
+    if (!status.configured) throw new ApiError(status.issues.join(" "));
+  }
   const previousSettings = state.authSettings;
   state.authSettings = normalizeAuthSettings({
     ...state.authSettings,
     ...settings
   });
-  const registrationChanged = previousSettings.registrationEnabled !== state.authSettings.registrationEnabled;
-  const eventMessage = state.authSettings.registrationEnabled
-      ? "Enabled public registration"
-      : "Disabled public registration";
-  appendEvent(state, adminUser.name, eventMessage, adminUser.id);
+  if (previousSettings.registrationEnabled !== state.authSettings.registrationEnabled) {
+    appendEvent(state, adminUser.name, state.authSettings.registrationEnabled ? "Enabled public registration" : "Disabled public registration", adminUser.id);
+  }
+  if (previousSettings.transactionalEmailEnabled !== state.authSettings.transactionalEmailEnabled) {
+    appendEvent(state, adminUser.name, state.authSettings.transactionalEmailEnabled ? "Enabled transactional email" : "Disabled transactional email", adminUser.id);
+  }
   writeState(state);
-  return {
-    ...buildPayload(state, adminUser.id),
-    message: registrationChanged
-        ? state.authSettings.registrationEnabled
-          ? "Public registration enabled."
-          : "Public registration disabled."
-        : "Admin settings saved."
-  };
+  return { ...buildPayload(state, adminUser.id), message: "Website authentication settings saved." };
 }
 
 export function updateReviewSettingsForUser(
@@ -1334,7 +1345,79 @@ export function loginUser(email: string, password: string): AppStatePayload {
     throw new ApiError("Email or password is incorrect.", 401);
   }
 
+  if (state.authSettings.transactionalEmailEnabled && user.emailAuth?.verificationRequired) {
+    throw new ApiError("Confirm your email before signing in. You can request a new confirmation email below.", 403);
+  }
   return buildPayload(state, user.id);
+}
+
+export function getUserSessionState(userId: string) {
+  const state = readState();
+  const user = getUser(state, userId);
+  if (!user || (state.authSettings.transactionalEmailEnabled && user.emailAuth?.verificationRequired)) return null;
+  return { version: user.emailAuth?.sessionVersion ?? "" };
+}
+
+export function getEmailStatusForAdmin(userId: string) {
+  const state = readState();
+  requireAdminUser(state, userId);
+  return { enabled: state.authSettings.transactionalEmailEnabled, ...getEmailConfigurationStatus() };
+}
+
+export async function requestAccountEmail(email: string, purpose: AccountEmailPurpose) {
+  const state = readState();
+  if (!state.authSettings.transactionalEmailEnabled) throw new ApiError("Email recovery and confirmation are currently disabled. Contact an administrator.", 403);
+  assertEmailConfigured();
+  const user = state.users.find((candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase());
+  if (!user || (purpose === "verification" && !user.emailAuth?.verificationRequired)) return;
+  const previous = user.emailAuth?.[purpose];
+  // Persistent per-account cooldown supplements the request/IP limiter.
+  if (previous && previous.issuedAt > Date.now() - 60_000) return;
+  const token = crypto.randomBytes(32).toString("base64url");
+  const hash = crypto.createHash("sha256").update(token).digest("hex");
+  user.emailAuth = { ...user.emailAuth, [purpose]: {
+    hash, issuedAt: Date.now(), passwordHash: user.passwordHash,
+    expiresAt: Date.now() + (purpose === "verification" ? 24 * 60 : 30) * 60_000
+  } };
+  writeState(state);
+  try {
+    await sendAccountEmail({ enabled: true, to: user.email, purpose, token });
+    return user.id;
+  } catch (error) {
+    // Reload after network I/O: do not overwrite concurrent account changes.
+    const latest = readState();
+    const target = getUser(latest, user.id);
+    if (target?.emailAuth?.[purpose]?.hash === hash) {
+      target.emailAuth[purpose] = previous;
+      writeState(latest);
+    }
+    throw error;
+  }
+}
+
+export function completeAccountEmail(purpose: AccountEmailPurpose, token: string, newPassword = "") {
+  const state = readState();
+  if (!state.authSettings.transactionalEmailEnabled) throw new ApiError("Email recovery and confirmation are currently disabled. Contact an administrator.", 403);
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new ApiError("This link is invalid or expired. Request a new email.");
+  const hash = crypto.createHash("sha256").update(token).digest("hex");
+  const user = state.users.find((candidate) => candidate.emailAuth?.[purpose]?.hash === hash);
+  const stored = user?.emailAuth?.[purpose];
+  if (!user || !stored || stored.expiresAt <= Date.now() || stored.passwordHash !== user.passwordHash) {
+    throw new ApiError("This link is invalid or expired. Request a new email.");
+  }
+  if (purpose === "password-reset") {
+    if (newPassword.trim().length < 8 || newPassword.length > 1024) throw new ApiError("Use a password between 8 and 1024 characters.");
+    Object.assign(user, hashPassword(newPassword.trim()));
+  }
+  // Either flow proves mailbox ownership. Reset also invalidates all existing sessions.
+  user.emailAuth = {
+    verificationRequired: false,
+    verifiedAt: new Date().toISOString(),
+    sessionVersion: purpose === "password-reset" ? crypto.randomUUID() : user.emailAuth?.sessionVersion
+  };
+  user.updatedAt = new Date().toISOString();
+  writeState(state);
+  return user.id;
 }
 
 export function registerUser(input: {
@@ -1356,6 +1439,7 @@ export function registerUser(input: {
     throw new ApiError("Public registration is disabled. Ask an administrator for an account.", 403);
   }
 
+  if (state.authSettings.transactionalEmailEnabled) assertEmailConfigured();
   verifyRegistrationCaptcha(input.captchaToken, input.captchaAnswer);
 
   if (!name || !email || !organization || !password) {
@@ -1382,6 +1466,7 @@ export function registerUser(input: {
     timezone: "Europe/Rome",
     avatarColor: pickAvatarColor(state.users.length),
     websiteTheme: "system",
+    emailAuth: { verificationRequired: state.authSettings.transactionalEmailEnabled },
     ...hashPassword(password),
     createdAt: now,
     updatedAt: now
@@ -1444,6 +1529,7 @@ export function updateCurrentUserForUser(
           websiteTheme,
           websiteWidth,
           ...(passwordUpdate ?? {}),
+          ...(passwordUpdate ? { emailAuth: { ...candidate.emailAuth, sessionVersion: crypto.randomUUID(), "password-reset": undefined, verification: undefined } } : {}),
           updatedAt: new Date().toISOString()
         }
       : candidate
@@ -1474,6 +1560,7 @@ export function adminResetPasswordForUser(adminUserIdInput: string, targetUserId
       ? {
           ...candidate,
           ...passwordUpdate,
+          emailAuth: { ...candidate.emailAuth, sessionVersion: crypto.randomUUID(), "password-reset": undefined, verification: undefined },
           updatedAt: new Date().toISOString()
         }
       : candidate
@@ -4591,7 +4678,27 @@ function appendEvent(state: PersistedState, actor: string, action: string, entit
     entity,
     time: new Date().toISOString()
   };
-  state.events = [nextEvent, ...state.events].slice(0, state.reviewSettings.auditHistoryLimit);
+  state.events = capEventsPerProject(state, [nextEvent, ...state.events], state.reviewSettings.auditHistoryLimit);
+}
+
+// Keeps the newest `limit` events for each project so busy projects cannot evict others' history.
+function capEventsPerProject(
+  state: Pick<PersistedState, "projects" | "studies" | "reports" | "dedupCandidates">,
+  events: WorkflowEvent[],
+  limit: number
+) {
+  const ownerByEntity = new Map<string, string>();
+  for (const project of state.projects) ownerByEntity.set(project.id, project.id);
+  for (const study of state.studies) ownerByEntity.set(study.id, study.projectId ?? "");
+  for (const report of state.reports) ownerByEntity.set(report.id, report.projectId);
+  for (const candidate of state.dedupCandidates ?? []) ownerByEntity.set(candidate.id, getDedupCandidateProjectId(candidate) ?? "");
+  const counts = new Map<string, number>();
+  return events.filter((event) => {
+    const owner = ownerByEntity.get(event.entity) ?? "";
+    const count = (counts.get(owner) ?? 0) + 1;
+    counts.set(owner, count);
+    return count <= limit;
+  });
 }
 
 function requireAdminUser(state: PersistedState, userId: string) {

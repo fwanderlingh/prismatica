@@ -38,6 +38,7 @@ export type AppStatePayload = {
 
 export type AppAuthSettings = {
   registrationEnabled: boolean;
+  transactionalEmailEnabled: boolean;
 };
 
 export type AppReviewSettings = {

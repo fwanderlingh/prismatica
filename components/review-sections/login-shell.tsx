@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AlertTriangle, Eye, EyeOff, Info, LogIn, PenLine } from "lucide-react";
 import type { AuthMode, RegisterForm } from "@/components/use-auth-state";
 
@@ -7,6 +8,8 @@ type FormSubmitEvent = {
 
 type LoginShellProps = {
   registrationEnabled: boolean;
+  transactionalEmailEnabled: boolean;
+  authNotice: string;
   authMode: AuthMode;
   loginEmail: string;
   loginPassword: string;
@@ -33,6 +36,8 @@ type LoginShellProps = {
 
 export function LoginShell({
   registrationEnabled,
+  transactionalEmailEnabled,
+  authNotice,
   authMode,
   loginEmail,
   loginPassword,
@@ -81,6 +86,7 @@ export function LoginShell({
           </div>
         </div>
 
+        {authNotice ? <p className="validationItem ok" role="status">{authNotice}</p> : null}
         {registrationEnabled ? (
           <div className="segmented authTabs">
             <button
@@ -145,13 +151,17 @@ export function LoginShell({
               {isLoginPending ? <span className="inlineSpinner" aria-hidden="true" /> : <LogIn size={17} />}
               {isLoginPending ? "Signing in..." : "Sign In"}
             </button>
+            {transactionalEmailEnabled ? <>
+              <Link href="/account/forgot-password">Forgot password?</Link>
+              <Link href="/account/resend-confirmation">Resend confirmation</Link>
+            </> : null}
           </form>
         ) : (
           <form className="loginForm" aria-busy={isRegistrationPending} onSubmit={onRegisterSubmit}>
             <div>
               <p className="eyebrow">Register</p>
               <h1>Create a reviewer account</h1>
-              <p className="subtle">Registration creates a server account. You can create a review immediately after signing up.</p>
+              <p className="subtle">{transactionalEmailEnabled ? "We will email you a confirmation link to activate your account." : "Registration creates a server account. You can create a review immediately after signing up."}</p>
             </div>
             <label>
               <span>Name</span>

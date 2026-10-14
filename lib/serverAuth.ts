@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getUserSessionState } from "./serverStore";
 import { cookies } from "next/headers";
 
 const sessionCookieName = "prismatica_session";
@@ -7,6 +8,7 @@ const sessionMaxAgeSeconds = 60 * 60 * 24 * 30;
 type SessionPayload = {
   userId: string;
   expiresAt: number;
+  version?: string;
 };
 
 function getSessionSecret() {
@@ -53,7 +55,10 @@ export async function getSessionUserId() {
     return null;
   }
 
-  return decodeSession(sessionCookie.value)?.userId ?? null;
+  const session = decodeSession(sessionCookie.value);
+  if (!session) return null;
+  const state = getUserSessionState(session.userId);
+  return state && state.version === (session.version ?? "") ? session.userId : null;
 }
 
 // Use a one-way key for presence; never store the authentication cookie itself.
@@ -64,8 +69,10 @@ export async function getSessionPresenceKey() {
 }
 
 export async function setSessionCookie(userId: string) {
+  const state = getUserSessionState(userId);
+  if (!state) throw new Error("Cannot create a session for this account.");
   const cookieStore = await cookies();
-  cookieStore.set(sessionCookieName, encodeSession({ userId, expiresAt: Date.now() + sessionMaxAgeSeconds * 1000 }), {
+  cookieStore.set(sessionCookieName, encodeSession({ userId, version: state.version, expiresAt: Date.now() + sessionMaxAgeSeconds * 1000 }), {
     httpOnly: true,
     maxAge: sessionMaxAgeSeconds,
     path: "/",

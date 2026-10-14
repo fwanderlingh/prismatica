@@ -3,6 +3,8 @@ import path from "path";
 
 const apiRoot = path.join(process.cwd(), "app", "api");
 const publicRoutes = new Map([
+  ["app/api/auth/email/request/route.ts", "rate-limited account email request"],
+  ["app/api/auth/email/complete/route.ts", "single-use email token verification"],
   ["app/api/auth/config/route.ts", "public auth/captcha config"],
   ["app/api/auth/login/route.ts", "public login endpoint"],
   ["app/api/auth/logout/route.ts", "session cookie clearing endpoint"],

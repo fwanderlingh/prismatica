@@ -90,15 +90,16 @@ async function migrateAuthSettings(client, authSettings) {
   await client.query(
     `
       INSERT INTO auth_settings (
-        id, registration_enabled, updated_at
+        id, registration_enabled, transactional_email_enabled, updated_at
       )
-      VALUES (1, $1, NOW())
+      VALUES (1, $1, $2, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         registration_enabled = EXCLUDED.registration_enabled,
+        transactional_email_enabled = EXCLUDED.transactional_email_enabled,
         updated_at = NOW()
     `,
-    [registrationEnabled]
+    [registrationEnabled, authSettings.transactionalEmailEnabled === true]
   );
 }
 
@@ -131,18 +132,19 @@ async function migrateReviewSettings(client, reviewSettings) {
 async function migrateUsers(client, users) {
   let importedCount = 0;
   for (let index = 0; index < users.length; index += 1) {
-    const normalized = normalizeUser(users[index], index);
+    const user = users[index];
+    const normalized = normalizeUser(user, index);
     await client.query(
       `
         INSERT INTO app_users (
           id, name, email, is_admin, initials, organization, title,
           timezone, avatar_color, website_theme, password_hash, password_salt,
-          created_at, updated_at, website_width
+          created_at, updated_at, website_width, email_auth
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12,
-          $13, $14, $15
+          $13, $14, $15, $16
         )
         ON CONFLICT (id)
         DO UPDATE SET
@@ -159,7 +161,8 @@ async function migrateUsers(client, users) {
           password_salt = EXCLUDED.password_salt,
           created_at = EXCLUDED.created_at,
           updated_at = EXCLUDED.updated_at,
-          website_width = EXCLUDED.website_width
+          website_width = EXCLUDED.website_width,
+          email_auth = EXCLUDED.email_auth
       `,
       [
         normalized.id,
@@ -176,7 +179,8 @@ async function migrateUsers(client, users) {
         normalized.passwordSalt,
         normalized.createdAt,
         normalized.updatedAt,
-        user.websiteWidth === "limited" ? "limited" : "full"
+        user.websiteWidth === "limited" ? "limited" : "full",
+        JSON.stringify(user.emailAuth ?? {})
       ]
     );
     importedCount += 1;

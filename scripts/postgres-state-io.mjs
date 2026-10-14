@@ -308,6 +308,8 @@ async function ensureSchema(client) {
     ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS parser_warnings JSONB;
     ALTER TABLE review_studies ADD COLUMN IF NOT EXISTS payload JSONB;
 
+    ALTER TABLE auth_settings ADD COLUMN IF NOT EXISTS transactional_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_auth JSONB NOT NULL DEFAULT '{}'::jsonb;
     ALTER TABLE app_users ADD COLUMN IF NOT EXISTS website_width TEXT NOT NULL DEFAULT 'full' CHECK (website_width IN ('full', 'limited'));
 
     ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS title TEXT;
@@ -535,7 +537,7 @@ async function readRelationalState(client) {
   const usersResult = await client.query(
     `
       SELECT id, name, email, is_admin, initials, organization, title, timezone,
-             avatar_color, website_theme, website_width, password_hash, password_salt, created_at, updated_at
+             avatar_color, website_theme, website_width, password_hash, password_salt, created_at, updated_at, email_auth
       FROM app_users
       ORDER BY created_at ASC, id ASC
     `
@@ -543,7 +545,7 @@ async function readRelationalState(client) {
   const authSettingsResult = await client.query(
     `
       SELECT
-        registration_enabled
+        registration_enabled, transactional_email_enabled
       FROM auth_settings
       WHERE id = 1
     `
@@ -599,6 +601,7 @@ async function readRelationalState(client) {
     version: stateVersion,
     authSettings: {
       registrationEnabled: authSettingsResult.rows[0]?.registration_enabled ?? true,
+      transactionalEmailEnabled: authSettingsResult.rows[0]?.transactional_email_enabled ?? false,
     },
     reviewSettings: {
       screeningCheckoutWindowMinutes: reviewSettingsResult.rows[0]?.screening_checkout_window_minutes ?? 60,
@@ -618,6 +621,7 @@ async function readRelationalState(client) {
       avatarColor: row.avatar_color,
       websiteTheme: row.website_theme,
       websiteWidth: row.website_width === "limited" ? "limited" : "full",
+      emailAuth: row.email_auth ?? {},
       passwordHash: row.password_hash,
       passwordSalt: row.password_salt,
       createdAt: normalizeTimestamp(row.created_at?.toISOString?.() ?? row.created_at),
@@ -666,9 +670,9 @@ async function writeUsers(client, state) {
         INSERT INTO app_users (
           id, name, email, is_admin, initials, organization, title,
           timezone, avatar_color, website_theme, password_hash, password_salt,
-          created_at, updated_at, website_width
+          created_at, updated_at, website_width, email_auth
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       `,
       [
         user.id,
@@ -685,7 +689,8 @@ async function writeUsers(client, state) {
         user.passwordSalt,
         normalizeTimestamp(user.createdAt),
         normalizeTimestamp(user.updatedAt),
-        user.websiteWidth === "limited" ? "limited" : "full"
+        user.websiteWidth === "limited" ? "limited" : "full",
+        JSON.stringify(user.emailAuth ?? {})
       ]
     );
   }
@@ -695,16 +700,18 @@ async function writeAuthSettings(client, state) {
   await client.query(
     `
       INSERT INTO auth_settings (
-        id, registration_enabled, updated_at
+        id, registration_enabled, transactional_email_enabled, updated_at
       )
-      VALUES (1, $1, NOW())
+      VALUES (1, $1, $2, NOW())
       ON CONFLICT (id)
       DO UPDATE SET
         registration_enabled = EXCLUDED.registration_enabled,
+        transactional_email_enabled = EXCLUDED.transactional_email_enabled,
         updated_at = NOW()
     `,
     [
-      state.authSettings?.registrationEnabled ?? true
+      state.authSettings?.registrationEnabled ?? true,
+      state.authSettings?.transactionalEmailEnabled ?? false
     ]
   );
 }
@@ -1180,8 +1187,9 @@ async function run() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      const result = await client.query("SELECT registration_enabled FROM auth_settings WHERE id = 1");
-      process.stdout.write(JSON.stringify({ registrationEnabled: result.rows[0]?.registration_enabled ?? true }));
+      await client.query("ALTER TABLE auth_settings ADD COLUMN IF NOT EXISTS transactional_email_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+      const result = await client.query("SELECT registration_enabled, transactional_email_enabled FROM auth_settings WHERE id = 1");
+      process.stdout.write(JSON.stringify({ registrationEnabled: result.rows[0]?.registration_enabled ?? true, transactionalEmailEnabled: result.rows[0]?.transactional_email_enabled ?? false }));
       return;
     }
 

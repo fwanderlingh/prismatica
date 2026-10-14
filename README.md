@@ -253,6 +253,12 @@ Notes:
 
 ## Security Features
 
+Optional account confirmation and password recovery through Scaleway TEM can be
+enabled in **Administration → Registered Users → Transactional Email**. Email is
+disabled by default; the existing registration/login and administrator password
+reset flows continue to work without it. See [Transactional email setup](docs/Transactional_Email.md)
+for server configuration, activation, and verification.
+
 Prismatica uses server-side checks for the main web and API security boundaries:
 
 - Sessions are signed with `PRISMATICA_SESSION_SECRET` and stored in HTTP-only cookies.

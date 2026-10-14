@@ -16,6 +16,7 @@
     "check:audit": "node scripts/check-audit-history.mjs",
     "check:retrieval": "node scripts/check-retrieval.mjs",
     "check:presence": "node scripts/check-presence.mjs",
+    "check:email": "node scripts/check-transactional-email.mjs",
     "check:api-auth": "node scripts/check-api-route-auth.mjs",
     "backfill:pdfs:minio": "node scripts/backfill-pdfs-to-minio.mjs",
     "migrate:users:postgres": "node scripts/migrate-users-to-postgres.mjs"

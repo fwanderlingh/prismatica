@@ -180,6 +180,7 @@ const BRAND_TAGLINE = "Open source PRISMA review platform";
 const BRAND_LOGO_ALT = `${BRAND_NAME} logo`;
 const defaultAuthSettings: AppAuthSettings = {
   registrationEnabled: true,
+  transactionalEmailEnabled: false,
 };
 
 const defaultReviewSettings = {
@@ -562,6 +563,7 @@ export function PrismaReviewApp() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
   const [authSettingsMessage, setAuthSettingsMessage] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const [reviewSettings, setReviewSettings] = useState(defaultReviewSettings);
   const [reviewSettingsMessage, setReviewSettingsMessage] = useState("");
   const [reviewSettingsForm, setReviewSettingsForm] = useState({
@@ -2026,7 +2028,7 @@ export function PrismaReviewApp() {
     setLoginError("");
     setPendingAuthAction("register");
     try {
-      const payload = await apiRequest<AppStatePayload>("/api/auth/register", {
+      const payload = await apiRequest<AppStatePayload | { verificationRequired: true; message: string }>("/api/auth/register", {
         method: "POST",
         body: JSON.stringify({
           name,
@@ -2039,6 +2041,14 @@ export function PrismaReviewApp() {
         })
       });
       blurActiveFormControl();
+      if ("verificationRequired" in payload) {
+        switchAuthMode("signIn");
+        setLoginEmail(email);
+        clearLoginPassword();
+        resetRegisterForm();
+        setAuthNotice(payload.message);
+        return;
+      }
       applyAppState(payload);
       applySuccessfulRegistration(payload.currentUser.email, registerForm.password);
       resetNewProjectForm(payload.currentUser);
@@ -2944,16 +2954,16 @@ export function PrismaReviewApp() {
     }
   }
 
-  async function updateRegistrationSetting(registrationEnabled: boolean) {
+  async function updateAuthSetting(settings: Partial<AppAuthSettings>) {
     setAuthSettingsMessage("");
     setIsUpdatingRegistrationSetting(true);
     try {
       const payload = await apiRequest<AppMutationPayload>("/api/admin/auth-settings", {
         method: "PATCH",
-        body: JSON.stringify({ registrationEnabled })
+        body: JSON.stringify(settings)
       });
       applyAppState(payload);
-      setAuthSettingsMessage(payload.message ?? (registrationEnabled ? "Public registration enabled." : "Public registration disabled."));
+      setAuthSettingsMessage(payload.message ?? "Website authentication settings saved.");
     } catch (error) {
       setAuthSettingsMessage(getErrorMessage(error));
     } finally {
@@ -3840,7 +3850,6 @@ export function PrismaReviewApp() {
   function renderAdminReviews() {
     return (
       <AdminReviewsSection
-        currentUserId={currentUser.id}
         dashboardMessage={dashboardMessage}
         websiteVisitCount={websiteVisitCount}
         websiteVisitCountLoading={websiteVisitCountLoading}
@@ -3878,7 +3887,8 @@ export function PrismaReviewApp() {
         pendingUserAction={pendingAdminUserAction}
         isUpdatingRegistrationSetting={isUpdatingRegistrationSetting}
         isUpdatingReviewSettings={isUpdatingReviewSettings}
-        updateRegistrationSetting={updateRegistrationSetting}
+        updateRegistrationSetting={(registrationEnabled) => void updateAuthSetting({ registrationEnabled })}
+        updateTransactionalEmailSetting={(transactionalEmailEnabled) => void updateAuthSetting({ transactionalEmailEnabled })}
         onScreeningCheckoutWindowChange={(value) =>
           setReviewSettingsForm((previous) => ({
             ...previous,
@@ -3935,6 +3945,8 @@ export function PrismaReviewApp() {
     return (
       <LoginShell
         registrationEnabled={authSettings.registrationEnabled}
+        transactionalEmailEnabled={authSettings.transactionalEmailEnabled}
+        authNotice={authNotice}
         authMode={authMode}
         loginEmail={loginEmail}
         loginPassword={loginPassword}
@@ -3948,7 +3960,7 @@ export function PrismaReviewApp() {
         brandName={BRAND_NAME}
         brandTagline={BRAND_TAGLINE}
         brandLogoAlt={BRAND_LOGO_ALT}
-        onSwitchAuthMode={switchAuthMode}
+        onSwitchAuthMode={(mode) => { setAuthNotice(""); switchAuthMode(mode); }}
         onLoginSubmit={handleLogin}
         onRegisterSubmit={handleRegistration}
         onLoginEmailChange={setLoginEmail}

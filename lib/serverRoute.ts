@@ -1,3 +1,4 @@
+import { EmailDeliveryError } from "./transactionalEmail";
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "./serverAuth";
 import { ApiError } from "./serverStore";
@@ -7,7 +8,7 @@ const authRateLimitMaxAttempts = 10;
 const authRateLimitWindowMs = 60 * 1000;
 const authRateLimitBuckets = getAuthRateLimitBuckets();
 
-type AuthRateLimitAction = "login" | "register";
+type AuthRateLimitAction = "login" | "register" | "email-request" | "email-confirm";
 type AuthRateLimitBucket = {
   count: number;
   resetAt: number;
@@ -46,7 +47,7 @@ export function enforceAuthRateLimit(request: Request, action: AuthRateLimitActi
   const clientIp = getClientIp(request);
   const keys = [
     `auth:${action}:ip:${clientIp}`,
-    `auth:${action}:identifier:${normalizedIdentifier}`
+    ...(action === "email-confirm" ? [] : [`auth:${action}:identifier:${normalizedIdentifier}`])
   ];
 
   for (const key of keys) {
@@ -118,6 +119,9 @@ export function pdfFileResponse(file: { buffer: Uint8Array; fileName: string; mi
 }
 
 export function jsonError(error: unknown) {
+  if (error instanceof EmailDeliveryError) {
+    return NextResponse.json({ error: error.message }, { status: 503 });
+  }
   if (error instanceof ApiError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
