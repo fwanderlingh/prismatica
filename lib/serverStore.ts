@@ -1466,6 +1466,7 @@ export function registerUser(input: {
     timezone: "Europe/Rome",
     avatarColor: pickAvatarColor(state.users.length),
     websiteTheme: "system",
+    websiteWidth: "limited",
     emailAuth: { verificationRequired: state.authSettings.transactionalEmailEnabled },
     ...hashPassword(password),
     createdAt: now,
@@ -1694,6 +1695,7 @@ export function adminCreateUserForUser(
     timezone: "Europe/Rome",
     avatarColor: pickAvatarColor(state.users.length),
     websiteTheme: "system",
+    websiteWidth: "limited",
     ...hashPassword(temporaryPassword),
     createdAt: now,
     updatedAt: now
@@ -4749,6 +4751,7 @@ function ensureAdminUser(users: StoredUser[], now: string) {
       timezone: "Europe/Rome",
       avatarColor: "#42656d",
       websiteTheme: "system",
+      websiteWidth: "limited",
       ...hashPassword(adminPassword),
       createdAt: now,
       updatedAt: now

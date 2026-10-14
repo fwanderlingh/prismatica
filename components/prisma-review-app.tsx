@@ -683,7 +683,7 @@ export function PrismaReviewApp() {
     currentPassword: "",
     newPassword: "",
     websiteTheme: "system" as WebsiteTheme,
-    websiteWidth: "full" as WebsiteWidth
+    websiteWidth: "limited" as WebsiteWidth
   });
   const bibtexInputRef = useRef<HTMLInputElement>(null);
   const risInputRef = useRef<HTMLInputElement>(null);
