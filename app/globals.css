@@ -22,6 +22,7 @@
   --link-external: #5a7880;
   --link-external-hover: #42656d;
   --coral: #c94f45;
+  --coral-text: #8b2f28;
   --coral-soft: #faecea;
   --amber: #b27716;
   --amber-text: #7b4b05;
@@ -73,6 +74,7 @@
   --teal-soft: #1a3334;
   --blue-soft: #1c2c3f;
   --coral-soft: #3a2726;
+  --coral-text: #f5b9b4;
   --amber-text: #ffdca5;
   --amber-border: #d1a24e;
   --amber-soft: #3b311f;
@@ -118,6 +120,7 @@
     --teal-soft: #1a3334;
     --blue-soft: #1c2c3f;
     --coral-soft: #3a2726;
+    --coral-text: #f5b9b4;
     --amber-text: #ffdca5;
     --amber-border: #d1a24e;
     --amber-soft: #3b311f;
@@ -3175,7 +3178,7 @@ textarea {
 }
 
 .excludeButton {
-  color: #f5b9b4;
+  color: var(--coral-text);
   background: var(--coral-soft);
   border-color: #efcac5;
 }
