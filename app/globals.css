@@ -1536,7 +1536,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .aboutGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(calc(320px * var(--ui-scale)), 0.9fr);
+  grid-template-columns: minmax(0, 1.0fr) minmax(calc(320px * var(--ui-scale)), 1.0fr);
   gap: calc(16px * var(--ui-scale));
 }
 
@@ -3175,7 +3175,7 @@ textarea {
 }
 
 .excludeButton {
-  color: #8b2f28;
+  color: #f5b9b4;
   background: var(--coral-soft);
   border-color: #efcac5;
 }

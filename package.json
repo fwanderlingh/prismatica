@@ -1,6 +1,6 @@
 {
   "name": "prisma-review-website",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "license": "MIT",
   "private": true,
   "description": "A PRISMA systematic review workflow website prototype.",
