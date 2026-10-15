@@ -58,7 +58,8 @@ export function AppSidebar({
   onToggleSidebar,
   onToggleMobileNav
 }: AppSidebarProps) {
-  const homeItem = globalNavItems.find((item) => item.key === "dashboard");
+  const homeView = currentUser.isAdmin ? "adminReviews" : "dashboard";
+  const homeItem = globalNavItems.find((item) => item.key === homeView);
   const activeProjectNavKey = getProjectNavKey(activeView);
 
   return (
@@ -101,10 +102,10 @@ export function AppSidebar({
           <>
             {homeItem ? (
               <ViewLink
-                className={["navItem", "navItemUtility", activeView === "dashboard" ? "active" : ""].filter(Boolean).join(" ")}
+                className={["navItem", "navItemUtility", activeView === homeView ? "active" : ""].filter(Boolean).join(" ")}
                 data-tooltip="Home"
-                aria-current={activeView === "dashboard" ? "page" : undefined}
-                view="dashboard"
+                aria-current={activeView === homeView ? "page" : undefined}
+                view={homeView}
                 aria-label="Home"
                 onNavigate={onGoDashboard}
                 title={homeItem.path}
@@ -178,7 +179,8 @@ export function AppSidebar({
         ) : (
           globalNavItems
             .filter((item) => !["profile", "about"].includes(item.key))
-            .filter((item) => !["adminReviews", "registeredUsers"].includes(item.key) || currentUser.isAdmin)
+            .filter((item) => item.key !== "dashboard" || !currentUser.isAdmin)
+            .filter((item) => !["adminReviews", "registeredUsers", "systemSettings"].includes(item.key) || currentUser.isAdmin)
             .map(({ key, label, path, Icon }) => {
               const navClassName = ["navItem", activeView === key ? "active" : ""].filter(Boolean).join(" ");
               return (

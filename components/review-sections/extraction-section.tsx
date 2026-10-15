@@ -1,6 +1,6 @@
 import { ViewLink } from "@/components/navigation-link";
 import { useEffect, useState } from "react";
-import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, History, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, GripVertical, History, Plus, SquareCheck, CircleDot, Trash2, LetterText } from "lucide-react";
 import {
   type AppUser,
   type ExtractionFieldType,
@@ -47,6 +47,7 @@ type ExtractionSectionProps = {
   extractionTemplateForm: ExtractionTemplateForm;
   setExtractionTemplateTitle: (title: string) => void;
   removeExtractionTemplateField: (fieldId: string) => void;
+  moveExtractionTemplateField: (fieldId: string, targetFieldId: string, placeAfter: boolean) => void;
   updateExtractionTemplateField: (fieldId: string, updates: Partial<ExtractionTemplateFieldForm>) => void;
   addExtractionTemplateField: (type: ExtractionFieldType) => void;
   startEditingExtractionTemplate: () => void;
@@ -85,6 +86,7 @@ export function ExtractionSection({
   extractionTemplateForm,
   setExtractionTemplateTitle,
   removeExtractionTemplateField,
+  moveExtractionTemplateField,
   updateExtractionTemplateField,
   addExtractionTemplateField,
   startEditingExtractionTemplate,
@@ -107,9 +109,13 @@ export function ExtractionSection({
   onOpenReviewed
 }: ExtractionSectionProps) {
   const [now, setNow] = useState(Date.now());
+  const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const uploadedPdfCount = projectReportQueue.filter((report) => report.fileName).length;
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
-  const extractionMessageIsSuccess = /created|submitted|saved/i.test(extractionMessage);
+  const extractionMessageIsSuccess = /created|updated|submitted|saved/i.test(extractionMessage);
+  const extractionMessageIsWarning = /returned to the queue/i.test(extractionMessage);
+  const extractionMessageClass = extractionMessageIsWarning ? "validationItem warning" : extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked";
 
   useEffect(() => {
     if (!activeExtractionReport?.extractionCheckedOutByCurrentUser || !activeExtractionReport.extractionCheckoutExpiresAt) {
@@ -127,7 +133,7 @@ export function ExtractionSection({
       <form className="panel templateBuilder" onSubmit={saveExtractionTemplate}>
         <SectionTitle
           icon={ClipboardCheck}
-          title={isEditMode ? "Edit Extraction Schema" : "Create Extraction Schema"}
+          title={isEditMode ? "Edit Extraction Schema (drag ⠿ to redorder)" : "Create Extraction Schema"}
           action={`${extractionTemplateForm.fields.length} fields`}
         />
         <label>
@@ -141,9 +147,54 @@ export function ExtractionSection({
 
         <div className="templateFieldList">
           {extractionTemplateForm.fields.map((field, index) => (
-            <div className="templateFieldEditor" key={field.id}>
+            <div
+              className={[
+                "templateFieldEditor",
+                draggedFieldId === field.id ? "isDragging" : "",
+                dropTarget?.id === field.id ? (dropTarget.after ? "dropAfter" : "dropBefore") : ""
+              ].filter(Boolean).join(" ")}
+              key={field.id}
+              draggable={draggedFieldId === field.id}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", field.id);
+              }}
+              onDragOver={(event) => {
+                if (!draggedFieldId || draggedFieldId === field.id) {
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                const rect = event.currentTarget.getBoundingClientRect();
+                const after = event.clientY > rect.top + rect.height / 2;
+                setDropTarget((previous) => (previous?.id === field.id && previous.after === after ? previous : { id: field.id, after }));
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (draggedFieldId && dropTarget) {
+                  moveExtractionTemplateField(draggedFieldId, dropTarget.id, dropTarget.after);
+                }
+                setDraggedFieldId(null);
+                setDropTarget(null);
+              }}
+              onDragEnd={() => {
+                setDraggedFieldId(null);
+                setDropTarget(null);
+              }}
+            >
               <div className="templateFieldHeader">
+                <div className="templateFieldTitle">
+                <span
+                  className="templateFieldDragHandle"
+                  title="Drag to reorder"
+                  aria-label={`Drag to reorder field ${index + 1}`}
+                  onMouseDown={() => setDraggedFieldId(field.id)}
+                  onMouseUp={() => setDraggedFieldId(null)}
+                >
+                  <GripVertical size={16} />
+                </span>
                 <strong>Field {index + 1}</strong>
+                </div>
                 <button
                   className="ghostButton iconOnly"
                   type="button"
@@ -166,15 +217,20 @@ export function ExtractionSection({
                 </label>
                 <label>
                   <span>Type</span>
-                  <select
-                    value={field.type}
-                    disabled={isCreatingExtractionTemplate}
-                    onChange={(event) => updateExtractionTemplateField(field.id, { type: event.target.value as ExtractionFieldType })}
-                  >
-                    <option value="multiline_text">Multiline Text</option>
-                    <option value="single_choice">Single Choice</option>
-                    <option value="multiple_choice">Multiple Choice</option>
-                  </select>
+                  <div className="fieldTypeSelect">
+                    <span className="fieldTypeIcon" aria-hidden="true">
+                      {field.type === "single_choice" ? <CircleDot size={16} /> : field.type === "multiple_choice" ? <SquareCheck size={16} /> : <LetterText size={16} />}
+                    </span>
+                    <select
+                      value={field.type}
+                      disabled={isCreatingExtractionTemplate}
+                      onChange={(event) => updateExtractionTemplateField(field.id, { type: event.target.value as ExtractionFieldType })}
+                    >
+                      <option value="multiline_text">Multiline Text</option>
+                      <option value="single_choice">Single Choice</option>
+                      <option value="multiple_choice">Multiple Choice</option>
+                    </select>
+                  </div>
                 </label>
               </div>
               {field.type !== "multiline_text" ? (
@@ -309,8 +365,8 @@ export function ExtractionSection({
         </section>
 
         {extractionMessage ? (
-          <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <div className={extractionMessageClass}>
+            {extractionMessageIsSuccess && !extractionMessageIsWarning ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>{extractionMessage}</span>
           </div>
         ) : null}
@@ -334,7 +390,7 @@ export function ExtractionSection({
         <section className="overviewBand compactBand">
           <div>
             <p className="eyebrow">Data extraction</p>
-            <h1>Edit Extraction Schema</h1>
+            <h1>Extraction Schema</h1>
             <p className="subtle">{activeExtractionTemplate.title} · {activeExtractionTemplate.fields.length} fields</p>
           </div>
           <div className="buttonRow">
@@ -349,8 +405,8 @@ export function ExtractionSection({
         </section>
 
         {extractionMessage ? (
-          <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-            {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+          <div className={extractionMessageClass}>
+            {extractionMessageIsSuccess && !extractionMessageIsWarning ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>{extractionMessage}</span>
           </div>
         ) : null}
@@ -477,8 +533,8 @@ export function ExtractionSection({
       </section>
 
       {extractionMessage ? (
-        <div className={extractionMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
-          {extractionMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+        <div className={extractionMessageClass}>
+          {extractionMessageIsSuccess && !extractionMessageIsWarning ? <Check size={17} /> : <AlertTriangle size={17} />}
           <span>{extractionMessage}</span>
         </div>
       ) : null}

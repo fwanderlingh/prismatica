@@ -5,10 +5,10 @@ import { createContext, useContext, type AnchorHTMLAttributes, type ReactNode } 
 import { buildPathForState } from "@/lib/navigation";
 import type { ViewKey } from "@/lib/prismaData";
 
-const ProjectNavigationContext = createContext("");
+const ProjectNavigationContext = createContext<{ projectId: string; homeView: ViewKey }>({ projectId: "", homeView: "dashboard" });
 
-export function NavigationProvider({ projectId, children }: { projectId: string; children: ReactNode }) {
-  return <ProjectNavigationContext.Provider value={projectId}>{children}</ProjectNavigationContext.Provider>;
+export function NavigationProvider({ projectId, homeView = "dashboard", children }: { projectId: string; homeView?: "dashboard" | "adminReviews"; children: ReactNode }) {
+  return <ProjectNavigationContext.Provider value={{ projectId, homeView }}>{children}</ProjectNavigationContext.Provider>;
 }
 
 type PageLinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href" | "onClick"> & {
@@ -30,6 +30,6 @@ export function PageLink({ href, onNavigate, disabled, children, ...props }: Pag
 }
 
 export function ViewLink({ view, projectId, ...props }: Omit<PageLinkProps, "href"> & { view: ViewKey; projectId?: string }) {
-  const currentProjectId = useContext(ProjectNavigationContext);
-  return <PageLink {...props} href={buildPathForState(view, projectId ?? currentProjectId)} />;
+  const navigation = useContext(ProjectNavigationContext);
+  return <PageLink {...props} href={buildPathForState(view === "dashboard" ? navigation.homeView : view, projectId ?? navigation.projectId)} />;
 }

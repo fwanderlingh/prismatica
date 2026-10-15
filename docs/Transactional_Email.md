@@ -25,7 +25,7 @@ the TEM HTTPS API, so no SMTP daemon or additional dependency is required.
    For systemd deployments, use a protected `EnvironmentFile` in a service override.
 4. Rebuild for this code update and restart the application. Subsequent changes to
    environment values require a restart; changing the website toggle does not.
-5. Open **Administration → Registered Users → Transactional Email**. Refresh the
+5. Open **Administration → System Settings → Transactional Email**. Refresh the
    configuration status, then enable email. The check validates local configuration;
    it does not authenticate with Scaleway or prove domain verification/delivery.
 6. Register a test account you control and confirm the email. Exercise Forgot

@@ -131,6 +131,7 @@ import { AuditTrailSection } from "./review-sections/audit-trail-section";
 import { AboutSection } from "./review-sections/about-section";
 import { AdminReviewsSection } from "./review-sections/admin-reviews-section";
 import { RegisteredUsersSection } from "./review-sections/registered-users-section";
+import { SystemSettingsSection } from "./review-sections/system-settings-section";
 import { ImportEditorSection } from "./review-sections/import-editor-section";
 import { ImportsSection } from "./review-sections/imports-section";
 import { DedupSection } from "./review-sections/dedup-section";
@@ -195,6 +196,7 @@ const globalNavItems: NavItem[] = [
   { key: "newProject", label: "New Review", path: "/projects/new", Icon: FolderPlus },
   { key: "adminReviews", label: "Review Admin", path: "/admin/reviews", Icon: LayoutDashboard },
   { key: "registeredUsers", label: "Registered Users", path: "/admin/users", Icon: Users },
+  { key: "systemSettings", label: "System Settings", path: "/admin/settings", Icon: Settings },
   { key: "profile", label: "Profile", path: "/profile" },
   { key: "about", label: "About", path: "/about", Icon: Info }
 ];
@@ -213,7 +215,7 @@ const projectNavItems: NavItem[] = [
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
 
-const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "profile"];
+const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "systemSettings", "profile"];
 const reviewPhaseNavKeys = new Set<ViewKey>([
   "imports",
   "dedup",
@@ -247,6 +249,7 @@ const viewKeySet = new Set<ViewKey>([
   "about",
   "adminReviews",
   "registeredUsers",
+  "systemSettings",
   "profile"
 ]);
 
@@ -293,6 +296,9 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
   }
   if (normalizedPath === "/admin/users") {
     return { view: "registeredUsers", isKnownRoute: true };
+  }
+  if (normalizedPath === "/admin/settings") {
+    return { view: "systemSettings", isKnownRoute: true };
   }
   if (normalizedPath === "/profile") {
     return { view: "profile", isKnownRoute: true };
@@ -717,6 +723,7 @@ export function PrismaReviewApp() {
   });
 
   const currentUser = users.find((user) => user.id === currentUserId) ?? users[0] ?? guestUser;
+  const homeView = currentUser.isAdmin ? "adminReviews" : "dashboard";
   useUserPresence(isAuthenticated ? currentUser.id : null);
   const { newProjectForm, canCreate, creationStatus, creationSummary, updateNewProjectForm, syncNewProjectUserContext, resetNewProjectForm } = useNewProjectState(currentUser);
   const normalizedTeamUserSearch = teamUserSearch.trim().toLowerCase();
@@ -889,7 +896,7 @@ export function PrismaReviewApp() {
   const projectIdSet = useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
   const projectEvents = hasProjectSeedData
     ? events.filter((event) => !projectIdSet.has(event.entity) || event.entity === selectedProject.id)
-    : getProjectAuditEvents(events, selectedProject.id, projectScreeningStudies, projectReportQueue, projectDedupCandidates);
+    : getProjectAuditEvents(events, selectedProject.id, importedProjectStudies, reports.filter((report) => report.projectId === selectedProject.id), projectDedupCandidates);
   const latestProjectEvents = projectEvents.slice(0, 5);
   const auditPageCount = Math.max(1, Math.ceil(projectEvents.length / AUDIT_PAGE_SIZE));
   const currentAuditPage = Math.min(auditPage, auditPageCount);
@@ -1187,7 +1194,7 @@ export function PrismaReviewApp() {
 
   function getPendingRouteLabel(view: ViewKey, projectId: string) {
     if (view === "dashboard") {
-      return "Opening All Reviews";
+      return `Opening ${getViewLabel(homeView)}`;
     }
 
     if (isProjectScopedView(view)) {
@@ -1210,8 +1217,9 @@ export function PrismaReviewApp() {
   }
 
   function setActiveView(view: ViewKey, options: { projectId?: string; replace?: boolean } = {}) {
+    const nextView = view === "dashboard" ? homeView : view;
     const nextProjectId = options.projectId ?? selectedProjectId;
-    const nextPath = normalizePathname(buildPathForState(view, nextProjectId));
+    const nextPath = normalizePathname(buildPathForState(nextView, nextProjectId));
     const currentPath = normalizePathname(pathname ?? window.location.pathname);
 
     if (nextPath === currentPath) {
@@ -1220,7 +1228,7 @@ export function PrismaReviewApp() {
     }
 
     setPendingRoutePath(nextPath);
-    setPendingRouteLabel(getPendingRouteLabel(view, nextProjectId));
+    setPendingRouteLabel(getPendingRouteLabel(nextView, nextProjectId));
     startTransition(() => {
       if (options.replace) {
         router.replace(nextPath);
@@ -1408,8 +1416,10 @@ export function PrismaReviewApp() {
 
     if (currentPath === "/sign-in") {
       applyPostAuthRedirect();
+    } else if (currentUser.isAdmin && (currentPath === "/" || currentPath === "/dashboard")) {
+      setActiveView("adminReviews", { replace: true });
     }
-  }, [isAuthResolved, isAuthenticated, pathname, routeSearch]);
+  }, [isAuthResolved, isAuthenticated, currentUser.isAdmin, pathname, routeSearch]);
 
   useEffect(() => {
     if (!pendingRoutePath) {
@@ -2480,6 +2490,22 @@ export function PrismaReviewApp() {
     }));
   }
 
+  function moveExtractionTemplateField(fieldId: string, targetFieldId: string, placeAfter: boolean) {
+    setExtractionTemplateForm((previous) => {
+      const moving = previous.fields.find((field) => field.id === fieldId);
+      if (!moving || fieldId === targetFieldId) {
+        return previous;
+      }
+      const remaining = previous.fields.filter((field) => field.id !== fieldId);
+      const targetIndex = remaining.findIndex((field) => field.id === targetFieldId);
+      if (targetIndex < 0) {
+        return previous;
+      }
+      remaining.splice(targetIndex + (placeAfter ? 1 : 0), 0, moving);
+      return { ...previous, fields: remaining };
+    });
+  }
+
   function startEditingExtractionTemplate() {
     if (!activeExtractionTemplate) {
       return;
@@ -3305,7 +3331,7 @@ export function PrismaReviewApp() {
   function renderActiveView() {
     switch (activeView) {
       case "dashboard":
-        return renderPortfolioDashboard();
+        return currentUser.isAdmin ? renderAdminReviews() : renderPortfolioDashboard();
       case "projectDashboard":
         return renderProjectDashboard();
       case "imports":
@@ -3356,6 +3382,8 @@ export function PrismaReviewApp() {
         return currentUser.isAdmin ? renderAdminReviews() : renderProfile();
       case "registeredUsers":
         return currentUser.isAdmin ? renderRegisteredUsers() : renderProfile();
+      case "systemSettings":
+        return currentUser.isAdmin ? renderSystemSettings() : renderProfile();
       case "profile":
         return renderProfile();
       default:
@@ -3642,6 +3670,7 @@ export function PrismaReviewApp() {
           setExtractionTemplateForm((previous) => ({ ...previous, title }))
         }
         removeExtractionTemplateField={removeExtractionTemplateField}
+        moveExtractionTemplateField={moveExtractionTemplateField}
         updateExtractionTemplateField={updateExtractionTemplateField}
         addExtractionTemplateField={addExtractionTemplateField}
         startEditingExtractionTemplate={startEditingExtractionTemplate}
@@ -3870,11 +3899,6 @@ export function PrismaReviewApp() {
         users={users}
         currentUser={currentUser}
         adminDirectoryMessage={adminDirectoryMessage}
-        authSettings={authSettings}
-        reviewSettings={reviewSettings}
-        reviewSettingsForm={reviewSettingsForm}
-        authSettingsMessage={authSettingsMessage}
-        reviewSettingsMessage={reviewSettingsMessage}
         adminResetUserPassword={adminResetUserPassword}
         adminDeleteUser={adminDeleteUser}
         createUserForm={adminCreateUserForm}
@@ -3885,6 +3909,18 @@ export function PrismaReviewApp() {
         onCreateUser={adminCreateUser}
         isCreatingUser={isCreatingAdminUser}
         pendingUserAction={pendingAdminUserAction}
+      />
+    );
+  }
+
+  function renderSystemSettings() {
+    return (
+      <SystemSettingsSection
+        authSettings={authSettings}
+        reviewSettings={reviewSettings}
+        reviewSettingsForm={reviewSettingsForm}
+        authSettingsMessage={authSettingsMessage}
+        reviewSettingsMessage={reviewSettingsMessage}
         isUpdatingRegistrationSetting={isUpdatingRegistrationSetting}
         isUpdatingReviewSettings={isUpdatingReviewSettings}
         updateRegistrationSetting={(registrationEnabled) => void updateAuthSetting({ registrationEnabled })}
@@ -3998,8 +4034,8 @@ export function PrismaReviewApp() {
   const breadcrumbItems = isProjectView
     ? [
         {
-          label: "All Reviews",
-          href: "/dashboard",
+          label: getViewLabel(homeView),
+          href: buildPathForState(homeView, selectedProject.id),
           onClick: () => {
             setActiveView("dashboard");
             setIsMobileNavOpen(false);
@@ -4026,17 +4062,17 @@ export function PrismaReviewApp() {
               }
             ])
       ]
-    : activeView === "dashboard"
+    : activeView === homeView || activeView === "dashboard"
       ? [
           {
-            label: getViewLabel(activeView),
+            label: getViewLabel(homeView),
             current: true
           }
         ]
       : [
           {
-            label: "All Reviews",
-            href: "/dashboard",
+            label: getViewLabel(homeView),
+            href: buildPathForState(homeView, selectedProject.id),
             onClick: () => {
               setActiveView("dashboard");
               setIsMobileNavOpen(false);
@@ -4049,7 +4085,7 @@ export function PrismaReviewApp() {
         ];
 
   return (
-    <NavigationProvider projectId={selectedProject.id}>
+    <NavigationProvider projectId={selectedProject.id} homeView={homeView}>
       <AppShell
         pageKey={pathname ?? ""}
         navigationTarget={pendingRoutePath}

@@ -572,8 +572,9 @@ async function readRelationalState(client) {
   const decisions = await readRows(client, "review_decisions");
   const auditLimit = normalizeAuditHistoryLimit(reviewSettingsResult.rows[0]?.audit_history_limit);
   const eventRows = await client.query(
-    `SELECT payload::text AS payload FROM workflow_events
-     ORDER BY payload->>'time' DESC, position ASC, id ASC LIMIT $1`, [auditLimit]
+    `${rankedWorkflowEventsSql()}
+     SELECT payload::text AS payload FROM ranked_events WHERE project_rank <= $1
+     ORDER BY payload->>'time' DESC, position ASC, id ASC`, [auditLimit]
   );
   const events = eventRows.rows.map((row) => JSON.parse(row.payload));
   const dedupCandidates = await readRows(client, "review_dedup_candidates");
@@ -891,11 +892,7 @@ async function writeReports(client, state) {
 
 async function writeReviewTables(client, state) {
   for (const config of tableConfigs) {
-    let items = Array.isArray(state[config.arrayKey]) ? state[config.arrayKey] : [];
-    if (config.arrayKey === "events") {
-      items = items.slice().sort((a, b) => Date.parse(b.time) - Date.parse(a.time))
-        .slice(0, normalizeAuditHistoryLimit(state.reviewSettings?.auditHistoryLimit));
-    }
+    const items = Array.isArray(state[config.arrayKey]) ? state[config.arrayKey] : [];
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
       const columnList = [config.idColumn, ...config.extraColumns, "payload"];
@@ -906,6 +903,8 @@ async function writeReviewTables(client, state) {
       );
     }
   }
+  // Resolve ownership after all records (including duplicate candidates) are saved.
+  await pruneWorkflowEvents(client, state.reviewSettings?.auditHistoryLimit);
 }
 
 function normalizeAuditHistoryLimit(value) {
@@ -913,8 +912,38 @@ function normalizeAuditHistoryLimit(value) {
   return Number.isFinite(limit) && limit >= 1 ? Math.min(10000, Math.round(limit)) : 100;
 }
 
+function rankedWorkflowEventsSql() {
+  return `WITH ranked_events AS (
+    SELECT e.*, ROW_NUMBER() OVER (
+      PARTITION BY COALESCE(
+        c.payload->>'projectId', c.payload->'recordA'->>'projectId',
+        c.payload->'recordB'->>'projectId',
+        CASE WHEN c.id IS NOT NULL THEN 'demo-review' END,
+        r.project_id, r.payload->>'projectId',
+        s.project_id, s.payload->>'projectId', p.id, ''
+      )
+      ORDER BY e.payload->>'time' DESC, e.position ASC, e.id ASC
+    ) AS project_rank
+    FROM workflow_events e
+    LEFT JOIN review_projects p ON p.id = e.entity
+    LEFT JOIN review_studies s ON s.id = e.entity
+    LEFT JOIN review_reports r ON r.id = e.entity
+    LEFT JOIN review_dedup_candidates c ON c.id = e.entity
+  )`;
+}
+
+async function pruneWorkflowEvents(client, limit) {
+  await client.query(
+    `${rankedWorkflowEventsSql()}
+     DELETE FROM workflow_events WHERE id IN (
+       SELECT id FROM ranked_events WHERE project_rank > $1
+     )`,
+    [normalizeAuditHistoryLimit(limit)]
+  );
+}
+
 async function appendWorkflowEvent(client, event) {
-  // Serialize incremental appends so pruning keeps the newest events across reviews.
+  // Serialize incremental appends so each project keeps its newest events.
   await client.query("LOCK TABLE workflow_events IN SHARE ROW EXCLUSIVE MODE");
   await client.query(
     `INSERT INTO workflow_events (id, entity, position, payload)
@@ -923,13 +952,7 @@ async function appendWorkflowEvent(client, event) {
     [event.id, event.entity ?? null, JSON.stringify(event)]
   );
   const settings = await client.query("SELECT audit_history_limit FROM review_settings WHERE id = 1");
-  await client.query(
-    `DELETE FROM workflow_events WHERE id IN (
-       SELECT id FROM workflow_events
-       ORDER BY payload->>'time' DESC, position ASC, id ASC OFFSET $1
-     )`,
-    [normalizeAuditHistoryLimit(settings.rows[0]?.audit_history_limit)]
-  );
+  await pruneWorkflowEvents(client, settings.rows[0]?.audit_history_limit);
 }
 
 async function writeImportStudyMutation(client, mutation) {

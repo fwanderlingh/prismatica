@@ -5070,14 +5070,14 @@ function areExtractionTemplateFieldsCompatible(leftFields: ExtractionTemplateFie
     return false;
   }
 
-  return leftFields.every((leftField, index) => {
-    const rightField = rightFields[index];
+  const rightById = new Map(rightFields.map((field) => [field.id, field]));
+  return leftFields.every((leftField) => {
+    const rightField = rightById.get(leftField.id);
     return (
       Boolean(rightField) &&
-      leftField.id === rightField.id &&
-      leftField.type === rightField.type &&
-      leftField.options.length === rightField.options.length &&
-      leftField.options.every((option, optionIndex) => option === rightField.options[optionIndex])
+      leftField.type === rightField!.type &&
+      leftField.options.length === rightField!.options.length &&
+      leftField.options.every((option, optionIndex) => option === rightField!.options[optionIndex])
     );
   });
 }

@@ -254,7 +254,7 @@ Notes:
 ## Security Features
 
 Optional account confirmation and password recovery through Scaleway TEM can be
-enabled in **Administration → Registered Users → Transactional Email**. Email is
+enabled in **Administration → System Settings → Transactional Email**. Email is
 disabled by default; the existing registration/login and administrator password
 reset flows continue to work without it. See [Transactional email setup](docs/Transactional_Email.md)
 for server configuration, activation, and verification.
@@ -473,7 +473,7 @@ sudo systemctl reload caddy
 
 ### Audit history retention
 
-Administrators can set **Registered Users → Review Settings → Audit history limit**.
+Administrators can set **System Settings → Review Settings → Audit history limit**.
 The default is **100 events across all reviews**, configurable from 1 to 10,000.
 The newest events are retained; lowering the limit removes older events, and raising
 it cannot recover events already removed. This applies to file and PostgreSQL storage.

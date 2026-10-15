@@ -3727,12 +3727,64 @@ textarea.exclusionReasonsMissing {
   background: var(--surface-muted);
 }
 
+.templateFieldEditor .compactFormGrid {
+  margin-top: 0;
+}
+
 .templateFieldHeader {
   display: flex;
   gap: calc(10px * var(--ui-scale));
   align-items: center;
   justify-content: space-between;
-  margin-bottom: calc(10px * var(--ui-scale));
+  margin-bottom: calc(0px * var(--ui-scale));
+}
+
+.templateFieldTitle {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale));
+}
+
+.templateFieldEditor input,
+.templateFieldEditor select,
+.templateFieldEditor textarea {
+  background: var(--surface);
+}
+
+.fieldTypeSelect {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fieldTypeIcon {
+  position: absolute;
+  left: calc(11px * var(--ui-scale));
+  display: inline-flex;
+  color: var(--muted, currentColor);
+  pointer-events: none;
+}
+
+.fieldTypeSelect select {
+  padding-left: calc(36px * var(--ui-scale));
+}
+
+.templateFieldDragHandle {
+  display: inline-flex;
+  color: var(--muted, currentColor);
+  cursor: grab;
+}
+
+.templateFieldEditor.isDragging {
+  opacity: 0.5;
+}
+
+.templateFieldEditor.dropBefore {
+  box-shadow: 0 calc(-3px * var(--ui-scale)) 0 0 var(--accent, #167d7f);
+}
+
+.templateFieldEditor.dropAfter {
+  box-shadow: 0 calc(3px * var(--ui-scale)) 0 0 var(--accent, #167d7f);
 }
 
 .extractionFormPanel {

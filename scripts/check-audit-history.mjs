@@ -64,6 +64,27 @@ try {
   assert.equal(store.getAppStateForUser(admin.id).reviewSettings.auditHistoryLimit, 7);
   assert.ok(JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE)).events.length <= 7);
 
+  // A busy project must not evict another project's history in file storage.
+  const multiProjectState = fixture(undefined, 130);
+  const secondProject = { ...project, id: 'second-audit-project' };
+  multiProjectState.projects.push(secondProject);
+  multiProjectState.events.push(...Array.from({ length: 130 }, (_, index) => ({
+    ...event(index + 1000, secondProject.id), id: `second-${index}`
+  })));
+  writeFixture(multiProjectState);
+  payload = store.getAppStateForUser(admin.id);
+  for (const projectId of [project.id, secondProject.id]) {
+    assert.equal(payload.events.filter(event => event.entity === projectId).length, 100);
+  }
+  store.updateDedupCandidateForUser(admin.id, pair.id, 'confirmed', pair.recordB.id);
+  payload = store.getAppStateForUser(admin.id);
+  assert.equal(payload.events.filter(event => event.entity === secondProject.id).length, 100);
+  assert.equal(getProjectAuditEvents(payload.events, project.id, payload.studies, payload.reports, payload.dedupCandidates).length, 100);
+  store.updateReviewSettingsForUser(admin.id, { auditHistoryLimit: 7 });
+  payload = store.getAppStateForUser(admin.id);
+  assert.equal(payload.events.filter(event => event.entity === secondProject.id).length, 7);
+  assert.equal(getProjectAuditEvents(payload.events, project.id, payload.studies, payload.reports, payload.dedupCandidates).length, 7);
+
   writeFixture(fixture(150, 130));
   payload = store.updateDedupCandidateForUser(admin.id, pair.id, 'confirmed', pair.recordB.id);
   assert.equal(payload.events[0].action, 'Excluded duplicate citation');
@@ -74,6 +95,12 @@ try {
   const projectEvents = getProjectAuditEvents([...payload.events, event(999, 'other-project')], project.id, payload.studies, payload.reports, payload.dedupCandidates);
   assert.equal(projectEvents[0].entity, pair.id);
   assert.ok(!projectEvents.some(e => e.entity === 'other-project'));
+  const excludedReport = { id: 'excluded-report', projectId: project.id, studyId: pair.recordB.id };
+  const excludedEvents = [event(1000, pair.recordB.id), event(1001, excludedReport.id)];
+  assert.deepEqual(getProjectAuditEvents(excludedEvents, project.id, payload.studies, [excludedReport], payload.dedupCandidates), excludedEvents,
+    'audit ownership includes excluded studies and reports outside workflow queues');
+  const appSource = fs.readFileSync(path.join(root, 'components/prisma-review-app.tsx'), 'utf8');
+  assert.match(appSource, /getProjectAuditEvents\(events, selectedProject\.id, importedProjectStudies, reports\.filter/);
   payload = store.updateDedupCandidateForUser(admin.id, pair.id, 'pending');
   assert.equal(payload.events[0].action, 'Reopened duplicate candidate');
   assert.equal(payload.dedupCandidates.find(candidate => candidate.id === pair.id).resolvedByUserId, undefined);
@@ -148,9 +175,32 @@ try {
     } }, event(999));
     assert.match(queries[0].sql, /LOCK TABLE/);
     assert.match(queries[1].sql, /MIN\(position\)/);
-    assert.match(queries[3].sql, /ORDER BY payload->>'time' DESC/);
+    assert.match(queries[3].sql, /ROW_NUMBER\(\) OVER/);
+    assert.match(queries[3].sql, /PARTITION BY COALESCE/);
+    assert.match(queries[3].sql, /ORDER BY e\.payload->>'time' DESC/);
+    assert.match(queries[3].sql, /project_rank > \$1/);
+    for (const table of ['review_projects', 'review_studies', 'review_reports', 'review_dedup_candidates']) {
+      assert.ok(queries[3].sql.includes(`LEFT JOIN ${table}`));
+    }
     assert.equal(queries[3].params[0], limit ?? 100);
   }
+  const pgContext = {};
+  vm.runInNewContext(pgSource.slice(0, pgSource.indexOf('run().catch')).replace('import { Client } from "pg";', '') +
+    '\nthis.read = readRelationalState; this.write = writeReviewTables;', pgContext);
+  const readQueries = [];
+  await pgContext.read({ query: async (sql, params) => {
+    readQueries.push({ sql, params });
+    return { rows: [], rowCount: 0 };
+  } });
+  const readEvents = readQueries.find(query => query.sql.includes('FROM ranked_events'));
+  assert.match(readEvents.sql, /project_rank <= \$1/);
+  assert.equal(readEvents.params[0], 100);
+  const writes = [];
+  await pgContext.write({ query: async (sql, params) => { writes.push({ sql, params }); return { rows: [] }; } }, multiProjectState);
+  assert.equal(writes.filter(query => query.sql.startsWith('INSERT INTO workflow_events')).length, 260,
+    'full saves must not globally truncate events before project ownership is resolved');
+  assert.match(writes.at(-1).sql, /project_rank > \$1/);
+  assert.equal(writes.at(-1).params[0], 100);
   console.log('Audit checks passed: default/custom retention, admin-only settings, dedup decisions and reload, project isolation, new PostgreSQL events, append ordering and pruning.');
 } finally {
   Module._resolveFilename = originalResolve;

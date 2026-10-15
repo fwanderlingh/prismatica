@@ -36,7 +36,7 @@ try {
   const project = data.reviewProjects[0], study = data.screeningStudies[0], report = data.reportQueue[0];
   const user = { id: project.ownerId, name: "Alex Reviewer", initials: "AR", avatarColor: "#456" };
   const noop = () => {};
-  const html = (Component, props) => renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id }, React.createElement(Component, props)));
+  const html = (Component, props) => renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id, homeView: props.currentUser?.isAdmin ? "adminReviews" : "dashboard" }, React.createElement(Component, props)));
 
   assert.equal(buildPathForState("pdfUpload", "review / one"), "/projects/review%20%2F%20one/full-text/pdf-upload");
   const sidebarProps = { brandName: "Prismatica", brandTagline: "Reviews", brandLogoAlt: "Home", isSidebarCollapsed: true,
@@ -49,6 +49,30 @@ try {
   assert.match(sidebarHtml, /<a[^>]*aria-current="page"[^>]*aria-label="Screening"[^>]*href="[^"]+\/screening"/);
   assert.match(sidebarHtml, /<span(?=[^>]*aria-label="Extraction")(?=[^>]*role="link")(?=[^>]*aria-disabled="true")(?=[^>]*tabindex="-1")[^>]*>/);
   assert.match(sidebarHtml, /href="\/dashboard"/);
+  assert.equal(buildPathForState("systemSettings", project.id), "/admin/settings");
+  const adminNavItems = [
+    { key: "dashboard", label: "All Reviews", path: "/dashboard" },
+    { key: "adminReviews", label: "Review Admin", path: "/admin/reviews" },
+    { key: "registeredUsers", label: "Registered Users", path: "/admin/users" },
+    { key: "systemSettings", label: "System Settings", path: "/admin/settings" }
+  ];
+  const adminSidebar = html(loadSection("app-sidebar").AppSidebar, {
+    ...sidebarProps, currentUser: { ...user, isAdmin: true }, isProjectView: false,
+    activeView: "systemSettings", globalNavItems: adminNavItems
+  });
+  assert.doesNotMatch(adminSidebar, /href="\/dashboard"|All Reviews/);
+  assert.match(adminSidebar, /href="\/admin\/reviews"/);
+  assert.match(adminSidebar, /<a(?=[^>]*aria-current="page")(?=[^>]*href="\/admin\/settings")[^>]*>/);
+  const reviewerSidebar = html(loadSection("app-sidebar").AppSidebar, {
+    ...sidebarProps, isProjectView: false, activeView: "dashboard", globalNavItems: adminNavItems
+  });
+  assert.match(reviewerSidebar, /href="\/dashboard"/);
+  assert.doesNotMatch(reviewerSidebar, /href="\/admin\//);
+  const adminProjectSidebar = html(loadSection("app-sidebar").AppSidebar, {
+    ...sidebarProps, currentUser: { ...user, isAdmin: true }, globalNavItems: adminNavItems
+  });
+  assert.match(adminProjectSidebar, /aria-label="Home"[^>]*href="\/admin\/reviews"/);
+  assert.doesNotMatch(adminProjectSidebar, /href="\/dashboard"/);
   let navigations = 0, prevented = false;
   const link = PageLink({ href: "/about", onNavigate: () => navigations++, children: "About" });
   assert.equal(link.props.href, "/about");

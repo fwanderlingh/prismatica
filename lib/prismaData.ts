@@ -21,6 +21,7 @@ export type ViewKey =
   | "about"
   | "adminReviews"
   | "registeredUsers"
+  | "systemSettings"
   | "profile";
 
 export type AppUser = {
