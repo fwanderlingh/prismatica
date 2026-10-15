@@ -28,7 +28,6 @@ type FullTextSectionProps = {
   phaseProgress: ProjectPhaseProgress;
   projectReportQueue: Report[];
   totalFullTextReportCount: number;
-  uploadedPdfCount: number;
   activeReport: Report;
   decisions: Decision[];
   selectedProject: ReviewProject;
@@ -62,7 +61,6 @@ export function FullTextSection({
   phaseProgress,
   projectReportQueue,
   totalFullTextReportCount,
-  uploadedPdfCount,
   activeReport,
   decisions,
   selectedProject,
@@ -183,7 +181,6 @@ export function FullTextSection({
   const canExclude = selectedDecision === "exclude";
   const pdfDisplayName = activeReport.fileName || activeReport.pdfName || "No PDF uploaded";
   const hasUploadedPdf = Boolean(activeReport.fileName);
-  const uploadedPdfPercent = totalFullTextReportCount > 0 ? Math.round((uploadedPdfCount / totalFullTextReportCount) * 100) : 0;
   const pdfStatus = hasUploadedPdf ? "Uploaded" : "Missing PDF";
   const retrievalStatusLabel = {
     not_sought: "Retrieval not started",
@@ -236,12 +233,6 @@ export function FullTextSection({
             <span>{phaseProgress.label}</span>
             <div className="progressTrack">
               <i style={{ width: `${phaseProgress.percent}%` }} />
-            </div>
-          </div>
-          <div className="progressBlock">
-            <span>{uploadedPdfPercent}% PDFs uploaded · {uploadedPdfCount} of {totalFullTextReportCount} reports</span>
-            <div className="progressTrack">
-              <i style={{ width: `${uploadedPdfPercent}%` }} />
             </div>
           </div>
         </div>

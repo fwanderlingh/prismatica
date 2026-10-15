@@ -104,7 +104,7 @@ try {
     projectDedupCandidates: data.dedupCandidates, pendingDedupAction: null, dedupMessage: "", isRejectingAllDedupCandidates: false,
     updateDedupCandidate: noop, updateDedupStudy: noop, rejectAllPendingDedupCandidates: noop };
   const fullTextProps = { hasProjectSeedData: true, phaseProgress: { percent: 20, label: "20%" }, projectReportQueue: [report], totalFullTextReportCount: 1,
-    uploadedPdfCount: 1, activeReport: report, decisions: [], selectedProject: project, currentUser: user, fullTextMessage: "", checkoutError: "",
+    activeReport: report, decisions: [], selectedProject: project, currentUser: user, fullTextMessage: "", checkoutError: "",
     setActiveReportId: noop, setFullTextMessage: noop, pdfInputRef: { current: null }, pendingFullTextAction: null, uploadReportPdf: noop,
     updateFullTextReport: noop, formatDecision: String, formatConflictResolutionHint: String, decisionTone: () => "info", fullTextReason: "",
     setFullTextReason: noop, exclusionReasons: [], studies: data.screeningStudies, reviewedCount: 0, onOpenReviewed: noop, onOpenPdfUpload: noop };

@@ -19,6 +19,7 @@ type RegisteredUsersSectionProps = {
   users: AppUser[];
   currentUser: AppUser;
   adminDirectoryMessage: string;
+  createUserMessage: string;
   adminResetUserPassword: (user: AppUser) => void;
   adminDeleteUser: (user: AppUser) => void;
   createUserForm: AdminCreateUserForm;
@@ -37,6 +38,7 @@ export function RegisteredUsersSection({
   users,
   currentUser,
   adminDirectoryMessage,
+  createUserMessage,
   adminResetUserPassword,
   adminDeleteUser,
   createUserForm,
@@ -49,6 +51,7 @@ export function RegisteredUsersSection({
   pendingUserAction
 }: RegisteredUsersSectionProps) {
   const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
+  const createUserMessageIsSuccess = /^(Created account|User account created)/i.test(createUserMessage);
   const userPageCount = Math.max(1, Math.ceil(users.length / adminUsersPageSize));
   const [userPage, setUserPage] = useState(1);
   const currentUserPage = Math.min(userPage, userPageCount);
@@ -166,6 +169,15 @@ export function RegisteredUsersSection({
                 </>
               )}
             </button>
+            {createUserMessage ? (
+              <div
+                className={createUserMessageIsSuccess ? "validationItem ok adminDirectoryFeedback" : "validationItem blocked adminDirectoryFeedback"}
+                role="status"
+              >
+                {createUserMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
+                <span>{createUserMessage}</span>
+              </div>
+            ) : null}
           </form>
         </div>
 

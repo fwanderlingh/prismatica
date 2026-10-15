@@ -672,6 +672,7 @@ export function PrismaReviewApp() {
   const [accountMessageTarget, setAccountMessageTarget] = useState<ProfileSaveAction>("account");
   const [pendingAccountAction, setPendingAccountAction] = useState<ProfileSaveAction | null>(null);
   const [adminDirectoryMessage, setAdminDirectoryMessage] = useState("");
+  const [adminCreateUserMessage, setAdminCreateUserMessage] = useState("");
   const [isCreatingAdminUser, setIsCreatingAdminUser] = useState(false);
   const [pendingAdminUserAction, setPendingAdminUserAction] = useState<{ userId: string; action: "reset" | "delete" } | null>(null);
   const [isUpdatingRegistrationSetting, setIsUpdatingRegistrationSetting] = useState(false);
@@ -2958,7 +2959,7 @@ export function PrismaReviewApp() {
 
   async function adminCreateUser(event: FormSubmitEvent) {
     event.preventDefault();
-    setAdminDirectoryMessage("");
+    setAdminCreateUserMessage("");
 
     try {
       setIsCreatingAdminUser(true);
@@ -2972,9 +2973,9 @@ export function PrismaReviewApp() {
         name: "",
         email: ""
       }));
-      setAdminDirectoryMessage(payload.message ?? "User account created.");
+      setAdminCreateUserMessage(payload.message ?? "User account created.");
     } catch (error) {
-      setAdminDirectoryMessage(getErrorMessage(error));
+      setAdminCreateUserMessage(getErrorMessage(error));
     } finally {
       setIsCreatingAdminUser(false);
     }
@@ -3601,10 +3602,9 @@ export function PrismaReviewApp() {
     return (
       <FullTextSection
         hasProjectSeedData={hasProjectSeedData}
-        phaseProgress={getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber)}
+        phaseProgress={getProjectPhaseProgress({ ...selectedProject, stage: "full_text" }, activeCounts, projectReportQueue, formatNumber)}
         projectReportQueue={activeFullTextReports}
         totalFullTextReportCount={projectReportQueue.length}
-        uploadedPdfCount={projectReportQueue.filter((report) => report.fileName).length}
         activeReport={activeReport}
         decisions={decisions}
         selectedProject={selectedProject}
@@ -3899,6 +3899,7 @@ export function PrismaReviewApp() {
         users={users}
         currentUser={currentUser}
         adminDirectoryMessage={adminDirectoryMessage}
+        createUserMessage={adminCreateUserMessage}
         adminResetUserPassword={adminResetUserPassword}
         adminDeleteUser={adminDeleteUser}
         createUserForm={adminCreateUserForm}
