@@ -1,6 +1,6 @@
 import { ViewLink } from "@/components/navigation-link";
 import type { LucideIcon } from "lucide-react";
-import { PanelRight } from "lucide-react";
+import { Info, PanelRight } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
 import { Badge } from "@/components/prisma-review-ui";
 
@@ -180,7 +180,7 @@ export function AppSidebar({
           globalNavItems
             .filter((item) => !["profile", "about"].includes(item.key))
             .filter((item) => item.key !== "dashboard" || !currentUser.isAdmin)
-            .filter((item) => !["adminReviews", "registeredUsers", "systemSettings"].includes(item.key) || currentUser.isAdmin)
+            .filter((item) => !["adminReviews", "registeredUsers", "systemSettings", "storageInfo"].includes(item.key) || currentUser.isAdmin)
             .map(({ key, label, path, Icon }) => {
               const navClassName = ["navItem", activeView === key ? "active" : ""].filter(Boolean).join(" ");
               return (
@@ -201,6 +201,20 @@ export function AppSidebar({
             })
         )}
       </nav>
+      <div className="sidebarFooterNav">
+        <ViewLink
+          className={["navItem", activeView === "about" ? "active" : ""].filter(Boolean).join(" ")}
+          data-tooltip="About Prismatica"
+          aria-current={activeView === "about" ? "page" : undefined}
+          view="about"
+          aria-label="About Prismatica"
+          onNavigate={() => onNavigate("about")}
+          title="/about"
+        >
+          <Info size={18} />
+          <span className="navLabel">About Prismatica</span>
+        </ViewLink>
+      </div>
     </aside>
   );
 }

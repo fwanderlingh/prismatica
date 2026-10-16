@@ -33,6 +33,7 @@ import {
   FolderPlus,
   GitMerge,
   History,
+  HardDrive,
   Home,
   Info,
   Import,
@@ -132,6 +133,7 @@ import { AboutSection } from "./review-sections/about-section";
 import { AdminReviewsSection } from "./review-sections/admin-reviews-section";
 import { RegisteredUsersSection } from "./review-sections/registered-users-section";
 import { SystemSettingsSection } from "./review-sections/system-settings-section";
+import { StorageInfoSection } from "./review-sections/storage-info-section";
 import { ImportEditorSection } from "./review-sections/import-editor-section";
 import { ImportsSection } from "./review-sections/imports-section";
 import { DedupSection } from "./review-sections/dedup-section";
@@ -197,6 +199,7 @@ const globalNavItems: NavItem[] = [
   { key: "adminReviews", label: "Review Admin", path: "/admin/reviews", Icon: LayoutDashboard },
   { key: "registeredUsers", label: "Registered Users", path: "/admin/users", Icon: Users },
   { key: "systemSettings", label: "System Settings", path: "/admin/settings", Icon: Settings },
+  { key: "storageInfo", label: "Storage Info", path: "/admin/storage", Icon: HardDrive },
   { key: "profile", label: "Profile", path: "/profile" },
   { key: "about", label: "About", path: "/about", Icon: Info }
 ];
@@ -215,7 +218,7 @@ const projectNavItems: NavItem[] = [
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
 
-const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "systemSettings", "profile"];
+const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "systemSettings", "storageInfo", "profile"];
 const reviewPhaseNavKeys = new Set<ViewKey>([
   "imports",
   "dedup",
@@ -250,6 +253,7 @@ const viewKeySet = new Set<ViewKey>([
   "adminReviews",
   "registeredUsers",
   "systemSettings",
+  "storageInfo",
   "profile"
 ]);
 
@@ -299,6 +303,9 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
   }
   if (normalizedPath === "/admin/settings") {
     return { view: "systemSettings", isKnownRoute: true };
+  }
+  if (normalizedPath === "/admin/storage") {
+    return { view: "storageInfo", isKnownRoute: true };
   }
   if (normalizedPath === "/profile") {
     return { view: "profile", isKnownRoute: true };
@@ -674,7 +681,7 @@ export function PrismaReviewApp() {
   const [adminDirectoryMessage, setAdminDirectoryMessage] = useState("");
   const [adminCreateUserMessage, setAdminCreateUserMessage] = useState("");
   const [isCreatingAdminUser, setIsCreatingAdminUser] = useState(false);
-  const [pendingAdminUserAction, setPendingAdminUserAction] = useState<{ userId: string; action: "reset" | "delete" } | null>(null);
+  const [pendingAdminUserAction, setPendingAdminUserAction] = useState<{ userId: string; action: "reset" | "delete" | "role" } | null>(null);
   const [isUpdatingRegistrationSetting, setIsUpdatingRegistrationSetting] = useState(false);
   const [isUpdatingReviewSettings, setIsUpdatingReviewSettings] = useState(false);
   const [adminCreateUserForm, setAdminCreateUserForm] = useState({
@@ -2957,6 +2964,26 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function adminChangeUserRole(user: AppUser) {
+    if (pendingAdminUserAction) return;
+    const action = user.isAdmin ? "Revoke" : "Grant";
+    if (!window.confirm(`${action} administrator access for "${user.name}" (${user.email})? ${user.isAdmin ? "They will lose access to administration and reviews they do not belong to." : "They will be able to manage all reviews, users, and system settings."} They will need to sign in again.`)) return;
+    setAdminDirectoryMessage("");
+    setPendingAdminUserAction({ userId: user.id, action: "role" });
+    try {
+      const payload = await apiRequest<AppMutationPayload>(`/api/admin/users/${encodeURIComponent(user.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isAdmin: !user.isAdmin })
+      });
+      applyAppState(payload);
+      setAdminDirectoryMessage(payload.message ?? "Administrator access updated.");
+    } catch (error) {
+      setAdminDirectoryMessage(getErrorMessage(error));
+    } finally {
+      setPendingAdminUserAction(previous => previous?.userId === user.id ? null : previous);
+    }
+  }
+
   async function adminCreateUser(event: FormSubmitEvent) {
     event.preventDefault();
     setAdminCreateUserMessage("");
@@ -3385,6 +3412,8 @@ export function PrismaReviewApp() {
         return currentUser.isAdmin ? renderRegisteredUsers() : renderProfile();
       case "systemSettings":
         return currentUser.isAdmin ? renderSystemSettings() : renderProfile();
+      case "storageInfo":
+        return currentUser.isAdmin ? <StorageInfoSection openProject={openProject} /> : renderProfile();
       case "profile":
         return renderProfile();
       default:
@@ -3902,6 +3931,7 @@ export function PrismaReviewApp() {
         createUserMessage={adminCreateUserMessage}
         adminResetUserPassword={adminResetUserPassword}
         adminDeleteUser={adminDeleteUser}
+        adminChangeUserRole={adminChangeUserRole}
         createUserForm={adminCreateUserForm}
         onCreateUserFormNameChange={(value) => setAdminCreateUserForm((previous) => ({ ...previous, name: value }))}
         onCreateUserFormEmailChange={(value) => setAdminCreateUserForm((previous) => ({ ...previous, email: value }))}

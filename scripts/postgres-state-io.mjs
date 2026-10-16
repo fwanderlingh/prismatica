@@ -1187,10 +1187,43 @@ async function writeDedupDecisions(client, mutation) {
   }
 }
 
+async function writeUserRoleMutation(client, mutation) {
+  await client.query("BEGIN");
+  try {
+    // Serialize role changes and validate fresh roles, including the acting administrator.
+    await client.query("LOCK TABLE app_users IN SHARE ROW EXCLUSIVE MODE");
+    const { rows: users } = await client.query("SELECT id, is_admin FROM app_users");
+    const actor = users.find(user => user.id === mutation.adminUserId);
+    const target = users.find(user => user.id === mutation.targetUserId);
+    let error;
+    if (!actor) error = { error: "Your session is no longer valid. Sign in again.", status: 401 };
+    else if (!actor.is_admin) error = { error: "Administrator access is required.", status: 403 };
+    else if (typeof mutation.isAdmin !== "boolean") error = { error: "Administrator access must be true or false.", status: 400 };
+    else if (!target) error = { error: "Account not found.", status: 404 };
+    else if (!mutation.isAdmin && target.is_admin && users.filter(user => user.is_admin).length <= 1) error = { error: "The last administrator cannot be removed.", status: 400 };
+    else if (!mutation.isAdmin && target.id === actor.id) error = { error: "Ask another administrator to revoke your administrator access.", status: 400 };
+    if (error) {
+      await client.query("ROLLBACK");
+      return error;
+    }
+    const changed = target.is_admin !== mutation.isAdmin;
+    if (changed) {
+      await client.query(`UPDATE app_users SET is_admin = $1,
+        email_auth = COALESCE(email_auth, '{}'::jsonb) || jsonb_build_object('sessionVersion', $2::text),
+        updated_at = NOW() WHERE id = $3`, [mutation.isAdmin, mutation.sessionVersion, target.id]);
+    }
+    await client.query("COMMIT");
+    return { changed };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
 async function run() {
   const action = process.argv[2];
-  if (action !== "read" && action !== "read-auth-config" && action !== "write" && action !== "write-import-study" && action !== "write-dedup-decisions") {
-    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|write|write-import-study|write-dedup-decisions>");
+  if (action !== "read" && action !== "read-auth-config" && action !== "write" && action !== "write-import-study" && action !== "write-dedup-decisions" && action !== "write-user-role") {
+    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|write|write-import-study|write-dedup-decisions|write-user-role>");
   }
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -1238,6 +1271,10 @@ async function run() {
     }
 
     const parsed = JSON.parse(raw);
+    if (action === "write-user-role") {
+      process.stdout.write(JSON.stringify(await writeUserRoleMutation(client, parsed)));
+      return;
+    }
     if (action === "write-import-study") {
       await writeImportStudyMutation(client, parsed);
       return;

@@ -186,6 +186,18 @@ A separate administrator account is seeded on startup by default:
 
 For non-local environments, set `PRISMATICA_ADMIN_PASSWORD` explicitly.
 
+Administrators can search **Registered Users → User Accounts** by name, email,
+organization, title, or account role. Search filters the full directory before
+pagination. Use **Grant admin** or **Revoke admin** on another account to change
+administrator access. Administrators can manage all reviews, users, and system
+settings; the confirmation explains this access before applying the change.
+Role changes require the affected user to sign in again. Self-revocation and
+removal of the last administrator are blocked. The original seeded account can
+be demoted by another administrator, and account IDs and review ownership are
+preserved. New accounts are still created as reviewers.
+
+Run `npm run check:admin-users` for isolated search and role-management checks.
+
 ## Server Storage and Sessions
 
 For production, set a stable session secret and move data outside the repo:
@@ -470,6 +482,28 @@ sudo systemctl reload caddy
 - Restrict filesystem permissions on data and PDF storage
 - Open only required firewall ports (`443`; optionally `80` for ACME HTTP challenge)
 - Keep Caddy internal CA materials restricted to trusted admins (if using internal CA mode)
+
+### Storage information
+
+Administrators can open **Storage Info** (`/admin/storage`) to see total PDF file
+sizes, disk capacity, used/available disk space, and usage per review. Refresh
+collects a new snapshot without downloading PDFs. The admin-only endpoint is
+`GET /api/admin/storage`.
+
+The inventory counts files in the local `pdfs/` tree and, with MinIO enabled,
+current objects under `reports/` in the configured bucket. The MinIO credentials
+need `s3:ListBucket` permission for this prefix. Local migration copies count
+separately because both copies occupy storage. Unmatched folders, including
+deleted reviews, appear as **Deleted or unassigned reviews**. Empty reviews are
+listed with zero usage. Sizes exclude filesystem overhead, replication, and
+noncurrent S3 object versions; they can differ from physical disk allocation.
+
+Disk figures describe the filesystem containing the local PDF folder (or its
+nearest existing parent before the first upload). With MinIO, this is explicitly
+labelled **Application disk capacity**: the S3 API does not expose remote disk
+capacity. Unavailable measurements are shown as unavailable, rather than zero.
+
+Run `npm run check:storage` for isolated filesystem and mocked MinIO checks.
 
 ### Audit history retention
 

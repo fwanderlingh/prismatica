@@ -8,6 +8,7 @@ import path from "path";
 import { normalizeAuditHistoryLimit } from "./auditHistory";
 import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
+import { collectStorageInfo } from "./storageInfo";
 import { randomizeReviewQueueItems } from "./workflowSelectors";
 import { formatAuthorList } from "./reviewDisplay";
 import {
@@ -177,7 +178,7 @@ function postgresStateIoScriptPath() {
 }
 
 function runPostgresStateIo(
-  action: "read" | "read-auth-config" | "write" | "write-import-study" | "write-dedup-decisions",
+  action: "read" | "read-auth-config" | "write" | "write-import-study" | "write-dedup-decisions" | "write-user-role",
   payload?: unknown
 ) {
   const output = execFileSync(process.execPath, [postgresStateIoScriptPath(), action], {
@@ -1364,6 +1365,12 @@ export function getEmailStatusForAdmin(userId: string) {
   return { enabled: state.authSettings.transactionalEmailEnabled, ...getEmailConfigurationStatus() };
 }
 
+export async function getStorageInfoForAdmin(userId: string) {
+  const state = readState();
+  requireAdminUser(state, userId);
+  return collectStorageInfo(state.projects, dataFilePath());
+}
+
 export async function requestAccountEmail(email: string, purpose: AccountEmailPurpose) {
   const state = readState();
   if (!state.authSettings.transactionalEmailEnabled) throw new ApiError("Email recovery and confirmation are currently disabled. Contact an administrator.", 403);
@@ -1645,6 +1652,43 @@ export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: s
   return {
     ...buildPayload(state, adminUser.id),
     message: `Deleted account ${targetUser.name}.`
+  };
+}
+
+export function adminSetUserRoleForUser(adminUserIdInput: string, targetUserId: string, isAdmin: unknown): AppMutationPayload {
+  const state = readState();
+  const adminUser = requireAdminUser(state, adminUserIdInput);
+  if (typeof isAdmin !== "boolean") throw new ApiError("Administrator access must be true or false.");
+  const targetUser = getUser(state, targetUserId);
+  if (!targetUser) throw new ApiError("Account not found.", 404);
+  if (!isAdmin && targetUser.isAdmin && state.users.filter(user => user.isAdmin).length <= 1) {
+    throw new ApiError("The last administrator cannot be removed.", 400);
+  }
+  if (!isAdmin && targetUserId === adminUser.id) {
+    throw new ApiError("Ask another administrator to revoke your administrator access.", 400);
+  }
+
+  const sessionVersion = crypto.randomUUID();
+  let changed = targetUser.isAdmin !== isAdmin;
+  if (usePostgresStateStore()) {
+    // Recheck authorization and the remaining administrators inside the database lock.
+    const result = JSON.parse(runPostgresStateIo("write-user-role", {
+      adminUserId: adminUser.id, targetUserId, isAdmin, sessionVersion
+    })) as { changed?: boolean; error?: string; status?: number };
+    if (result.error) throw new ApiError(result.error, result.status ?? 400);
+    changed = Boolean(result.changed);
+  } else if (changed) {
+    targetUser.isAdmin = isAdmin;
+    targetUser.emailAuth = { ...targetUser.emailAuth, sessionVersion };
+    targetUser.updatedAt = new Date().toISOString();
+    writeState(state);
+  }
+
+  return {
+    ...buildPayload(usePostgresStateStore() ? readState() : state, adminUser.id),
+    message: changed
+      ? `${isAdmin ? "Granted" : "Revoked"} administrator access for ${targetUser.name}. They must sign in again.`
+      : `Administrator access unchanged for ${targetUser.name}.`
   };
 }
 
@@ -4717,13 +4761,12 @@ function requireAdminUser(state: PersistedState, userId: string) {
 function ensureAdminUser(users: StoredUser[], now: string) {
   const adminEmail = (process.env.PRISMATICA_ADMIN_EMAIL ?? "admin@prismatica.local").trim().toLowerCase();
   const adminPassword = process.env.PRISMATICA_ADMIN_PASSWORD ?? "change-me-admin";
-  const existingAdmin = users.find((user) => user.id === adminUserId || user.isAdmin);
+  const existingAdmin = users.find((user) => user.isAdmin);
   if (existingAdmin) {
     return users.map((user) =>
       user.id === existingAdmin.id
         ? {
             ...user,
-            id: adminUserId,
             isAdmin: true,
             email: user.email || adminEmail,
             name: user.name || "Prismatica Admin",
@@ -4737,6 +4780,12 @@ function ensureAdminUser(users: StoredUser[], now: string) {
           }
         : user
     );
+  }
+
+  // Bootstrap recovery must not duplicate an existing account or change its ID.
+  const bootstrapUser = users.find(user => user.id === adminUserId);
+  if (bootstrapUser) {
+    return users.map(user => user.id === bootstrapUser.id ? { ...user, isAdmin: true, updatedAt: now } : user);
   }
 
   return [

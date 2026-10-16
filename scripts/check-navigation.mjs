@@ -50,11 +50,13 @@ try {
   assert.match(sidebarHtml, /<span(?=[^>]*aria-label="Extraction")(?=[^>]*role="link")(?=[^>]*aria-disabled="true")(?=[^>]*tabindex="-1")[^>]*>/);
   assert.match(sidebarHtml, /href="\/dashboard"/);
   assert.equal(buildPathForState("systemSettings", project.id), "/admin/settings");
+  assert.equal(buildPathForState("storageInfo", project.id), "/admin/storage");
   const adminNavItems = [
     { key: "dashboard", label: "All Reviews", path: "/dashboard" },
     { key: "adminReviews", label: "Review Admin", path: "/admin/reviews" },
     { key: "registeredUsers", label: "Registered Users", path: "/admin/users" },
-    { key: "systemSettings", label: "System Settings", path: "/admin/settings" }
+    { key: "systemSettings", label: "System Settings", path: "/admin/settings" },
+    { key: "storageInfo", label: "Storage Info", path: "/admin/storage" }
   ];
   const adminSidebar = html(loadSection("app-sidebar").AppSidebar, {
     ...sidebarProps, currentUser: { ...user, isAdmin: true }, isProjectView: false,
@@ -62,6 +64,7 @@ try {
   });
   assert.doesNotMatch(adminSidebar, /href="\/dashboard"|All Reviews/);
   assert.match(adminSidebar, /href="\/admin\/reviews"/);
+  assert.match(adminSidebar, /href="\/admin\/storage"/);
   assert.match(adminSidebar, /<a(?=[^>]*aria-current="page")(?=[^>]*href="\/admin\/settings")[^>]*>/);
   const reviewerSidebar = html(loadSection("app-sidebar").AppSidebar, {
     ...sidebarProps, isProjectView: false, activeView: "dashboard", globalNavItems: adminNavItems

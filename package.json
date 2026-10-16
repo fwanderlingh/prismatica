@@ -16,6 +16,8 @@
     "check:audit": "node scripts/check-audit-history.mjs",
     "check:retrieval": "node scripts/check-retrieval.mjs",
     "check:presence": "node scripts/check-presence.mjs",
+    "check:storage": "node scripts/check-storage.mjs",
+    "check:admin-users": "node scripts/check-admin-users.mjs",
     "check:email": "node scripts/check-transactional-email.mjs",
     "check:api-auth": "node scripts/check-api-route-auth.mjs",
     "backfill:pdfs:minio": "node scripts/backfill-pdfs-to-minio.mjs",

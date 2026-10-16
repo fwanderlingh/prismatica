@@ -522,6 +522,12 @@ h3 {
   gap: calc(6px * var(--ui-scale));
 }
 
+.sidebarFooterNav {
+  margin-top: auto;
+  padding-top: calc(10px * var(--ui-scale));
+  border-top: calc(1px * var(--ui-scale)) solid color-mix(in srgb, var(--border) 85%, transparent);
+}
+
 .navSection {
   display: grid;
   gap: calc(4px * var(--ui-scale));
@@ -3906,6 +3912,16 @@ textarea.exclusionReasonsMissing {
   width: 100%;
   min-width: 0;
   white-space: nowrap;
+}
+
+.adminManagedUserSwitch .userSwitchActions .adminRoleButton {
+  grid-column: 1 / -1;
+}
+
+.adminUserSearch {
+  display: grid;
+  gap: calc(6px * var(--ui-scale));
+  margin: calc(12px * var(--ui-scale)) 0;
 }
 
 .userSwitchActions {

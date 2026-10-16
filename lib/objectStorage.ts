@@ -1,5 +1,5 @@
 import { Readable } from "stream";
-import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 export type ObjectStorageProvider = "local" | "minio";
 
@@ -17,6 +17,7 @@ export type ObjectStorage = {
   getObject(key: string): Promise<Uint8Array | null>;
   hasObject(key: string): Promise<boolean>;
   deleteObject(key: string): Promise<void>;
+  listObjects(prefix: string): AsyncIterable<{ key: string; size: number }>;
 };
 
 type MinioConfig = {
@@ -154,6 +155,25 @@ class MinioObjectStorage implements ObjectStorage {
   async deleteObject(key: string) {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
+
+  async *listObjects(prefix: string) {
+    let continuationToken: string | undefined;
+    do {
+      const page = await this.client.send(new ListObjectsV2Command({
+        Bucket: this.bucket, Prefix: prefix, ContinuationToken: continuationToken
+      }), { abortSignal: AbortSignal.timeout(30_000) });
+      for (const object of page.Contents ?? []) {
+        if (object.Key && !object.Key.endsWith("/") && typeof object.Size === "number") {
+          yield { key: object.Key, size: object.Size };
+        }
+      }
+      if (!page.IsTruncated) break;
+      if (!page.NextContinuationToken || page.NextContinuationToken === continuationToken) {
+        throw new Error("Object storage returned an incomplete listing.");
+      }
+      continuationToken = page.NextContinuationToken;
+    } while (true);
+  }
 }
 
 export function createObjectStorageFromEnv(): ObjectStorage {
@@ -175,6 +195,9 @@ export function createObjectStorageFromEnv(): ObjectStorage {
     },
     async deleteObject() {
       throw new Error("Local object storage adapter is not implemented. Use filesystem PDF storage.");
+    },
+    async *listObjects() {
+      throw new Error("Local object storage listing uses the PDF filesystem.");
     }
   };
 }

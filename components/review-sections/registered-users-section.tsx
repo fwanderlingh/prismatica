@@ -22,6 +22,7 @@ type RegisteredUsersSectionProps = {
   createUserMessage: string;
   adminResetUserPassword: (user: AppUser) => void;
   adminDeleteUser: (user: AppUser) => void;
+  adminChangeUserRole: (user: AppUser) => void;
   createUserForm: AdminCreateUserForm;
   onCreateUserFormNameChange: (value: string) => void;
   onCreateUserFormEmailChange: (value: string) => void;
@@ -29,7 +30,7 @@ type RegisteredUsersSectionProps = {
   onCreateUserFormTitleChange: (value: string) => void;
   onCreateUser: (event: FormSubmitEvent) => void;
   isCreatingUser: boolean;
-  pendingUserAction: { userId: string; action: "reset" | "delete" } | null;
+  pendingUserAction: { userId: string; action: "reset" | "delete" | "role" } | null;
 };
 
 const adminUsersPageSize = 10;
@@ -41,6 +42,7 @@ export function RegisteredUsersSection({
   createUserMessage,
   adminResetUserPassword,
   adminDeleteUser,
+  adminChangeUserRole,
   createUserForm,
   onCreateUserFormNameChange,
   onCreateUserFormEmailChange,
@@ -50,15 +52,23 @@ export function RegisteredUsersSection({
   isCreatingUser,
   pendingUserAction
 }: RegisteredUsersSectionProps) {
-  const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created)/i.test(adminDirectoryMessage);
+  const adminDirectoryMessageIsSuccess = /^(Temporary password|Deleted account|Created account|User account created|Granted administrator|Revoked administrator|Administrator access unchanged)/i.test(adminDirectoryMessage);
   const createUserMessageIsSuccess = /^(Created account|User account created)/i.test(createUserMessage);
-  const userPageCount = Math.max(1, Math.ceil(users.length / adminUsersPageSize));
+  const [userSearch, setUserSearch] = useState("");
+  const filteredUsers = useMemo(() => {
+    const terms = userSearch.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return users.filter(user => {
+      const text = [user.name, user.email, user.organization, user.title, user.isAdmin ? "administrator" : "reviewer"].join(" ").toLocaleLowerCase();
+      return terms.every(term => text.includes(term));
+    });
+  }, [users, userSearch]);
+  const userPageCount = Math.max(1, Math.ceil(filteredUsers.length / adminUsersPageSize));
   const [userPage, setUserPage] = useState(1);
   const currentUserPage = Math.min(userPage, userPageCount);
   const userPageStart = (currentUserPage - 1) * adminUsersPageSize;
-  const pagedUsers = useMemo(() => users.slice(userPageStart, userPageStart + adminUsersPageSize), [userPageStart, users]);
-  const firstUserNumber = users.length === 0 ? 0 : userPageStart + 1;
-  const lastUserNumber = Math.min(userPageStart + pagedUsers.length, users.length);
+  const pagedUsers = useMemo(() => filteredUsers.slice(userPageStart, userPageStart + adminUsersPageSize), [userPageStart, filteredUsers]);
+  const firstUserNumber = filteredUsers.length === 0 ? 0 : userPageStart + 1;
+  const lastUserNumber = Math.min(userPageStart + pagedUsers.length, filteredUsers.length);
 
   return (
     <div className="viewStack">
@@ -66,7 +76,7 @@ export function RegisteredUsersSection({
         <div>
           <p className="eyebrow">Administration</p>
           <h1>Registered Users</h1>
-          <p className="subtle">Monitor connected users, create reviewer accounts, reset access, and remove spam accounts.</p>
+          <p className="subtle">Monitor connected users, manage administrator access, create accounts, and reset access.</p>
         </div>
       </section>
 
@@ -75,10 +85,25 @@ export function RegisteredUsersSection({
       <section className="settingsGrid">
         <div className="panel">
           <SectionTitle icon={Users} title="User Accounts" action={`${users.length} registered`} />
+          <label className="adminUserSearch">
+            <span>Search user accounts</span>
+            <input
+              type="search"
+              value={userSearch}
+              placeholder="Name, email, organization, or role"
+              aria-describedby="adminUserSearchResults"
+              onChange={(event) => { setUserSearch(event.target.value); setUserPage(1); }}
+            />
+          </label>
+          <p id="adminUserSearchResults" className="subtle" role="status">
+            {filteredUsers.length === 0 ? "No matching accounts." : `Showing ${firstUserNumber}–${lastUserNumber} of ${filteredUsers.length}${userSearch.trim() ? " matching" : ""} accounts.`}
+          </p>
+          <p className="subtle">Administrator access can be changed by another administrator. Your own access cannot be revoked here.</p>
           <div className="memberPicker">
             {pagedUsers.map((user) => {
               const isResettingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "reset";
               const isDeletingUser = pendingUserAction?.userId === user.id && pendingUserAction.action === "delete";
+              const isChangingRole = pendingUserAction?.userId === user.id && pendingUserAction.action === "role";
               const disableUserActions = user.id === currentUser.id || user.isAdmin || pendingUserAction !== null;
 
               return (
@@ -94,6 +119,16 @@ export function RegisteredUsersSection({
                     </small>
                   </div>
                   <div className="userSwitchActions">
+                    <button
+                      className="ghostButton adminRoleButton"
+                      type="button"
+                      disabled={user.id === currentUser.id || pendingUserAction !== null}
+                      aria-label={`${user.isAdmin ? "Revoke" : "Grant"} administrator access for ${user.name}`}
+                      onClick={() => adminChangeUserRole(user)}
+                    >
+                      {isChangingRole ? <span className="inlineSpinner" aria-hidden="true" /> : null}
+                      {isChangingRole ? "Saving access..." : user.isAdmin ? "Revoke admin" : "Grant admin"}
+                    </button>
                     <button
                       className="ghostButton"
                       type="button"
@@ -122,14 +157,14 @@ export function RegisteredUsersSection({
               <button className="ghostButton" type="button" disabled={currentUserPage <= 1} onClick={() => setUserPage(Math.max(currentUserPage - 1, 1))}>
                 Previous
               </button>
-              <span>{`Showing ${firstUserNumber}-${lastUserNumber} of ${users.length}`}</span>
+              <span>{`Page ${currentUserPage} of ${userPageCount}`}</span>
               <button className="ghostButton" type="button" disabled={currentUserPage >= userPageCount} onClick={() => setUserPage(Math.min(currentUserPage + 1, userPageCount))}>
                 Next
               </button>
             </div>
           ) : null}
           {adminDirectoryMessage ? (
-            <div className={adminDirectoryMessageIsSuccess ? "validationItem ok adminDirectoryFeedback" : "validationItem blocked adminDirectoryFeedback"}>
+            <div role="status" className={adminDirectoryMessageIsSuccess ? "validationItem ok adminDirectoryFeedback" : "validationItem blocked adminDirectoryFeedback"}>
               {adminDirectoryMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
               <span>{adminDirectoryMessage}</span>
             </div>
