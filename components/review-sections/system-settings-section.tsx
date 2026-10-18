@@ -67,27 +67,6 @@ export function SystemSettingsSection({
 
       <section className="settingsGrid">
         <div className="panel">
-          <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
-          <p className="subtle">Control whether new users can self-register.</p>
-          <label className="toggleRow">
-            <input
-              type="checkbox"
-              checked={authSettings.registrationEnabled}
-              disabled={isUpdatingRegistrationSetting}
-              onChange={(event) => updateRegistrationSetting(event.target.checked)}
-            />
-            <span />
-            <strong>{isUpdatingRegistrationSetting ? "Saving registration policy..." : "Allow public registration"}</strong>
-          </label>
-          <div className="stateRows">
-            <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
-            <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
-          </div>
-        </div>
-
-        <TransactionalEmailSettings enabled={authSettings.transactionalEmailEnabled} pending={isUpdatingRegistrationSetting} onChange={updateTransactionalEmailSetting} />
-
-        <div className="panel">
           <SectionTitle icon={Clock} title="Review Settings" action="Global" />
           <p className="subtle">Set review checkout windows, the maximum PDF upload size, and audit history retention.</p>
           <form className="inviteForm" onSubmit={updateReviewSettings}>
@@ -164,6 +143,27 @@ export function SystemSettingsSection({
               <span>{reviewSettingsMessage}</span>
             </div>
           ) : null}
+        </div>
+
+        <TransactionalEmailSettings enabled={authSettings.transactionalEmailEnabled} pending={isUpdatingRegistrationSetting} onChange={updateTransactionalEmailSetting} />
+
+        <div className="panel">
+          <SectionTitle icon={ShieldCheck} title="Registration Security" action={authSettings.registrationEnabled ? "Open" : "Sign-in only"} />
+          <p className="subtle">Control whether new users can self-register.</p>
+          <label className="toggleRow">
+            <input
+              type="checkbox"
+              checked={authSettings.registrationEnabled}
+              disabled={isUpdatingRegistrationSetting}
+              onChange={(event) => updateRegistrationSetting(event.target.checked)}
+            />
+            <span />
+            <strong>{isUpdatingRegistrationSetting ? "Saving registration policy..." : "Allow public registration"}</strong>
+          </label>
+          <div className="stateRows">
+            <StatusRow label="Registration screen" value={authSettings.registrationEnabled ? "Enabled" : "Disabled"} tone={authSettings.registrationEnabled ? "warning" : "secure"} />
+            <StatusRow label="Captcha" value="Required for new accounts" tone="secure" />
+          </div>
         </div>
       </section>
     </div>

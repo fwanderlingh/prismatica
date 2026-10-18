@@ -1373,6 +1373,10 @@ a.primaryButton[target="_blank"]:focus-visible {
   gap: calc(12px * var(--ui-scale));
 }
 
+.storageMetricGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .metricCard {
   min-height: calc(134px * var(--ui-scale));
   padding: calc(16px * var(--ui-scale));

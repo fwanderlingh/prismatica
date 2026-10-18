@@ -57,11 +57,14 @@ export function StorageInfoSection({ openProject }: { openProject: (projectId: s
           : snapshot ? `Last checked: ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(snapshot.checkedAt))}.` : ""}
       </p>
       {snapshot ? <>
-        <section className="metricGrid" aria-label="Storage totals">
+        <section className="metricGrid storageMetricGrid" aria-label="Storage totals">
           <div className="metricCard blue"><span>Total PDF storage</span><strong title={`${snapshot.total.bytes} bytes`}>{formatBytes(snapshot.total.bytes)}</strong><p>{snapshot.total.files.toLocaleString()} stored files{remote ? ", including local copies" : ""}</p></div>
-          <div className="metricCard teal"><span>{remote ? "Application disk capacity" : "Total disk capacity"}</span><strong>{disk ? formatBytes(disk.totalBytes) : "Unavailable"}</strong><p>{remote ? "Application data filesystem" : "Filesystem containing the PDF folder"}</p></div>
-          <div className="metricCard amber"><span>Disk used</span><strong>{disk ? formatBytes(disk.usedBytes) : "Unavailable"}</strong><p>All files on this filesystem</p></div>
           <div className="metricCard green"><span>Disk available</span><strong>{disk ? formatBytes(disk.availableBytes) : "Unavailable"}</strong><p>Space available to the application</p></div>
+          <div className="metricCard amber">
+            <span>{remote ? "Application disk used / total" : "Disk used / total"}</span>
+            <strong>{disk ? `${formatBytes(disk.usedBytes)} / ${formatBytes(disk.totalBytes)}` : "Unavailable"}</strong>
+            <p>All files on this filesystem</p>
+          </div>
         </section>
         {remote ? <p className="subtle">MinIO PDFs: {formatBytes(snapshot.total.objectBytes)}. Local PDF copies: {formatBytes(snapshot.total.localBytes)}. Remote storage capacity is unavailable through the object storage API; disk figures describe the application server.</p> : null}
         <section className="panel">

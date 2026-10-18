@@ -508,7 +508,7 @@ Run `npm run check:storage` for isolated filesystem and mocked MinIO checks.
 ### Audit history retention
 
 Administrators can set **System Settings → Review Settings → Audit history limit**.
-The default is **100 events across all reviews**, configurable from 1 to 10,000.
+The default is **100 events per-review**, configurable from 1 to 10,000.
 The newest events are retained; lowering the limit removes older events, and raising
 it cannot recover events already removed. This applies to file and PostgreSQL storage.
 Existing settings without a history limit use 100; PostgreSQL adds the preference
