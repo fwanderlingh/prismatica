@@ -34,7 +34,7 @@ try {
   const { buildPathForState } = require(path.join(temp, "lib/navigation.js"));
   const data = require(path.join(temp, "lib/prismaData.js"));
   const project = data.reviewProjects[0], study = data.screeningStudies[0], report = data.reportQueue[0];
-  const { getSequentialPhaseAccess } = require(path.join(temp, "lib/workflowSelectors.js"));
+  const { getSequentialPhaseAccess, getSequentialProjectStage } = require(path.join(temp, "lib/workflowSelectors.js"));
   const accessInput = {
     project: { ...project, recordsTotal: 2 },
     studies: [
@@ -83,6 +83,15 @@ try {
   assert.equal(getSequentialPhaseAccess(legacyInput).fullText, false);
   legacyInput.decisions[1].isCurrent = true;
   assert.equal(getSequentialPhaseAccess(legacyInput).extraction, true);
+  for (const stage of ["full_text", "extraction", "complete"]) {
+    const staleInput = { ...accessInput, project: { ...accessInput.project, stage, requireSequentialPhases: true } };
+    assert.equal(getSequentialProjectStage(staleInput), "screening", "stale stages direct users to unfinished screening");
+    assert.equal(getSequentialProjectStage({ ...staleInput, project: { ...staleInput.project, requireSequentialPhases: false } }), stage, "parallel reviews retain their furthest phase");
+  }
+  const stageInput = { ...finishedScreening, project: { ...project, stage: "extraction", requireSequentialPhases: true } };
+  assert.equal(getSequentialProjectStage(stageInput), "extraction");
+  assert.equal(getSequentialProjectStage({ ...stageInput, reports: [{ ...report, fullTextStatus: "conflict", retrievalStatus: "retrieved" }] }), "full_text");
+  assert.equal(getSequentialProjectStage({ ...stageInput, useAggregateStatuses: false }), "screening", "stored summaries cannot override actual missing votes on the server");
   const user = { id: project.ownerId, name: "Alex Reviewer", initials: "AR", avatarColor: "#456" };
   const noop = () => {};
   const html = (Component, props) => renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id, homeView: props.currentUser?.isAdmin ? "adminReviews" : "dashboard" }, React.createElement(Component, props)));

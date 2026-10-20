@@ -9,7 +9,7 @@ import { normalizeAuditHistoryLimit } from "./auditHistory";
 import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
 import { collectStorageInfo } from "./storageInfo";
-import { randomizeReviewQueueItems } from "./workflowSelectors";
+import { getSequentialProjectStage, randomizeReviewQueueItems } from "./workflowSelectors";
 import { formatAuthorList } from "./reviewDisplay";
 import {
   type AppUser,
@@ -1065,6 +1065,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
 
   const projects = accessibleProjects(state, userId).map((project) => ({
     ...project,
+    stage: getSequentialStageForProject(state, project),
     conflicts: countProjectWorkflowConflicts(state, project)
   }));
   const projectIds = new Set(projects.map((project) => project.id));
@@ -4263,6 +4264,24 @@ async function storeReportPdfBuffer(
   );
 }
 
+function getSequentialStageForProject(state: PersistedState, project: ReviewProject) {
+  if (!project.requireSequentialPhases || project.stage === "setup" || project.stage === "import" || project.stage === "screening") {
+    return project.stage;
+  }
+  const duplicateIds = getConfirmedDuplicateStudyIds(state, project.id);
+  return getSequentialProjectStage({
+    project,
+    studies: state.studies.filter((study) => study.projectId === project.id && !duplicateIds.has(study.id)),
+    reports: getWorkflowReportsForProject(state, project.id).filter((report) => !duplicateIds.has(report.studyId)),
+    decisions: state.decisions,
+    dedupCandidates: state.dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === project.id),
+    recordsIdentified: project.recordsTotal,
+    studiesIncluded: project.studiesIncluded,
+    // Stored summaries may be stale; derive completion from all current votes.
+    useAggregateStatuses: false
+  });
+}
+
 function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
   const confirmedDuplicateStudyIds = getConfirmedDuplicateStudyIds(state, projectId);
   const reports = getWorkflowReportsForProject(state, projectId).filter((report) => !confirmedDuplicateStudyIds.has(report.studyId));
@@ -4325,7 +4344,7 @@ function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
       });
 
     const conflictCount = countProjectWorkflowConflicts(state, project);
-    return {
+    const updatedProject: ReviewProject = {
       ...project,
       status: project.status === "archived" ? "archived" : reports.length > 0 || screenedStudyIds.size > 0 || project.recordsTotal > 0 ? "active" : "draft",
       stage: extractionReadyForCompletion
@@ -4342,6 +4361,7 @@ function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
       studiesIncluded: includedStudies,
       updatedAt: toEuToday()
     };
+    return { ...updatedProject, stage: getSequentialStageForProject(state, updatedProject) };
   });
 }
 

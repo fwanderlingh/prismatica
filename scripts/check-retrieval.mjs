@@ -128,6 +128,31 @@ try {
   assert.equal(phaseAccess(store.getAppStateForUser(reviewer.id)).extraction, false, 'reopening full text relocks extraction');
   store.reopenTitleAbstractDecisionForUser(admin.id, project.id, study.id);
   assert.equal(phaseAccess(store.getAppStateForUser(reviewer.id)).fullText, false, 'reopening screening relocks full text');
+  reset();
+  const staleState = JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE));
+  staleState.projects[0].recordsTotal = 2;
+  staleState.projects[0].stage = 'full_text';
+  staleState.projects[0].requireSequentialPhases = true;
+  staleState.studies.push({ ...study, id: 'unfinished-study', stage: 'title_abstract' });
+  fs.writeFileSync(process.env.PRISMATICA_DATA_FILE, JSON.stringify(staleState));
+  assert.equal(store.getAppStateForUser(admin.id).projects[0].stage, 'screening', 'resync persists the first unfinished sequential phase');
+  assert.equal(JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE)).projects[0].stage, 'screening');
+  // PostgreSQL reads skip the full resync: old stored stages must still be corrected in API responses.
+  const childProcess = require('node:child_process');
+  const originalExec = childProcess.execFileSync;
+  try {
+    process.env.PRISMATICA_STORAGE_MODE = 'postgres';
+    childProcess.execFileSync = (_file, args) => {
+      assert.equal(args[1], 'read', 'reading a stale stage must not rewrite the database');
+      return JSON.stringify(staleState);
+    };
+    assert.equal(store.getAppStateForUser(admin.id).projects[0].stage, 'screening');
+    staleState.projects[0].requireSequentialPhases = false;
+    assert.equal(store.getAppStateForUser(admin.id).projects[0].stage, 'full_text', 'parallel phase labels remain unchanged');
+  } finally {
+    childProcess.execFileSync = originalExec;
+    process.env.PRISMATICA_STORAGE_MODE = 'file';
+  }
   console.log('Retrieval checks passed: decisions, PDFs, counts, queue completion, and reopening.');
 } finally {
   Module._resolveFilename = originalResolve;

@@ -17,9 +17,7 @@ export type ProjectPhaseProgress = {
   label: string;
 };
 
-export function getSequentialPhaseAccess({
-  project, studies, reports, decisions, dedupCandidates, recordsIdentified, studiesIncluded
-}: {
+type SequentialPhaseInput = {
   project: ReviewProject;
   studies: Study[];
   reports: Report[];
@@ -27,7 +25,12 @@ export function getSequentialPhaseAccess({
   dedupCandidates: DedupCandidate[];
   recordsIdentified: number;
   studiesIncluded: number;
-}) {
+  useAggregateStatuses?: boolean;
+};
+
+export function getSequentialPhaseAccess({
+  project, studies, reports, decisions, dedupCandidates, recordsIdentified, studiesIncluded, useAggregateStatuses = true
+}: SequentialPhaseInput) {
   const importsComplete = recordsIdentified > 0 || project.recordsTotal > 0 || studies.length > 0;
   const dedupComplete = importsComplete && dedupCandidates.every((candidate) => candidate.status !== "pending");
   const currentDecisions = decisions.filter((decision) => decision.projectId === project.id && decision.isCurrent);
@@ -35,7 +38,7 @@ export function getSequentialPhaseAccess({
   const fullTextDecisions = groupByKey(currentDecisions.filter((decision) => decision.stage === "full_text"), (decision) => decision.reportId);
   // Aggregate statuses include all reviewers' votes, including those hidden in blind review.
   const screeningComplete = dedupComplete && studies.length > 0 && studies.every((study) => {
-    const status = study.titleAbstractStatus ?? evaluateStage(
+    const status = (useAggregateStatuses ? study.titleAbstractStatus : undefined) ?? evaluateStage(
       "title_abstract", (abstractDecisions.get(study.id) ?? []).map((decision) => decision.decisionValue),
       study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes, project.maybePolicy
     ).state;
@@ -43,7 +46,7 @@ export function getSequentialPhaseAccess({
   });
   const fullTextComplete = screeningComplete && reports.length > 0 && reports.every((report) => {
     if (report.retrievalStatus === "not_retrieved") return true;
-    const status = report.fullTextStatus ?? evaluateStage(
+    const status = (useAggregateStatuses ? report.fullTextStatus : undefined) ?? evaluateStage(
       "full_text", (fullTextDecisions.get(report.id) ?? []).map((decision) => decision.decisionValue),
       report.fullTextRequiredVotes ?? project.fullTextRequiredVotes, project.maybePolicy
     ).state;
@@ -59,6 +62,17 @@ export function getSequentialPhaseAccess({
     extraction: extractionAvailable,
     consensus: extractionAvailable
   };
+}
+
+export function getSequentialProjectStage(input: SequentialPhaseInput): ReviewProject["stage"] {
+  const { project } = input;
+  if (!project.requireSequentialPhases || project.stage === "setup" || project.stage === "import" || project.stage === "screening") {
+    return project.stage;
+  }
+  const access = getSequentialPhaseAccess(input);
+  if (!access.fullText) return "screening";
+  if ((project.stage === "extraction" || project.stage === "complete") && !access.extraction) return "full_text";
+  return project.stage;
 }
 
 export function getWorkflowReportsForProject(project: ReviewProject, projectStudies: Study[], reports: Report[]) {
