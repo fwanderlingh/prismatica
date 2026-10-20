@@ -34,6 +34,55 @@ try {
   const { buildPathForState } = require(path.join(temp, "lib/navigation.js"));
   const data = require(path.join(temp, "lib/prismaData.js"));
   const project = data.reviewProjects[0], study = data.screeningStudies[0], report = data.reportQueue[0];
+  const { getSequentialPhaseAccess } = require(path.join(temp, "lib/workflowSelectors.js"));
+  const accessInput = {
+    project: { ...project, recordsTotal: 2 },
+    studies: [
+      { ...study, id: "included", titleAbstractStatus: "advance_full_text" },
+      { ...study, id: "pending", titleAbstractStatus: "awaiting_votes" }
+    ],
+    reports: [{ ...report, fullTextStatus: "advance_extraction", retrievalStatus: "retrieved" }],
+    decisions: [], dedupCandidates: [], recordsIdentified: 2, studiesIncluded: 1
+  };
+  // A single advanced record must not unlock later phases, even if the stored stage advances.
+  for (const stage of ["screening", "full_text", "extraction", "complete"]) {
+    const access = getSequentialPhaseAccess({ ...accessInput, project: { ...accessInput.project, stage } });
+    assert.equal(access.screening, true);
+    assert.equal(access.fullText, false, `${stage}: incomplete screening locks full text`);
+    assert.equal(access.extraction, false, `${stage}: incomplete screening locks extraction`);
+    assert.equal(access.consensus, false);
+  }
+  // Aggregate completion works with hidden votes and mixed included/excluded studies.
+  const finishedScreening = { ...accessInput, studies: accessInput.studies.map(item => ({ ...item, titleAbstractStatus: "excluded_abstract" })) };
+  assert.equal(getSequentialPhaseAccess(finishedScreening).fullText, true);
+  assert.equal(getSequentialPhaseAccess(finishedScreening).extraction, true);
+  for (const status of ["awaiting_votes", "conflict", "needs_third_vote", "manual_review"]) {
+    assert.equal(getSequentialPhaseAccess({ ...finishedScreening, studies: [{ ...study, titleAbstractStatus: status }] }).fullText, false);
+    const access = getSequentialPhaseAccess({ ...finishedScreening, reports: [{ ...report, fullTextStatus: status, retrievalStatus: "retrieved" }] });
+    assert.equal(access.fullText, true, "full-text conflicts remain accessible for resolution");
+    assert.equal(access.extraction, false, `${status}: full-text work must finish before extraction`);
+    assert.equal(access.consensus, false);
+  }
+  for (const fullTextStatus of ["advance_extraction", "excluded_full_text"]) {
+    assert.equal(getSequentialPhaseAccess({ ...finishedScreening, reports: [{ ...report, fullTextStatus }] }).extraction, true);
+  }
+  assert.equal(getSequentialPhaseAccess({ ...finishedScreening, reports: [{ ...report, fullTextStatus: "awaiting_votes", retrievalStatus: "not_retrieved" }] }).extraction, true, "unretrievable reports do not block extraction of other included studies");
+  assert.equal(getSequentialPhaseAccess({ ...finishedScreening, reports: [] }).fullText, false);
+  assert.equal(getSequentialPhaseAccess({ ...finishedScreening, studies: [] }).fullText, false);
+  assert.equal(getSequentialPhaseAccess({ ...finishedScreening, studiesIncluded: 0 }).extraction, false);
+  assert.equal(getSequentialPhaseAccess({ ...finishedScreening, dedupCandidates: [{ status: "pending" }] }).fullText, false);
+  // Legacy data without aggregate statuses still evaluates current votes and required vote counts.
+  const legacyInput = { ...finishedScreening, project: { ...project, abstractRequiredVotes: 2, fullTextRequiredVotes: 1 },
+    studies: [{ ...study, id: "legacy", titleAbstractStatus: undefined, titleAbstractRequiredVotes: undefined }],
+    reports: [{ ...report, id: "legacy-report", fullTextStatus: undefined, fullTextRequiredVotes: undefined, retrievalStatus: "retrieved" }],
+    decisions: [
+      { projectId: project.id, studyId: "legacy", stage: "title_abstract", decisionValue: "include", isCurrent: true },
+      { projectId: project.id, studyId: "legacy", stage: "title_abstract", decisionValue: "include", isCurrent: false },
+      { projectId: project.id, reportId: "legacy-report", stage: "full_text", decisionValue: "include", isCurrent: true }
+    ] };
+  assert.equal(getSequentialPhaseAccess(legacyInput).fullText, false);
+  legacyInput.decisions[1].isCurrent = true;
+  assert.equal(getSequentialPhaseAccess(legacyInput).extraction, true);
   const user = { id: project.ownerId, name: "Alex Reviewer", initials: "AR", avatarColor: "#456" };
   const noop = () => {};
   const html = (Component, props) => renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id, homeView: props.currentUser?.isAdmin ? "adminReviews" : "dashboard" }, React.createElement(Component, props)));
@@ -102,7 +151,7 @@ try {
     formatDecision: String, decisionTone: () => "info", currentStudy: study, stageEvaluation: { state: "open", label: "Open" }, highlightText: String,
     screeningNote: "", setScreeningNote: noop, screeningMessage: "", canRecordScreeningDecision: true, checkoutError: "", currentStageDecisions: [],
     pendingScreeningDecision: null, isUndoingScreeningDecision: false, reviewedCount: 2, onOpenReviewed: noop, formatConflictResolutionHint: String,
-    selectedProjectAbstractRequiredVotes: 2, addScreeningDecision: noop, undoLastDecision: noop };
+    selectedProjectAbstractRequiredVotes: 2, addScreeningDecision: noop, undoLastDecision: noop, conflictCount: 0, onResolveConflict: noop };
   const dedupProps = { projectImportBatches: [], projectScreeningStudies: data.screeningStudies, recordsIdentified: 10,
     projectDedupCandidates: data.dedupCandidates, pendingDedupAction: null, dedupMessage: "", isRejectingAllDedupCandidates: false,
     updateDedupCandidate: noop, updateDedupStudy: noop, rejectAllPendingDedupCandidates: noop };
@@ -110,7 +159,8 @@ try {
     activeReport: report, decisions: [], selectedProject: project, currentUser: user, fullTextMessage: "", checkoutError: "",
     setActiveReportId: noop, setFullTextMessage: noop, pdfInputRef: { current: null }, pendingFullTextAction: null, uploadReportPdf: noop,
     updateFullTextReport: noop, formatDecision: String, formatConflictResolutionHint: String, decisionTone: () => "info", fullTextReason: "",
-    setFullTextReason: noop, exclusionReasons: [], studies: data.screeningStudies, reviewedCount: 0, onOpenReviewed: noop, onOpenPdfUpload: noop };
+    setFullTextReason: noop, exclusionReasons: [], studies: data.screeningStudies, reviewedCount: 0, onOpenReviewed: noop, onOpenPdfUpload: noop,
+    conflictCount: 0, onResolveConflict: noop };
   const extractionProps = { activeCounts: data.prismaCounts, projectReportQueue: [report], projectExtractionStudyIds: new Set([study.id]), selectedProject: project,
     currentUser: user, extractionMessage: "", activeExtractionTemplate: { id: "template", title: "Review template", fields: [] }, isEditingExtractionTemplate: false,
     projectExtractionReports: [report], totalExtractionReportCount: 1, setActiveView: noop, setActiveExtractionReportId: noop, setActiveReportId: noop,
@@ -132,6 +182,34 @@ try {
     formatProjectPhase: String, projectPhaseStatusTone: () => "info", formatMaybePolicy: String, formatAuditEntityLabel: String,
     formatAuditTime: String, formatNumber: String, onOpenSettings: noop, onOpenAudit: noop, onNavigate: noop };
   const overviewHtml = html(loadSection("project-dashboard-section").ProjectDashboardSection, overviewProps);
+  assert.doesNotMatch(overviewHtml, /conflictButton/);
+  const conflict = { id: "conflict", stage: "title_abstract", studyId: study.id, title: study.title, subtitle: "Resolve conflict", decisions: [] };
+  const overviewWithConflict = html(loadSection("project-dashboard-section").ProjectDashboardSection, {
+    ...overviewProps, selectedProject: { ...project, stage: "screening" }, workflowConflicts: [conflict]
+  });
+  assert.match(overviewWithConflict, /class="ghostButton conflictButton"[^>]*href="[^"]+\/screening"/);
+  assert.match(overviewWithConflict, /Continue screening/);
+  assert.ok(overviewWithConflict.indexOf("conflictButton") < overviewWithConflict.indexOf("Continue screening"), "resolve action appears before the continue action");
+  assert.doesNotMatch(screeningHtml, /conflictButton/);
+  assert.doesNotMatch(fullTextHtml, /conflictButton/);
+  for (const empty of [false, true]) {
+    const screeningConflictHtml = html(loadSection("screening-section").ScreeningSection, {
+      ...screeningProps, conflictCount: 2, projectScreeningStudies: empty ? [] : screeningProps.projectScreeningStudies
+    });
+    assert.match(screeningConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/screening"/);
+    assert.match(screeningConflictHtml, /Resolve 2 conflicts/);
+    const fullTextConflictHtml = html(loadSection("full-text-section").FullTextSection, {
+      ...fullTextProps, conflictCount: 1, projectReportQueue: empty ? [] : [report]
+    });
+    assert.match(fullTextConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/full-text"/);
+    assert.match(fullTextConflictHtml, /Resolve 1 conflict/);
+  }
+  const { ResolveConflictButton } = loadSection("resolve-conflict-button");
+  let resolved = false;
+  const conflictButton = ResolveConflictButton({ count: 1, view: "screening", onResolve: () => resolved = true });
+  conflictButton.props.onNavigate();
+  assert.equal(resolved, true, "resolve action calls the existing conflict navigation handler");
+  assert.equal(ResolveConflictButton({ count: 0, view: "screening", onResolve: noop }), null);
   assert.match(overviewHtml, /<ol class="workflowMap" aria-label="Review workflow">/);
   assert.equal((overviewHtml.match(/<li class="workflowNode /g) ?? []).length, 6);
   assert.match(overviewHtml, /<a class="primaryButton" href="[^"]+\/full-text">/);

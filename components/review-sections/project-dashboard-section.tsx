@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from 
 import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
 import { Badge, EmptyState, Metric, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 import { getProjectPhaseProgress, getScreeningRecordTotal } from "@/lib/workflowSelectors";
+import { ResolveConflictButton } from "./resolve-conflict-button";
 
 type WorkflowConflict = ProjectWorkflowConflict & {
   studyIndex?: number;
@@ -85,9 +86,6 @@ export function ProjectDashboardSection({
     complete: { label: "Review exports", view: "exports" }
   };
   const phaseAction = phaseActions[selectedProject.stage];
-  const nextActionLabel = alertCount > 0
-    ? `Resolve ${alertCount} conflict${alertCount === 1 ? "" : "s"}`
-    : phaseAction.label;
 
   return (
     <div className="viewStack">
@@ -102,16 +100,12 @@ export function ProjectDashboardSection({
         <div className="overviewSideStack">
           <div className="toolbarCluster">
             {alertCount > 0 ? (
-              <ViewLink className="primaryButton" view={workflowConflicts[0].stage === "full_text" && workflowConflicts[0].reportId ? "fullText" : "screening"} title="Open the first unresolved workflow conflict" onNavigate={() => openConflict(workflowConflicts[0])}>
-                <AlertTriangle size={17} />
-                {nextActionLabel}
-              </ViewLink>
-            ) : (
-              <ViewLink className="primaryButton" view={phaseAction.view} onNavigate={() => onNavigate(phaseAction.view)}>
-                <ChevronRight size={17} />
-                {nextActionLabel}
-              </ViewLink>
-            )}
+              <ResolveConflictButton count={alertCount} view={workflowConflicts[0].stage === "full_text" && workflowConflicts[0].reportId ? "fullText" : "screening"} onResolve={() => openConflict(workflowConflicts[0])} />
+            ) : null}
+            <ViewLink className="primaryButton" view={phaseAction.view} onNavigate={() => onNavigate(phaseAction.view)}>
+              <ChevronRight size={17} />
+              {phaseAction.label}
+            </ViewLink>
             <ViewLink view="settings" className="ghostButton" title="Open project settings" onNavigate={onOpenSettings}>
               <Settings size={17} />
               Settings

@@ -105,8 +105,7 @@ import {
   getDedupCandidateProjectId,
   getProjectPhaseProgress,
   getWorkflowReportsForProject,
-  isFullTextEvaluationComplete,
-  isTitleAbstractEvaluationComplete,
+  getSequentialPhaseAccess,
   sortReportsByStudyOrder,
   sumObject
 } from "@/lib/workflowSelectors";
@@ -1129,68 +1128,22 @@ export function PrismaReviewApp() {
   }, [activeCounts, decisions, recordsIdentified, reportsExcludedTotal, selectedProject.id]);
   const screeningProgress =
     projectScreeningStudies.length > 0 ? Math.round((screenedByMe / projectScreeningStudies.length) * 100) : 0;
-  const sequentialPhaseAccess = useMemo<PhaseAccessMap>(() => {
-    if (selectedProject.stage === "complete") {
-      return {
-        imports: true,
-        dedup: true,
-        screening: true,
-        fullText: true,
-        extraction: true,
-        consensus: true
-      };
-    }
-
-    const importsComplete = recordsIdentified > 0 || selectedProject.recordsTotal > 0 || projectScreeningStudies.length > 0;
-    const currentPhaseIndex = getProjectPhaseIndex(selectedProject.stage);
-    const dedupComplete = importsComplete && projectDedupCandidates.every((candidate) => candidate.status !== "pending");
-    const screeningComplete =
-      dedupComplete &&
-      projectScreeningStudies.length > 0 &&
-      projectScreeningStudies.every((study) => isTitleAbstractEvaluationComplete(titleAbstractConflictEvaluations.get(study.id)));
-    const fullTextAvailable = currentPhaseIndex >= 2 && projectReportQueue.length > 0;
-    const fullTextComplete =
-      (screeningComplete || fullTextAvailable) &&
-      projectReportQueue.length > 0 &&
-      projectReportQueue.every((report) => {
-        const currentDecisions = decisions.filter(
-          (decision) =>
-            decision.projectId === selectedProject.id &&
-            decision.reportId === report.id &&
-            decision.stage === "full_text" &&
-            decision.isCurrent
-        );
-        const evaluation = evaluateStage(
-          "full_text",
-          currentDecisions.map((decision) => decision.decisionValue),
-          report.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
-          selectedProject.maybePolicy
-        );
-        return isFullTextEvaluationComplete(evaluation);
-      });
-    const extractionAvailable = (currentPhaseIndex >= 3 || fullTextComplete) && activeCounts.studiesIncluded > 0;
-
-    return {
-      imports: true,
-      dedup: importsComplete || currentPhaseIndex >= 1,
-      screening: dedupComplete || currentPhaseIndex >= 1,
-      fullText: fullTextAvailable || (screeningComplete && projectReportQueue.length > 0),
-      extraction: extractionAvailable,
-      consensus: extractionAvailable
-    };
-  }, [
+  const sequentialPhaseAccess = useMemo<PhaseAccessMap>(() => getSequentialPhaseAccess({
+    project: selectedProject,
+    studies: projectScreeningStudies,
+    reports: projectReportQueue,
+    decisions,
+    dedupCandidates: projectDedupCandidates,
+    recordsIdentified,
+    studiesIncluded: activeCounts.studiesIncluded
+  }), [
     activeCounts.studiesIncluded,
     decisions,
     projectDedupCandidates,
     projectReportQueue,
     projectScreeningStudies,
     recordsIdentified,
-    selectedProject.fullTextRequiredVotes,
-    selectedProject.id,
-    selectedProject.maybePolicy,
-    selectedProject.recordsTotal,
-    selectedProject.stage,
-    titleAbstractConflictEvaluations
+    selectedProject
   ]);
 
   function canNavigateToProjectView(view: ViewKey) {
@@ -3570,8 +3523,11 @@ export function PrismaReviewApp() {
   }
 
   function renderScreening() {
+    const conflicts = workflowConflicts.filter((conflict) => conflict.stage === "title_abstract");
     return (
       <ScreeningSection
+        conflictCount={conflicts.length}
+        onResolveConflict={() => conflicts[0] && openConflict(conflicts[0])}
         projectScreeningStudies={activeScreeningStudies}
         totalScreeningStudyCount={projectScreeningStudies.length}
         screeningProgress={screeningProgress}
@@ -3628,8 +3584,11 @@ export function PrismaReviewApp() {
   }
 
   function renderFullText() {
+    const conflicts = workflowConflicts.filter((conflict) => conflict.stage === "full_text");
     return (
       <FullTextSection
+        conflictCount={conflicts.length}
+        onResolveConflict={() => conflicts[0] && openConflict(conflicts[0])}
         hasProjectSeedData={hasProjectSeedData}
         phaseProgress={getProjectPhaseProgress({ ...selectedProject, stage: "full_text" }, activeCounts, projectReportQueue, formatNumber)}
         projectReportQueue={activeFullTextReports}

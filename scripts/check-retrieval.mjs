@@ -99,6 +99,35 @@ try {
   assert.equal(counts.reportsNotRetrieved, 1);
   assert.equal(counts.reportsAssessed, 0);
   assert.equal(selectors.getProjectPhaseProgress(project, counts, reports, String).percent, 25);
+  // Exercise phase gating with real server summaries and hidden decisions.
+  reset();
+  const blindState = JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE));
+  const reviewer = { ...admin, id: 'blind-reviewer', email: 'blind@example.test', isAdmin: false };
+  const voter = { ...reviewer, id: 'second-voter', email: 'voter@example.test' };
+  blindState.users.push(reviewer, voter);
+  blindState.projects[0].memberIds = [reviewer.id, voter.id];
+  blindState.projects[0].blindMode = true;
+  fs.writeFileSync(process.env.PRISMATICA_DATA_FILE, JSON.stringify(blindState));
+  const phaseAccess = state => selectors.getSequentialPhaseAccess({
+    project: state.projects.find(item => item.id === project.id),
+    studies: state.studies.filter(item => item.projectId === project.id),
+    reports: state.reports.filter(item => item.projectId === project.id),
+    decisions: state.decisions, dedupCandidates: [], recordsIdentified: 1, studiesIncluded: 1
+  });
+  let blindPayload = store.getAppStateForUser(reviewer.id);
+  assert.equal(blindPayload.decisions.length, 0, 'blind reviewer cannot see the owner vote');
+  assert.equal(phaseAccess(blindPayload).fullText, true, 'aggregate screening status unlocks full text');
+  update({ retrievalStatus: 'retrieved', decisionValue: 'include' });
+  assert.equal(phaseAccess(store.getAppStateForUser(reviewer.id)).extraction, false, 'one full-text vote is insufficient');
+  store.updateScreeningCheckoutForUser(voter.id, { projectId: project.id, stage: 'full_text', reportId: report.id, action: 'acquire' });
+  store.updateReportForUser(voter.id, project.id, report.id, { decisionValue: 'include' });
+  blindPayload = store.getAppStateForUser(reviewer.id);
+  assert.equal(blindPayload.decisions.length, 0);
+  assert.equal(phaseAccess(blindPayload).extraction, true, 'aggregate full-text status unlocks extraction');
+  store.reopenFullTextDecisionForUser(admin.id, project.id, report.id);
+  assert.equal(phaseAccess(store.getAppStateForUser(reviewer.id)).extraction, false, 'reopening full text relocks extraction');
+  store.reopenTitleAbstractDecisionForUser(admin.id, project.id, study.id);
+  assert.equal(phaseAccess(store.getAppStateForUser(reviewer.id)).fullText, false, 'reopening screening relocks full text');
   console.log('Retrieval checks passed: decisions, PDFs, counts, queue completion, and reopening.');
 } finally {
   Module._resolveFilename = originalResolve;

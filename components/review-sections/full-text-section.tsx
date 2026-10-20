@@ -16,6 +16,7 @@ import { type DecisionValue, evaluateStage } from "@/lib/workflow";
 import type { ProjectPhaseProgress } from "@/lib/workflowSelectors";
 import { EmptyState, ReviewReservationNotice, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
 import { ReportNavigation, ReportPicker } from "@/components/review-sections/review-queue";
+import { ResolveConflictButton } from "./resolve-conflict-button";
 
 type FullTextUpdateInput = {
   retrievalStatus?: Report["retrievalStatus"];
@@ -49,6 +50,8 @@ type FullTextSectionProps = {
   studies: Study[];
   reviewedCount: number;
   onOpenReviewed: () => void;
+  conflictCount: number;
+  onResolveConflict: () => void;
   onOpenPdfUpload: () => void;
 };
 
@@ -82,6 +85,8 @@ export function FullTextSection({
   studies,
   reviewedCount,
   onOpenReviewed,
+  conflictCount,
+  onResolveConflict,
   onOpenPdfUpload
 }: FullTextSectionProps) {
   const [now, setNow] = useState(Date.now());
@@ -126,6 +131,7 @@ export function FullTextSection({
             <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
           </div>
           <div className="buttonRow">
+            <ResolveConflictButton count={conflictCount} view="fullText" onResolve={onResolveConflict} />
             <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
@@ -239,6 +245,7 @@ export function FullTextSection({
         <ReportPicker
           action={
             <div className="buttonRow">
+              <ResolveConflictButton count={conflictCount} view="fullText" onResolve={onResolveConflict} />
               <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
                 <History size={16} />
                 Reviewed {reviewedCount}

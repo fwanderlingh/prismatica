@@ -1321,6 +1321,19 @@ h3 {
   text-decoration: none;
 }
 
+.conflictButton {
+  color: var(--amber-text);
+  border-color: var(--amber-border);
+  background: var(--amber-soft);
+}
+
+.conflictButton:hover,
+.conflictButton:focus-visible {
+  color: var(--amber-text);
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+
 .primaryButton:hover {
   color: #ffffff;
   background: #0f696b;

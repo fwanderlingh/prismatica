@@ -17,6 +17,50 @@ export type ProjectPhaseProgress = {
   label: string;
 };
 
+export function getSequentialPhaseAccess({
+  project, studies, reports, decisions, dedupCandidates, recordsIdentified, studiesIncluded
+}: {
+  project: ReviewProject;
+  studies: Study[];
+  reports: Report[];
+  decisions: Decision[];
+  dedupCandidates: DedupCandidate[];
+  recordsIdentified: number;
+  studiesIncluded: number;
+}) {
+  const importsComplete = recordsIdentified > 0 || project.recordsTotal > 0 || studies.length > 0;
+  const dedupComplete = importsComplete && dedupCandidates.every((candidate) => candidate.status !== "pending");
+  const currentDecisions = decisions.filter((decision) => decision.projectId === project.id && decision.isCurrent);
+  const abstractDecisions = groupByKey(currentDecisions.filter((decision) => decision.stage === "title_abstract"), (decision) => decision.studyId);
+  const fullTextDecisions = groupByKey(currentDecisions.filter((decision) => decision.stage === "full_text"), (decision) => decision.reportId);
+  // Aggregate statuses include all reviewers' votes, including those hidden in blind review.
+  const screeningComplete = dedupComplete && studies.length > 0 && studies.every((study) => {
+    const status = study.titleAbstractStatus ?? evaluateStage(
+      "title_abstract", (abstractDecisions.get(study.id) ?? []).map((decision) => decision.decisionValue),
+      study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes, project.maybePolicy
+    ).state;
+    return status === "advance_full_text" || status === "excluded_abstract";
+  });
+  const fullTextComplete = screeningComplete && reports.length > 0 && reports.every((report) => {
+    if (report.retrievalStatus === "not_retrieved") return true;
+    const status = report.fullTextStatus ?? evaluateStage(
+      "full_text", (fullTextDecisions.get(report.id) ?? []).map((decision) => decision.decisionValue),
+      report.fullTextRequiredVotes ?? project.fullTextRequiredVotes, project.maybePolicy
+    ).state;
+    return status === "advance_extraction" || status === "excluded_full_text";
+  });
+  const extractionAvailable = fullTextComplete && studiesIncluded > 0;
+  const screeningStarted = project.stage !== "setup" && project.stage !== "import";
+  return {
+    imports: true,
+    dedup: importsComplete || screeningStarted,
+    screening: dedupComplete || screeningStarted,
+    fullText: screeningComplete && reports.length > 0,
+    extraction: extractionAvailable,
+    consensus: extractionAvailable
+  };
+}
+
 export function getWorkflowReportsForProject(project: ReviewProject, projectStudies: Study[], reports: Report[]) {
   const activeStudyIds = new Set(
     projectStudies

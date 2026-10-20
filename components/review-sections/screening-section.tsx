@@ -6,6 +6,7 @@ import { Badge, EmptyState, ReviewReservationNotice, SectionTitle, renderDoiLink
 import type { DecisionValue } from "@/lib/workflow";
 import { ReviewQueueDisclosure, ReviewQueueItem } from "@/components/review-sections/review-queue";
 import { formatAuthorList } from "@/lib/reviewDisplay";
+import { ResolveConflictButton } from "./resolve-conflict-button";
 
 type StageEvaluation = {
   state: string;
@@ -39,6 +40,8 @@ type ScreeningSectionProps = {
   isUndoingScreeningDecision: boolean;
   reviewedCount: number;
   onOpenReviewed: () => void;
+  conflictCount: number;
+  onResolveConflict: () => void;
   formatConflictResolutionHint: (requiredVotes: number) => string;
   selectedProjectAbstractRequiredVotes: number;
   addScreeningDecision: (value: Exclude<DecisionValue, "not_retrieved">) => void;
@@ -72,6 +75,8 @@ export function ScreeningSection({
   isUndoingScreeningDecision,
   reviewedCount,
   onOpenReviewed,
+  conflictCount,
+  onResolveConflict,
   formatConflictResolutionHint,
   selectedProjectAbstractRequiredVotes,
   addScreeningDecision,
@@ -120,10 +125,13 @@ export function ScreeningSection({
             <h1>Reviewer Queue</h1>
             <p className="subtle">Screening starts after imports are committed and canonical studies are created.</p>
           </div>
-          <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
-            <History size={16} />
-            Reviewed {reviewedCount}
-          </ViewLink>
+          <div className="buttonRow">
+            <ResolveConflictButton count={conflictCount} view="screening" onResolve={onResolveConflict} />
+            <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
+              <History size={16} />
+              Reviewed {reviewedCount}
+            </ViewLink>
+          </div>
         </section>
         <section className="panel">
           <EmptyState
@@ -154,10 +162,13 @@ export function ScreeningSection({
             <i style={{ width: `${screeningProgress}%` }} />
           </div>
         </div>
-        <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
-          <History size={16} />
-          Reviewed {reviewedCount}
-        </ViewLink>
+        <div className="buttonRow">
+          <ResolveConflictButton count={conflictCount} view="screening" onResolve={onResolveConflict} />
+          <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
+            <History size={16} />
+            Reviewed {reviewedCount}
+          </ViewLink>
+        </div>
       </section>
 
       <section className="screeningLayout">
