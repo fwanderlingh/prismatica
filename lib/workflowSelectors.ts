@@ -254,16 +254,19 @@ export function randomizeReviewQueueItems<T extends { id: string }>(
     currentUserId: string;
     phase: ReviewQueuePhase;
     isPinned?: (item: T) => boolean;
+    isLast?: (item: T) => boolean;
     salt?: string;
   }
 ) {
-  const { projectId, currentUserId, phase, isPinned, salt = "" } = options;
+  const { projectId, currentUserId, phase, isPinned, isLast, salt = "" } = options;
   const prefix = `${projectId}:${currentUserId}:${phase}:${salt}:`;
   return items.map((item) => ({
     item,
+    last: isLast?.(item) ? 1 : 0,
     pinned: isPinned?.(item) ? 1 : 0,
     key: reviewQueueHash(`${prefix}${item.id}`)
   })).sort((left, right) => {
+    if (left.last !== right.last) return left.last - right.last;
     if (left.pinned !== right.pinned) return right.pinned - left.pinned;
     if (left.key !== right.key) return left.key - right.key;
     return left.item.id.localeCompare(right.item.id);
@@ -307,6 +310,7 @@ export function getActiveTitleAbstractStudies(project: ReviewProject, studies: S
     decisions.filter((decision) => decision.projectId === project.id && decision.stage === "title_abstract" && decision.isCurrent),
     (decision) => decision.studyId
   );
+  const conflictIds = new Set<string>();
   const activeStudies = studies.filter((study) => {
     const currentDecisions = decisionsByItem.get(study.id) ?? [];
     const currentUserHasVoted = currentDecisions.some((decision) => decision.userId === currentUserId);
@@ -324,6 +328,7 @@ export function getActiveTitleAbstractStudies(project: ReviewProject, studies: S
       ).state;
 
     if (evaluationState === "conflict" || evaluationState === "needs_third_vote") {
+      conflictIds.add(study.id);
       return checkedOutByCurrentUser || activeViewerCount < 1;
     }
     if (currentUserHasVoted || voteCount >= requiredVotes) {
@@ -336,7 +341,8 @@ export function getActiveTitleAbstractStudies(project: ReviewProject, studies: S
     projectId: project.id,
     currentUserId,
     phase: "title_abstract",
-    isPinned: (study) => Boolean(study.titleAbstractCheckedOutByCurrentUser)
+    isPinned: (study) => Boolean(study.titleAbstractCheckedOutByCurrentUser),
+    isLast: (study) => conflictIds.has(study.id)
   });
 }
 
@@ -345,6 +351,7 @@ export function getActiveFullTextReports(project: ReviewProject, reports: Report
     decisions.filter((decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent),
     (decision) => decision.reportId
   );
+  const conflictIds = new Set<string>();
   const activeReports = reports.filter((report) => {
     if (report.retrievalStatus === "not_retrieved") {
       return false;
@@ -365,6 +372,7 @@ export function getActiveFullTextReports(project: ReviewProject, reports: Report
       ).state;
 
     if (evaluationState === "conflict" || evaluationState === "needs_third_vote") {
+      conflictIds.add(report.id);
       return checkedOutByCurrentUser || activeViewerCount < 1;
     }
     if (
@@ -383,7 +391,8 @@ export function getActiveFullTextReports(project: ReviewProject, reports: Report
     projectId: project.id,
     currentUserId,
     phase: "full_text",
-    isPinned: (report) => Boolean(report.fullTextCheckedOutByCurrentUser)
+    isPinned: (report) => Boolean(report.fullTextCheckedOutByCurrentUser),
+    isLast: (report) => conflictIds.has(report.id)
   });
 }
 

@@ -33,7 +33,7 @@ Evidence reviews also involve a sequence of related decisions whose provenance a
 
 # AI usage disclosure
 
-The author reports using Copilot SDK and the Codex plugin in VS Code, with GPT-5 and GPT-6, to assist with software development and drafting this manuscript. 
+The author reports using Copilot SDK and the Codex plugin in VS Code, with GPT-5 and GPT-6, to assist with software development. 
 
 
 # Acknowledgements
