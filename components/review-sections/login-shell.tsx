@@ -180,12 +180,15 @@ export function LoginShell({
               <input value={registerForm.title} disabled={isRegistrationPending} onChange={(event) => onRegisterFormChange("title", event.target.value)} />
             </label>
             <label>
-              <span>Password</span>
+              <span>Password (8–128 characters)</span>
               <div className="passwordField">
                 <input
                   type={showRegisterPassword ? "text" : "password"}
                   value={registerForm.password}
                   autoComplete="new-password"
+                  required
+                  minLength={8}
+                  maxLength={128}
                   disabled={isRegistrationPending}
                   onChange={(event) => onRegisterFormChange("password", event.target.value)}
                 />

@@ -123,9 +123,10 @@ try {
   assert.deepEqual(importStages, ['Loading review data', 'Parsing citations', 'Preparing citations', 'Checking duplicate candidates', 'Saving import', 'Preparing updated review']);
   assert.ok(imported.events.some(event => event.action.includes('progress.bib')));
 
-  const originalFetch = globalThis.fetch;
+  const remotePdf = require(path.join(out, 'lib/remotePdf.js'));
+  const originalFetchPublicPdf = remotePdf.fetchPublicPdf;
   try {
-    globalThis.fetch = async () => new Response(null, { status: 404 });
+    remotePdf.fetchPublicPdf = async () => { throw new Error('PDF link returned HTTP 404.'); };
     writeFixture(fixture(100));
     const pdfSteps = [];
     await store.createImportBatchForUser(admin.id, project.id, {
@@ -135,7 +136,7 @@ try {
     assert.deepEqual(pdfSteps.map(step => step.percent), [0, 50, 100]);
     assert.match(pdfSteps[2].detail, /2 of 2 links checked · 0 retrieved · 2 unavailable/);
   } finally {
-    globalThis.fetch = originalFetch;
+    remotePdf.fetchPublicPdf = originalFetchPublicPdf;
   }
 
   // Capture actual incremental PostgreSQL mutations without invoking a database.

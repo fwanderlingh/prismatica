@@ -15,7 +15,8 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'prismatica-import-concurrenc
 const originalResolve = Module._resolveFilename;
 const originalExec = childProcess.execFileSync;
 const originalEnv = { ...process.env };
-const originalFetch = globalThis.fetch;
+let remotePdf;
+let originalFetchPublicPdf;
 let databaseBin;
 let databaseStarted = false;
 let databaseClient;
@@ -44,6 +45,8 @@ try {
   process.env.PRISMATICA_ADMIN_EMAIL = 'import-admin@example.test';
   process.env.PRISMATICA_ADMIN_PASSWORD = 'isolated-import-admin-password';
   const store = require(path.join(out, 'lib/serverStore.js'));
+  remotePdf = require(path.join(out, 'lib/remotePdf.js'));
+  originalFetchPublicPdf = remotePdf.fetchPublicPdf;
   const seeds = require(path.join(out, 'lib/prismaData.js'));
   const password = 'isolated-old-reviewer-password';
   const passwordSalt = 'isolated-reviewer-salt';
@@ -162,7 +165,7 @@ try {
   // Linked PDFs are prepared on an isolated draft and included in the final merge.
   reset();
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n');
-  globalThis.fetch = async () => new Response(pdf, { headers: { 'content-type': 'application/pdf' } });
+  remotePdf.fetchPublicPdf = async () => ({ buffer: pdf, contentDisposition: '' });
   const pdfPayload = await store.createImportBatchForUser(reviewer.id, project.id,
     input('linked.bib', citation('linked', 'Linked PDF citation', 'pdf={https://example.test/linked.pdf}')), step => {
       if (step.label === 'Saving import') store.adminResetPasswordForUser(admin.id, reviewer.id);
@@ -176,7 +179,7 @@ try {
   assert.equal(report.isPdfValidated, true);
   assert.deepEqual(fs.readFileSync(report.storagePath), pdf);
   assert.match(pdfPayload.message, /1 of 1 linked PDFs retrieved/);
-  globalThis.fetch = originalFetch;
+  remotePdf.fetchPublicPdf = originalFetchPublicPdf;
 
   // PostgreSQL uses the incremental mutation, retries a conflicting project
   // snapshot, and never passes account credentials to a full-state replacement.
@@ -338,7 +341,7 @@ try {
 } finally {
   Module._resolveFilename = originalResolve;
   childProcess.execFileSync = originalExec;
-  globalThis.fetch = originalFetch;
+  if (remotePdf) remotePdf.fetchPublicPdf = originalFetchPublicPdf;
   if (databaseClient) await databaseClient.end();
   if (databaseStarted) originalExec(path.join(databaseBin, 'pg_ctl'), ['-D', path.join(temp, 'db'), '-m', 'immediate', '-w', 'stop'], { stdio: 'pipe' });
   for (const key of Object.keys(process.env)) if (!(key in originalEnv)) delete process.env[key];

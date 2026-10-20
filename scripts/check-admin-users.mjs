@@ -71,6 +71,51 @@ try {
   save(state);
   assert.equal(store.getAppStateForUser(admin.id).users.find(user => user.id === reviewer.id).isAdmin, false);
 
+  // Invitation credentials must be independent across project owners, even when
+  // a deployment still has the retired shared-password environment variable.
+  const secondProject = { ...project, id: 'second-owned-review', ownerId: admin.id, ownerIds: [admin.id], memberIds: [] };
+  save({ ...fixture(), projects: [project, secondProject] });
+  process.env.PRISMATICA_INVITE_PASSWORD = 'legacy-shared-invitation-password';
+  const firstInvitation = store.inviteUserToProjectForUser(reviewer.id, project.id, {
+    name: 'First Invitee', email: 'first-invitee@example.test'
+  });
+  const secondInvitation = store.inviteUserToProjectForUser(admin.id, secondProject.id, {
+    name: 'Second Invitee', email: 'second-invitee@example.test'
+  });
+  for (const invitation of [firstInvitation, secondInvitation]) {
+    assert.match(invitation.temporaryPassword, /^[A-Za-z0-9]{8}$/, 'new invitations generate eight alphanumeric characters');
+    assert.notEqual(invitation.temporaryPassword, process.env.PRISMATICA_INVITE_PASSWORD, 'ignore the retired shared password');
+  }
+  assert.notEqual(firstInvitation.temporaryPassword, secondInvitation.temporaryPassword, 'new invitees receive independent credentials');
+  const firstLogin = store.loginUser('first-invitee@example.test', firstInvitation.temporaryPassword);
+  const secondLogin = store.loginUser('second-invitee@example.test', secondInvitation.temporaryPassword);
+  assert.equal(firstLogin.currentUser.email, 'first-invitee@example.test');
+  assert.deepEqual(secondLogin.projects.map(item => item.id), [secondProject.id]);
+  assert.throws(() => store.loginUser('second-invitee@example.test', firstInvitation.temporaryPassword), /incorrect/i,
+    'knowing one invitation password must not grant access to another project');
+  assert.throws(() => store.loginUser('first-invitee@example.test', secondInvitation.temporaryPassword), /incorrect/i);
+  assert.throws(() => store.inviteUserToProjectForUser(firstLogin.currentUser.id, project.id, {
+    name: 'Unauthorized Invitee', email: 'unauthorized@example.test'
+  }), error => error.status === 403, 'only owners can invite');
+
+  const beforeExistingInvitation = JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE, 'utf8'))
+    .users.find(user => user.id === secondLogin.currentUser.id);
+  const existingInvitation = store.inviteUserToProjectForUser(reviewer.id, project.id, {
+    name: 'Second Invitee', email: 'second-invitee@example.test'
+  });
+  assert.equal(existingInvitation.temporaryPassword, undefined, 'existing accounts do not disclose or generate a password');
+  assert.doesNotMatch(existingInvitation.message, /Temporary password/);
+  const afterExistingInvitation = JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE, 'utf8'))
+    .users.find(user => user.id === secondLogin.currentUser.id);
+  assert.deepEqual(afterExistingInvitation, beforeExistingInvitation, 'adding an existing account preserves its credentials');
+  assert.equal(store.loginUser('second-invitee@example.test', secondInvitation.temporaryPassword).currentUser.id, secondLogin.currentUser.id);
+  delete process.env.PRISMATICA_INVITE_PASSWORD;
+  const thirdInvitation = store.inviteUserToProjectForUser(reviewer.id, project.id, {
+    name: 'Third Invitee', email: 'third-invitee@example.test'
+  });
+  assert.match(thirdInvitation.temporaryPassword, /^[A-Za-z0-9]{8}$/, 'use the same password format without legacy configuration');
+  save(fixture());
+
   // Exercise the dedicated PostgreSQL bridge without touching a real database.
   let dbState = structuredClone(fixture());
   let mutation;
@@ -176,7 +221,7 @@ try {
   assert.match(renderToStaticMarkup(render()), /No matching accounts/);
   search('');
   assert.match(renderToStaticMarkup(render()), /Showing 1–10 of 25 accounts/);
-  console.log('Admin user checks passed: search, filtered pagination, role authorization, validation, last-admin and self-revocation guards, role persistence, stable identities, session invalidation, and PostgreSQL role mutation.');
+  console.log('Admin user checks passed: search, filtered pagination, role authorization, validation, last-admin and self-revocation guards, role persistence, stable identities, session invalidation, PostgreSQL role mutation, and independent invitation passwords.');
 } finally {
   Module._resolveFilename = originalResolve;
   Module._load = originalLoad;

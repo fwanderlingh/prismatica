@@ -65,6 +65,11 @@ This uses Next.js experimental local HTTPS support.
 - Path-based routing and refined UI components
 - Accessible navigation links, a skip link, keyboard menus, visible focus, and responsive review layouts
 
+Automatic PDF retrieval accepts public HTTP/HTTPS destinations only. Private,
+loopback, link-local, and reserved addresses are blocked, including DNS answers
+and redirect destinations. Blocked links do not prevent citation import; their
+PDFs can still be uploaded manually.
+
 ### Accessibility and Mobile Layout
 
 Page navigation uses links, including support for opening views in a new tab.
@@ -219,7 +224,6 @@ npm run start -- --hostname 0.0.0.0 --port 3000
 Optional environment variables:
 
 ```bash
-export PRISMATICA_INVITE_PASSWORD="temporary-password-for-invited-users"
 export PRISMATICA_ADMIN_EMAIL="admin@example.com"
 export PRISMATICA_ADMIN_PASSWORD="replace-this-default-admin-password"
 export PRISMATICA_REGISTRATION_ENABLED="false"
@@ -236,6 +240,9 @@ export PRISMATICA_S3_ACCESS_KEY="minio-access-key"
 export PRISMATICA_S3_SECRET_KEY="minio-secret-key"
 export PRISMATICA_S3_FORCE_PATH_STYLE="true"
 ```
+
+New accounts created by project invitations use a randomly generated
+8-character alphanumeric password.
 
 ### Session Secret Management
 

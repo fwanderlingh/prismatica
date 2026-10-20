@@ -117,6 +117,39 @@ try {
       PRISMATICA_EMAIL_FROM: 'accounts@example.test', PRISMATICA_PUBLIC_URL: 'https://prismatica.example.test'
     });
   }
+  async function rejectRegistrationPassword(email, password) {
+    const usersBefore = rawState().users;
+    const cookiesBefore = [...cookieJar];
+    const sessionBefore = await auth.getSessionUserId();
+    const emailCount = sent.length;
+    const result = await register(request({ ...registration(email), password }));
+    assert.equal(result.status, 400);
+    assert.match((await result.json()).error, password.trim() ? /8 and 128/ : /password to register/);
+    const state = rawState();
+    assert.deepEqual(state.users, usersBefore, 'invalid registration does not create or alter accounts');
+    assert.ok(!state.users.some(user => user.email === email));
+    assert.equal(await auth.getSessionUserId(), sessionBefore, 'invalid registration does not replace the session');
+    assert.deepEqual([...cookieJar], cookiesBefore);
+    assert.equal(sent.length, emailCount, 'invalid registration does not send email');
+  }
+  async function exerciseRegistrationPasswords(suffix) {
+    store.updateAuthSettingsForUser('admin-root', { transactionalEmailEnabled: false });
+    for (const [index, password] of ['', 'a', '1234567', ' 1234567 ', 'a'.repeat(129), ` ${'a'.repeat(127)} `].entries()) {
+      await rejectRegistrationPassword(`invalid-password-${suffix}-${index}@example.test`, password);
+    }
+    for (const length of [8, 128]) {
+      cookieJar.clear();
+      const email = `valid-password-${suffix}-${length}@example.test`;
+      const password = 'a'.repeat(length);
+      const emailCount = sent.length;
+      const result = await register(request({ ...registration(email), password }));
+      assert.equal(result.status, 200, `${length}-character registration succeeds`);
+      const user = (await result.json()).currentUser;
+      assert.equal(await auth.getSessionUserId(), user.id);
+      assert.equal(store.loginUser(email, password).currentUser.id, user.id);
+      assert.equal(sent.length, emailCount);
+    }
+  }
 
   assert.equal(mail.getEmailConfigurationStatus().configured, false);
   assert.deepEqual(await mail.sendAccountEmail({ enabled: false }), { status: 'disabled' });
@@ -140,7 +173,9 @@ try {
   configure();
 
   async function exerciseFlows(suffix) {
+    await exerciseRegistrationPasswords(suffix);
     store.updateAuthSettingsForUser('admin-root', { transactionalEmailEnabled: true });
+    await rejectRegistrationPassword(`invalid-password-email-${suffix}@example.test`, 'short');
     assert.equal(store.loginUser(legacy.email, 'original-password').currentUser.id, legacy.id);
     await auth.setSessionCookie('admin-root');
     const status = await (await adminSettings.GET()).json();

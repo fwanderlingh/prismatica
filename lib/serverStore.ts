@@ -8,6 +8,7 @@ import path from "path";
 import { normalizeAuditHistoryLimit } from "./auditHistory";
 import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
+import { fetchPublicPdf, RemotePdfSizeError } from "./remotePdf";
 import { collectStorageInfo } from "./storageInfo";
 import { getSequentialProjectStage, randomizeReviewQueueItems } from "./workflowSelectors";
 import { formatAuthorList } from "./reviewDisplay";
@@ -1516,7 +1517,8 @@ export function registerUser(input: {
   const name = input.name?.trim() ?? "";
   const email = input.email?.trim().toLowerCase() ?? "";
   const organization = input.organization?.trim() ?? "";
-  const password = input.password?.trim() ?? "";
+  const rawPassword = input.password ?? "";
+  const password = rawPassword.trim();
 
   if (!state.authSettings.registrationEnabled) {
     throw new ApiError("Public registration is disabled. Ask an administrator for an account.", 403);
@@ -1527,6 +1529,10 @@ export function registerUser(input: {
 
   if (!name || !email || !organization || !password) {
     throw new ApiError("Complete name, email, organization, and password to register.");
+  }
+
+  if (password.length < 8 || rawPassword.length > 128) {
+    throw new ApiError("Use a password between 8 and 128 characters.");
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -2002,7 +2008,8 @@ export function inviteUserToProjectForUser(
   let temporaryPassword: string | undefined;
   if (!invitedUser) {
     const now = new Date().toISOString();
-    temporaryPassword = process.env.PRISMATICA_INVITE_PASSWORD ?? crypto.randomBytes(12).toString("base64url");
+    const passwordCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    temporaryPassword = Array.from({ length: 8 }, () => passwordCharacters[crypto.randomInt(passwordCharacters.length)]).join("");
     invitedUser = {
       id: createId(`user-${slugify(email)}`),
       name,
@@ -5059,78 +5066,29 @@ function assertPdfInputWithinSizeLimit(contentBase64: string, settings: AppRevie
   }
 }
 
-async function readResponseBufferWithinLimit(response: Response, settings: AppReviewSettings) {
-  const maxPdfSize = pdfUploadMaxSizeBytes(settings);
-  if (!response.body) {
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > maxPdfSize) {
-      throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
-    }
-    return buffer;
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  let completed = false;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        completed = true;
-        break;
-      }
-      totalBytes += value.byteLength;
-      if (totalBytes > maxPdfSize) {
-        throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
-      }
-      chunks.push(Buffer.from(value));
-    }
-  } finally {
-    if (!completed) {
-      await reader.cancel().catch(() => undefined);
-    }
-    reader.releaseLock();
-  }
-  return Buffer.concat(chunks, totalBytes);
-}
-
 async function fetchRemotePdf(pdfUrl: string, fallbackTitle: string, settings: AppReviewSettings) {
   const url = normalizeRemoteUrl(pdfUrl);
   if (!url) {
     throw new ApiError("PDF link must be an HTTP or HTTPS URL.");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), pdfRetrievalTimeoutMs);
   try {
-    const response = await fetch(url, {
-      headers: { Accept: "application/pdf,*/*" },
-      signal: controller.signal
+    const response = await fetchPublicPdf(url, {
+      maxBytes: pdfUploadMaxSizeBytes(settings),
+      timeoutMs: pdfRetrievalTimeoutMs
     });
-    if (!response.ok) {
-      throw new ApiError(`PDF link returned HTTP ${response.status}.`);
-    }
-
-    const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (Number.isFinite(contentLength) && contentLength > pdfUploadMaxSizeBytes(settings)) {
-      throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
-    }
-
-    const buffer = await readResponseBufferWithinLimit(response, settings);
+    const buffer = response.buffer;
     validatePdfBuffer(buffer, settings);
     return {
       buffer,
-      fileName: inferPdfFileName(url, response.headers.get("content-disposition") ?? "", fallbackTitle),
+      fileName: inferPdfFileName(url, response.contentDisposition, fallbackTitle),
       mimeType: "application/pdf"
     };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new ApiError("PDF retrieval timed out.");
+    if (error instanceof RemotePdfSizeError) {
+      throw new ApiError(`PDF file must be ${settings.pdfUploadMaxSizeMb} MB or smaller.`);
     }
     throw error;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

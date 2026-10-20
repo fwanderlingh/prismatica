@@ -16,6 +16,7 @@
     "check:audit": "node scripts/check-audit-history.mjs",
     "check:import-concurrency": "node scripts/check-import-concurrency.mjs",
     "check:retrieval": "node scripts/check-retrieval.mjs",
+    "check:pdf-security": "node scripts/check-pdf-retrieval-security.mjs",
     "check:presence": "node scripts/check-presence.mjs",
     "check:storage": "node scripts/check-storage.mjs",
     "check:admin-users": "node scripts/check-admin-users.mjs",
