@@ -15,6 +15,7 @@
     "check:progress": "node scripts/check-load-progress.mjs",
     "check:audit": "node scripts/check-audit-history.mjs",
     "check:workflow": "node scripts/check-workflow-reconciliation.mjs",
+    "check:checkouts": "node scripts/check-review-checkout.mjs",
     "check:exports": "node scripts/check-export-consistency.mjs",
     "check:import-concurrency": "node scripts/check-import-concurrency.mjs",
     "check:retrieval": "node scripts/check-retrieval.mjs",

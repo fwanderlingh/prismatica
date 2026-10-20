@@ -550,6 +550,9 @@ attempts. The Exports page lists unfinished screening and pending retrieval by
 title, with links to available queue items. Consistency warnings are advisory;
 CSV availability is explained separately from the checks.
 
+Run `npm run check:checkouts` for checkout renewal, cancellation, and release
+checks across all review stages, plus single-request project settings saves.
+
 ## License
 
 Prismatica is distributed under the [MIT License](./LICENSE).

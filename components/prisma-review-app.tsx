@@ -4,6 +4,7 @@ import { buildPathForState } from "@/lib/navigation";
 import { StudyDoiEditContext } from "@/components/doi-edit";
 import { NavigationProvider } from "@/components/navigation-link";
 import { useUserPresence } from "@/components/use-user-presence";
+import { useReviewCheckout, type ReviewCheckoutTarget } from "@/components/use-review-checkout";
 import { useReviewQueueScroll, type SavedQueueDecision } from "@/components/use-review-queue-scroll";
 
 import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -63,7 +64,6 @@ import {
   getActiveExtractionReports,
   getActiveFullTextReports,
   getActiveTitleAbstractStudies,
-  getCheckoutRefreshIntervalMs,
   getConfirmedDuplicateStudyIds,
   getCountsForProject,
   getDedupCandidateProjectId,
@@ -1348,179 +1348,53 @@ export function PrismaReviewApp() {
     setScreeningMessage("");
   }, [currentStudy.id]);
 
-  useEffect(() => {
-    if (!isAuthenticated || !isAuthResolved || activeView !== "screening" || !isCurrentStudyInActiveScreeningQueue) {
-      return;
+  let checkoutTarget: ReviewCheckoutTarget | null = null;
+  if (isAuthenticated && isAuthResolved) {
+    if (activeView === "screening" && isCurrentStudyInActiveScreeningQueue) {
+      checkoutTarget = { projectId: selectedProject.id, studyId: currentStudy.id, stage: "title_abstract" };
+    } else if (activeView === "fullText" && isActiveReportInActiveFullTextQueue) {
+      checkoutTarget = { projectId: selectedProject.id, studyId: activeReport.studyId, reportId: activeReport.id, stage: "full_text" };
+    } else if (activeView === "extraction" && isActiveExtractionReportInActiveQueue && activeExtractionTemplate && activeExtractionReport) {
+      checkoutTarget = {
+        projectId: selectedProject.id, studyId: activeExtractionReport.studyId,
+        reportId: activeExtractionReport.id, templateId: activeExtractionTemplate.id, stage: "extraction"
+      };
     }
-
-    let isCancelled = false;
-    const requestBody = {
-      projectId: selectedProject.id,
-      studyId: currentStudy.id,
-      checkoutId: createClientId("title-abstract-checkout")
-    };
-    const issueKey = `${selectedProject.id}:${currentStudy.id}`;
-    setScreeningCheckoutIssue(null);
-
-    async function acquireCheckout() {
-      try {
-        const payload = await apiRequest<AppMutationPayload>("/api/screening-checkouts", {
-          method: "POST",
-          body: JSON.stringify({ ...requestBody, action: "acquire" })
-        });
-        if (!isCancelled) {
-          applyAppState(payload);
-          setScreeningMessage(payload.message ?? "");
-          setScreeningCheckoutIssue({ key: issueKey, error: payload.message ?? "" });
-        }
-      } catch (error) {
-        if (!isCancelled) {
-          setScreeningMessage(getErrorMessage(error));
-          setScreeningCheckoutIssue({ key: issueKey, error: getErrorMessage(error) });
-        }
+  }
+  const checkoutIssueKey = checkoutTarget ? `${checkoutTarget.projectId}:${checkoutTarget.reportId ?? checkoutTarget.studyId}` : "";
+  useReviewCheckout({
+    userId: isAuthenticated && isAuthResolved ? currentUser.id : null,
+    target: checkoutTarget,
+    checkoutWindowMinutes: checkoutTarget?.stage === "extraction"
+      ? reviewSettings.extractionCheckoutWindowMinutes
+      : reviewSettings.screeningCheckoutWindowMinutes,
+    acquire: (request) => apiRequest<AppMutationPayload>("/api/screening-checkouts", {
+      method: "POST",
+      body: JSON.stringify(request)
+    }),
+    onStart: () => {
+      if (checkoutTarget?.stage === "title_abstract") setScreeningCheckoutIssue(null);
+      else if (checkoutTarget?.stage === "full_text") setFullTextCheckoutIssue(null);
+    },
+    onAcquired: (payload) => {
+      applyAppState(payload);
+      if (checkoutTarget?.stage === "title_abstract") {
+        setScreeningMessage(payload.message ?? "");
+        setScreeningCheckoutIssue({ key: checkoutIssueKey, error: payload.message ?? "" });
+      } else if (checkoutTarget?.stage === "full_text") {
+        setFullTextCheckoutIssue({ key: checkoutIssueKey, error: payload.message ?? "" });
       }
-    }
-
-    acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(reviewSettings.screeningCheckoutWindowMinutes));
-
-    return () => {
-      isCancelled = true;
-      window.clearInterval(intervalId);
-      fetch("/api/screening-checkouts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...requestBody, action: "release" }),
-        keepalive: true
-      }).catch(() => undefined);
-    };
-  }, [
-    activeView,
-    reviewSettings.screeningCheckoutWindowMinutes,
-    currentStudy.id,
-    isAuthResolved,
-    isAuthenticated,
-    isCurrentStudyInActiveScreeningQueue,
-    selectedProject.id
-  ]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !isAuthResolved || activeView !== "fullText" || !isActiveReportInActiveFullTextQueue) {
-      return;
-    }
-
-    let isCancelled = false;
-    const requestBody = {
-      projectId: selectedProject.id,
-      studyId: activeReport.studyId,
-      reportId: activeReport.id,
-      checkoutId: createClientId("full-text-checkout"),
-      stage: "full_text"
-    };
-    const issueKey = `${selectedProject.id}:${activeReport.id}`;
-    setFullTextCheckoutIssue(null);
-
-    async function acquireCheckout() {
-      try {
-        const payload = await apiRequest<AppMutationPayload>("/api/screening-checkouts", {
-          method: "POST",
-          body: JSON.stringify({ ...requestBody, action: "acquire" })
-        });
-        if (!isCancelled) {
-          applyAppState(payload);
-          setFullTextCheckoutIssue({ key: issueKey, error: payload.message ?? "" });
-        }
-      } catch (error) {
-        if (!isCancelled) {
-          setFullTextCheckoutIssue({ key: issueKey, error: getErrorMessage(error) });
-        }
+    },
+    onError: (error) => {
+      if (checkoutTarget?.stage === "title_abstract") {
+        setScreeningMessage(getErrorMessage(error));
+        setScreeningCheckoutIssue({ key: checkoutIssueKey, error: getErrorMessage(error) });
+      } else if (checkoutTarget?.stage === "full_text") {
+        setFullTextCheckoutIssue({ key: checkoutIssueKey, error: getErrorMessage(error) });
       }
+      // Extraction refresh failures must not interrupt an in-progress form.
     }
-
-    acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(reviewSettings.screeningCheckoutWindowMinutes));
-
-    return () => {
-      isCancelled = true;
-      window.clearInterval(intervalId);
-      fetch("/api/screening-checkouts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...requestBody, action: "release" }),
-        keepalive: true
-      }).catch(() => undefined);
-    };
-  }, [
-    activeReport.id,
-    activeReport.studyId,
-    activeView,
-    reviewSettings.screeningCheckoutWindowMinutes,
-    isActiveReportInActiveFullTextQueue,
-    isAuthResolved,
-    isAuthenticated,
-    selectedProject.id
-  ]);
-
-  useEffect(() => {
-    if (
-      !isAuthenticated ||
-      !isAuthResolved ||
-      activeView !== "extraction" ||
-      !isActiveExtractionReportInActiveQueue ||
-      !activeExtractionTemplate ||
-      !activeExtractionReport
-    ) {
-      return;
-    }
-
-    let isCancelled = false;
-    const requestBody = {
-      projectId: selectedProject.id,
-      studyId: activeExtractionReport.studyId,
-      reportId: activeExtractionReport.id,
-      templateId: activeExtractionTemplate.id,
-      checkoutId: createClientId("extraction-checkout"),
-      stage: "extraction"
-    };
-
-    async function acquireCheckout() {
-      try {
-        const payload = await apiRequest<AppMutationPayload>("/api/screening-checkouts", {
-          method: "POST",
-          body: JSON.stringify({ ...requestBody, action: "acquire" })
-        });
-        if (!isCancelled) {
-          applyAppState(payload);
-        }
-      } catch {
-        // Extraction checkout refresh failures should not interrupt an in-progress extraction session.
-      }
-    }
-
-    acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(reviewSettings.extractionCheckoutWindowMinutes));
-
-    return () => {
-      isCancelled = true;
-      window.clearInterval(intervalId);
-      fetch("/api/screening-checkouts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...requestBody, action: "release" }),
-        keepalive: true
-      }).catch(() => undefined);
-    };
-  }, [
-    activeExtractionReport?.id,
-    activeExtractionReport?.studyId,
-    activeExtractionTemplate?.id,
-    activeView,
-    reviewSettings.extractionCheckoutWindowMinutes,
-    isActiveExtractionReportInActiveQueue,
-    isAuthResolved,
-    isAuthenticated,
-    selectedProject.id
-  ]);
+  });
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
@@ -2310,10 +2184,6 @@ export function PrismaReviewApp() {
         })
       });
       applyAppState(payload);
-
-      // Reload state after save so derived screening context reflects persisted server values.
-      const refreshedPayload = await apiRequest<AppStatePayload>("/api/app-state");
-      applyAppState(refreshedPayload);
 
       setProjectSettingsMessage("Project settings saved.");
     } catch (error) {
