@@ -185,7 +185,7 @@ export function ScreeningSection({
             <Badge label={stageEvaluation.label} tone={stageEvaluation.state === "conflict" ? "danger" : "info"} />
           </div>
           <div className="metaStrip">
-            {renderDoiLink(currentStudy.doi, `DOI ${currentStudy.doi || "Missing"}`)}
+            {renderDoiLink(currentStudy.doi, `DOI ${currentStudy.doi || "Missing"}`, currentStudy)}
             <span className={currentStudy.keywords.length > 0 ? undefined : "emptyMetaValue"}>
               {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
             </span>

@@ -13,6 +13,7 @@ import {
   ListChecks,
   XCircle
 } from "lucide-react";
+import { EditableDoiPill } from "@/components/doi-edit";
 import type { PrismaCounts, Study } from "@/lib/prismaData";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 
@@ -131,15 +132,18 @@ export function RecordComparison({ title, source, articleId, study }: { title: s
         </div>
         <div>
           <dt>DOI</dt>
-          <dd>{renderDoiLink(study.doi, study.doi || "Missing")}</dd>
+          <dd>{renderDoiLink(study.doi, study.doi || "Missing", study)}</dd>
         </div>
       </dl>
     </article>
   );
 }
 
-export function renderDoiLink(value: string, label?: string) {
+export function renderDoiLink(value: string, label?: string, study?: Study) {
   const normalizedValue = value.trim().replace(/^https?:\/\/doi\.org\//i, "").replace(/^doi:\s*/i, "");
+  if (study) {
+    return <EditableDoiPill study={study} label={label ?? (normalizedValue || "Missing")} />;
+  }
   if (!normalizedValue) {
     return <span className="doiLinkPill">{label ?? "Missing"}</span>;
   }

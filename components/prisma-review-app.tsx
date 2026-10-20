@@ -1,6 +1,7 @@
 "use client";
 
 import { buildPathForState } from "@/lib/navigation";
+import { StudyDoiEditContext } from "@/components/doi-edit";
 import { NavigationProvider } from "@/components/navigation-link";
 import { useUserPresence } from "@/components/use-user-presence";
 import { useReviewQueueScroll, type SavedQueueDecision } from "@/components/use-review-queue-scroll";
@@ -3180,6 +3181,28 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function saveStudyDoi(study: Study, doi: string) {
+    if (!study.importBatchId) {
+      throw new Error("This citation is not linked to an editable import batch.");
+    }
+    const payload = await apiRequest<AppMutationPayload>(
+      `/api/projects/${encodeURIComponent(selectedProject.id)}/imports/${encodeURIComponent(study.importBatchId)}/studies/${encodeURIComponent(study.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          title: study.title,
+          authors: study.authors.join("; "),
+          journal: study.journal,
+          year: study.year > 0 ? String(study.year) : "",
+          doi,
+          keywords: study.keywords.join("; "),
+          abstract: study.abstract
+        })
+      }
+    );
+    applyAppState(payload);
+  }
+
   async function updateDedupStudy(study: Study, form: StudyEditForm) {
     if (!study.importBatchId) {
       throw new Error("This citation is not linked to an editable import batch.");
@@ -4075,6 +4098,7 @@ export function PrismaReviewApp() {
         ];
 
   return (
+    <StudyDoiEditContext.Provider value={saveStudyDoi}>
     <NavigationProvider projectId={selectedProject.id} homeView={homeView}>
       <AppShell
         pageKey={pathname ?? ""}
@@ -4131,6 +4155,7 @@ export function PrismaReviewApp() {
         {renderActiveView()}
       </AppShell>
     </NavigationProvider>
+    </StudyDoiEditContext.Provider>
   );
 }
 

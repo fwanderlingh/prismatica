@@ -45,6 +45,7 @@ export function PdfUploadSection({ projectId, projectTitle, reports, studies, ma
   const assignedIds = pendingFiles.map((item) => item.reportId);
   const canUpload = pendingFiles.length > 0 && pendingFiles.every((item) => reportIds.has(item.reportId)) && new Set(assignedIds).size === assignedIds.length;
   const uploadedCount = reports.filter((report) => report.fileName).length;
+  const studyById = useMemo(() => new Map(studies.map((study) => [study.id, study])), [studies]);
   const doiByStudyId = useMemo(() => new Map(studies.map((study) => [study.id, study.doi])), [studies]);
   const filteredReports = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -203,7 +204,7 @@ export function PdfUploadSection({ projectId, projectTitle, reports, studies, ma
                     return (
                       <tr key={report.id}>
                         <td><strong>{report.title}</strong><p className="subtle">{report.citation}</p></td>
-                        <td>{doi ? renderDoiLink(doi) : <Badge label="No DOI" tone="neutral" />}</td>
+                        <td>{studyById.get(report.studyId) ? renderDoiLink(doi, doi || "No DOI", studyById.get(report.studyId)) : doi ? renderDoiLink(doi) : <Badge label="No DOI" tone="neutral" />}</td>
                         <td>
                           {report.fileName ? <a href={`/api/projects/${encodeURIComponent(projectId)}/reports/${encodeURIComponent(report.id)}/pdf`} target="_blank" rel="noreferrer">{report.fileName}</a> : <Badge label="No PDF" tone="neutral" />}
                           {queuedFile ? <p className="subtle">Selected: {queuedFile.file.name}</p> : null}

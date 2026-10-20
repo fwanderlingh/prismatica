@@ -296,7 +296,7 @@ export function FullTextSection({
           <h2>{activeReport.title}</h2>
           <p className="subtle">{activeReport.citation}</p>
           <div className="metaStrip">
-            {renderDoiLink(currentReportStudy.doi, `DOI ${currentReportStudy.doi || "Missing"}`)}
+            {renderDoiLink(currentReportStudy.doi, `DOI ${currentReportStudy.doi || "Missing"}`, currentReportStudy)}
           </div>
 
           <div className="fieldLabel retrievalLabel">

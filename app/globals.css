@@ -611,13 +611,24 @@ h3 {
 }
 
 .navPhaseMarker {
+  --marker-size: calc(10px * var(--ui-scale, 1));
+
   display: block;
-  flex: 0 0 auto;
-  width: calc(10px * var(--ui-scale));
-  height: calc(10px * var(--ui-scale));
+  box-sizing: border-box;
+  flex: 0 0 var(--marker-size);
+  align-self: center;
+
+  width: var(--marker-size);
+  min-width: var(--marker-size);
+  max-width: var(--marker-size);
+  height: var(--marker-size);
+  min-height: var(--marker-size);
+  max-height: var(--marker-size);
+
+  padding: 0;
   margin-left: auto;
-  border: calc(2px * var(--ui-scale)) solid var(--border);
-  border-radius: calc(999px * var(--ui-scale));
+  border: calc(2px * var(--ui-scale, 1)) solid var(--border);
+  border-radius: 50%;
 }
 
 .navItem .navLabel {
@@ -3100,6 +3111,47 @@ td span {
   max-width: 100%;
   vertical-align: middle;
   overflow-wrap: anywhere;
+}
+
+.doiLinkPillMissing {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--ui-scale));
+}
+
+.doiEditButton {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.doiEditButton:hover:not(:disabled) {
+  color: var(--teal);
+}
+
+.doiEditForm {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(6px * var(--ui-scale));
+  max-width: 100%;
+}
+
+.doiEditForm input {
+  width: calc(190px * var(--ui-scale));
+  min-height: 0;
+  padding: calc(4px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  font-size: 0.82rem;
+}
+
+.doiEditError {
+  flex-basis: 100%;
+  color: var(--red, #b42318);
+  font-size: 0.78rem;
 }
 
 .metaStrip .emptyMetaValue {
