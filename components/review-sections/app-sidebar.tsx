@@ -10,6 +10,14 @@ type NavItem = {
   Icon?: LucideIcon;
 };
 
+function NavPhaseMarker() {
+  return (
+    <svg className="navPhaseMarker" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+      <circle cx="5" cy="5" r="4" />
+    </svg>
+  );
+}
+
 type AppSidebarProps = {
   brandName: string;
   brandTagline: string;
@@ -136,7 +144,7 @@ export function AppSidebar({
                     >
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>
-                      {effectivePhaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
+                      {effectivePhaseState ? <NavPhaseMarker /> : null}
                     </ViewLink>
                   );
                 })}
@@ -165,7 +173,7 @@ export function AppSidebar({
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>
                       {key === "exports" && exportFailedCount > 0 ? <span className="navWarnBadge">{exportFailedCount}</span> : null}
-                      {phaseState ? <i className="navPhaseMarker" aria-hidden="true" /> : null}
+                      {phaseState ? <NavPhaseMarker /> : null}
                     </ViewLink>
                   );
                 })}
