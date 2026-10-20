@@ -1266,6 +1266,31 @@ h3 {
   margin-top: calc(10px * var(--ui-scale));
 }
 
+.exportReviewItems {
+  margin-top: calc(20px * var(--ui-scale));
+}
+
+.exportReviewItems ul {
+  display: grid;
+  gap: calc(14px * var(--ui-scale));
+  max-height: calc(360px * var(--ui-scale));
+  overflow-y: auto;
+  padding: calc(4px * var(--ui-scale));
+  list-style: none;
+}
+
+.exportReviewItems li {
+  display: grid;
+  justify-items: start;
+  gap: calc(6px * var(--ui-scale));
+  padding-bottom: calc(12px * var(--ui-scale));
+  border-bottom: 1px solid var(--border);
+}
+
+.exportReviewItems small {
+  color: var(--text-soft);
+}
+
 .ghostButton,
 .primaryButton,
 .dangerButton,

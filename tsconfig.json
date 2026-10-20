@@ -9,6 +9,8 @@
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "ignoreDeprecations": "6.0",
     "noEmit": true,
     "esModuleInterop": true,

@@ -10,27 +10,10 @@ import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
-  AlertTriangle,
-  Archive,
-  BarChart3,
-  Bell,
   BookOpen,
-  Building2,
-  CalendarClock,
-  Check,
-  CheckCircle2,
-  ChevronRight,
-  ChevronDown,
   ClipboardCheck,
-  Database,
   Download,
-  Eye,
-  EyeOff,
-  FileArchive,
   FileSearch,
-  FileText,
-  FlaskConical,
   FolderPlus,
   GitMerge,
   History,
@@ -39,36 +22,15 @@ import {
   Info,
   Import,
   LayoutDashboard,
-  ListChecks,
-  LogIn,
-  LogOut,
-  Lock,
-  MessageSquareText,
-  Minus,
-  PenLine,
-  PanelRight,
-  Search,
   Settings,
-  ShieldCheck,
-  Trash2,
-  Upload,
-  User,
-  UserCircle,
-  UserRoundCheck,
-  Users,
-  X,
-  XCircle,
-  ZoomIn
+  Users
 } from "lucide-react";
 import {
   dedupCandidates as seedDedupCandidates,
   highlightRules,
   initialDecisions,
   initialWorkflowEvents,
-  prismaCounts,
-  qualityDomains,
   reportQueue,
-  roleRows,
   reviewProjects,
   type AppUser,
   screeningStudies,
@@ -91,10 +53,11 @@ import {
 } from "@/lib/prismaData";
 import { groupByKey } from "@/lib/collectionIndexes";
 import { getProjectAuditEvents } from "@/lib/auditHistory";
+import { getExportConsistency } from "@/lib/exportConsistency";
 import { readFileWithProgress, readImportProgress, type LoadProgress as LoadingProgress } from "@/lib/loadProgress";
 import { LoadProgress } from "./review-sections/load-progress";
-import type { ApiErrorPayload, AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
-import { evaluateStage, type DecisionValue, type StageEvaluation } from "@/lib/workflow";
+import type { ApiErrorPayload, AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
+import { evaluateStage, type DecisionValue } from "@/lib/workflow";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 import {
   getActiveExtractionReports,
@@ -110,17 +73,6 @@ import {
   sortReportsByStudyOrder,
   sumObject
 } from "@/lib/workflowSelectors";
-import {
-  Badge,
-  EmptyState,
-  Metric,
-  PrismaFlow,
-  RecordComparison,
-  ScoreBar,
-  SectionTitle,
-  StatusRow,
-  renderDoiLink
-} from "./prisma-review-ui";
 import { FullTextSection } from "./review-sections/full-text-section";
 import { PdfUploadSection } from "./review-sections/pdf-upload-section";
 import { ExtractionSection } from "./review-sections/extraction-section";
@@ -791,10 +743,10 @@ export function PrismaReviewApp() {
   );
   const projectReportQueue = useMemo(
     () => sortReportsByStudyOrder(
-      hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(selectedProject, importedProjectStudies, reports),
+      hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(selectedProject, projectScreeningStudies, reports),
       projectScreeningStudies
     ),
-    [hasProjectSeedData, selectedProject, importedProjectStudies, reports, projectScreeningStudies]
+    [hasProjectSeedData, selectedProject, reports, projectScreeningStudies]
   );
   const activeFullTextReports = useMemo(
     () => getActiveFullTextReports(selectedProject, projectReportQueue, decisions, currentUser.id),
@@ -1070,63 +1022,13 @@ export function PrismaReviewApp() {
   const reportsExcludedTotal = sumObject(activeCounts.reportsExcludedWithReasons);
   const recordsIdentified =
     activeCounts.recordsIdentifiedDatabase + activeCounts.recordsIdentifiedRegisters + activeCounts.recordsIdentifiedOther;
-  const exportConsistency = useMemo(() => {
-    const preScreenRemovalTotal = activeCounts.duplicateRecordsRemoved + activeCounts.automationRemoved + activeCounts.removedOtherReasons;
-    const screenedAndPreScreenRemovedTotal = activeCounts.recordsScreened + preScreenRemovalTotal;
-    const screenBalanceTotal = activeCounts.recordsExcluded + activeCounts.reportsSought;
-    const retrievalBalanceTotal = activeCounts.reportsAssessed + activeCounts.reportsNotRetrieved;
-    const assessedBalanceTotal = reportsExcludedTotal + activeCounts.studiesIncluded;
-    const excludedFullTextDecisions = decisions.filter(
-      (decision) =>
-        decision.projectId === selectedProject.id &&
-        decision.stage === "full_text" &&
-        decision.isCurrent &&
-        decision.decisionValue === "exclude"
-    );
-    const excludedWithoutReasonCount = excludedFullTextDecisions.filter((decision) => !decision.exclusionReasonId).length;
-
-    const identifiedCheckActive = recordsIdentified > 0 || screenedAndPreScreenRemovedTotal > 0;
-    const screenedCheckActive = activeCounts.recordsScreened > 0 || screenBalanceTotal > 0;
-    const retrievalCheckActive = activeCounts.reportsSought > 0 || retrievalBalanceTotal > 0;
-    const assessedCheckActive = activeCounts.reportsAssessed > 0 || assessedBalanceTotal > 0;
-    const exclusionReasonCheckActive = excludedFullTextDecisions.length > 0;
-
-    const identifiedCheckOk = identifiedCheckActive && recordsIdentified >= screenedAndPreScreenRemovedTotal;
-    const screenedCheckOk = screenedCheckActive && activeCounts.recordsScreened === screenBalanceTotal;
-    const retrievalCheckOk = retrievalCheckActive && activeCounts.reportsSought === retrievalBalanceTotal;
-    const assessedCheckOk = assessedCheckActive && activeCounts.reportsAssessed === assessedBalanceTotal;
-    const exclusionReasonCheckOk = exclusionReasonCheckActive && excludedWithoutReasonCount === 0;
-    const activeCount = [
-      identifiedCheckActive,
-      screenedCheckActive,
-      retrievalCheckActive,
-      assessedCheckActive,
-      exclusionReasonCheckActive
-    ].filter(Boolean).length;
-    const passedCount = [identifiedCheckOk, screenedCheckOk, retrievalCheckOk, assessedCheckOk, exclusionReasonCheckOk].filter(Boolean).length;
-
-    return {
-      screenedAndPreScreenRemovedTotal,
-      screenBalanceTotal,
-      retrievalBalanceTotal,
-      assessedBalanceTotal,
-      excludedWithoutReasonCount,
-      identifiedCheckActive,
-      screenedCheckActive,
-      retrievalCheckActive,
-      assessedCheckActive,
-      exclusionReasonCheckActive,
-      identifiedCheckOk,
-      screenedCheckOk,
-      retrievalCheckOk,
-      assessedCheckOk,
-      exclusionReasonCheckOk,
-      activeCount,
-      passedCount,
-      totalCount: 5,
-      failedCount: activeCount - passedCount
-    };
-  }, [activeCounts, decisions, recordsIdentified, reportsExcludedTotal, selectedProject.id]);
+  const exportConsistency = useMemo(() => getExportConsistency({
+    project: selectedProject,
+    counts: activeCounts,
+    studies: projectScreeningStudies,
+    reports: projectReportQueue,
+    decisions
+  }), [activeCounts, decisions, projectScreeningStudies, projectReportQueue, selectedProject]);
   const screeningProgress =
     projectScreeningStudies.length > 0 ? Math.round((screenedByMe / projectScreeningStudies.length) * 100) : 0;
   const sequentialPhaseAccess = useMemo<PhaseAccessMap>(() => getSequentialPhaseAccess({
@@ -3435,7 +3337,6 @@ export function PrismaReviewApp() {
         selectedProject={selectedProject}
         recordsIdentified={recordsIdentified}
         activeCounts={activeCounts}
-        reportsExcludedTotal={reportsExcludedTotal}
         workflowConflicts={workflowConflicts}
         exportFailedCount={exportConsistency.failedCount}
         projectEvents={projectEvents}
@@ -3554,7 +3455,6 @@ export function PrismaReviewApp() {
         projectScreeningStudies={activeScreeningStudies}
         totalScreeningStudyCount={projectScreeningStudies.length}
         screeningProgress={screeningProgress}
-        screenedByMe={screenedByMe}
         decisions={decisions}
         selectedProjectId={selectedProject.id}
         currentUserId={currentUser.id}
@@ -3759,7 +3659,16 @@ export function PrismaReviewApp() {
   }
 
   function renderExports() {
-    const canExportExtractionCsv = selectedProject.stage === "complete" && Boolean(activeExtractionTemplate) && activeCounts.studiesIncluded > 0;
+    const canExportExtractionCsv = selectedProject.stage === "complete" && Boolean(activeExtractionTemplate?.isActive) && activeCounts.studiesIncluded > 0;
+    const availableScreeningStudyIds = new Set(activeScreeningStudies.map((study) => study.id));
+    const availableReportIds = new Set(activeFullTextReports.map((report) => report.id));
+    const canOpenScreening = canNavigateToProjectView("screening");
+    const canOpenFullText = canNavigateToProjectView("fullText");
+    const exportUnavailableReasons = [
+      ...(selectedProject.stage !== "complete" ? [`The review is currently in ${formatProjectPhase(selectedProject.stage)}; complete the remaining review work.`] : []),
+      ...(!activeExtractionTemplate?.isActive ? ["Create an active extraction template."] : []),
+      ...(activeCounts.studiesIncluded === 0 ? ["Include at least one study for extraction."] : [])
+    ];
 
     return (
       <ExportsSection
@@ -3770,6 +3679,17 @@ export function PrismaReviewApp() {
         exportMessage={exportMessage}
         isExportingConsensusCsv={isExportingConsensusCsv}
         canExportExtractionCsv={canExportExtractionCsv}
+        exportUnavailableReasons={exportUnavailableReasons}
+        canOpenScreeningStudy={(studyId) => canOpenScreening && availableScreeningStudyIds.has(studyId)}
+        canOpenReport={(reportId) => canOpenFullText && availableReportIds.has(reportId)}
+        onOpenScreeningStudy={(studyId) => {
+          setSelectedScreeningStudyId(studyId);
+          navigateToProjectView("screening");
+        }}
+        onOpenReport={(reportId) => {
+          setActiveReportId(reportId);
+          navigateToProjectView("fullText");
+        }}
         downloadConsensusExtractionCsv={downloadConsensusExtractionCsv}
         formatNumber={formatNumber}
       />
@@ -4127,8 +4047,6 @@ export function PrismaReviewApp() {
             exportFailedCount={exportConsistency.failedCount}
             getPhaseNavState={getSelectedProjectPhaseNavState}
             canNavigateToProjectView={canNavigateToProjectView}
-            formatProjectPhase={formatProjectPhase}
-            projectPhaseBadgeTone={projectPhaseBadgeTone}
             onGoDashboard={() => {
               setActiveView("dashboard");
               setIsMobileNavOpen(false);

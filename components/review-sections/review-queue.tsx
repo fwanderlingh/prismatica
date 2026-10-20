@@ -46,8 +46,6 @@ type ReportPickerProps = {
   eyebrow: string;
   summary: ReactNode;
   detail?: ReactNode;
-  activeStudy?: Pick<Study, "importItemId">;
-  activeFallbackId?: number | string;
   selectLabel: string;
   selectedReportId: string;
   reports: Report[];
@@ -87,8 +85,6 @@ export function ReportPicker({
   eyebrow,
   summary,
   detail,
-  activeStudy,
-  activeFallbackId,
   selectLabel,
   selectedReportId,
   reports,
@@ -103,7 +99,6 @@ export function ReportPicker({
         <p className="eyebrow">{eyebrow}</p>
         <strong>{summary}</strong>
         {detail ? <p className="subtle">{detail}</p> : null}
-        {/* <ArticleIdLabel study={activeStudy} fallbackId={activeFallbackId} /> */}
       </div>
       {action}
       <label className="fieldLabel" htmlFor={id}>

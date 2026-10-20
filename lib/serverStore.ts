@@ -5,6 +5,7 @@ import type { LoadProgress } from "./loadProgress";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
+import { isDeepStrictEqual } from "util";
 import { normalizeAuditHistoryLimit } from "./auditHistory";
 import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "./apiTypes";
 import { createPdfStorageAdapter } from "./pdfStorage";
@@ -679,7 +680,7 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
             studyIds.has(consensus.studyId) &&
             reportIds.has(consensus.reportId) &&
             extractionTemplateIds.has(consensus.templateId) &&
-            (!consensus.finalizedByUserId || userIds.has(consensus.finalizedByUserId))
+            (!consensus.finalizedByUserId || consensus.finalizedByUserId === "system" || userIds.has(consensus.finalizedByUserId))
         )
         .map((consensus) => normalizeExtractionConsensus(consensus))
     : [];
@@ -1680,7 +1681,6 @@ export function adminDeleteUserForUser(adminUserIdInput: string, targetUserId: s
     throw new ApiError("Admin accounts cannot be deleted here.", 400);
   }
 
-  const ownedProjectIds = new Set(state.projects.filter((project) => project.ownerId === targetUserId).map((project) => project.id));
   const solelyOwnedProjectIds = new Set(
     state.projects.filter((project) => isProjectOwner(project, targetUserId) && getProjectOwnerIds(project).length === 1).map((project) => project.id)
   );
@@ -1938,7 +1938,7 @@ export function updateProjectForUser(userId: string, projectId: string, input: U
         }
       : candidate
   );
-  syncProjectWorkflowCounts(state, projectId);
+  resyncProjectWorkflowState(state, requireProjectOwner(state, projectId, userId));
   appendEvent(state, currentUser.name, "Updated project settings", projectId);
   writeState(state);
 
@@ -2165,6 +2165,7 @@ export function saveExtractionTemplateForUser(userId: string, projectId: string,
       : `Created data extraction schema ${title}`,
     projectId
   );
+  refreshProjectWorkflowSummary(state, projectId);
   writeState(state);
   return buildPayload(state, userId);
 }
@@ -2273,9 +2274,8 @@ export function saveExtractionResponseForUser(userId: string, projectId: string,
         checkout.userId === userId
       )
   );
-  syncExtractionConsensusForReport(state, projectId, report.id, template.id);
   appendEvent(state, currentUser.name, `Submitted data extraction for ${report.title}`, report.id);
-  syncProjectWorkflowCounts(state, projectId);
+  refreshProjectWorkflowSummary(state, projectId, [report.id]);
   writeState(state);
   return buildPayload(state, userId);
 }
@@ -2300,7 +2300,8 @@ export function saveExtractionConsensusForUser(userId: string, projectId: string
     throw new ApiError("Create an active data template before resolving extraction conflicts.", 404);
   }
 
-  const draft = buildExtractionConsensusDraft(state, project, report.id, template);
+  const context = createProjectWorkflowContext(state, project);
+  const draft = buildExtractionConsensusDraft(state, project, report.id, template, context);
   if (!draft) {
     throw new ApiError("Consensus is not ready yet. Collect all required independent extraction submissions first.", 400);
   }
@@ -2345,8 +2346,9 @@ export function saveExtractionConsensusForUser(userId: string, projectId: string
     ...state.extractionConsensus.filter((consensus) => consensus.id !== existingConsensus?.id),
     finalizedConsensus
   ];
+  context.consensusByReportAndTemplate.set(extractionConsensusKey(report.id, template.id), finalizedConsensus);
   appendEvent(state, currentUser.name, `Finalized extraction consensus for ${report.title}`, report.id);
-  syncProjectWorkflowCounts(state, projectId);
+  syncProjectWorkflowCounts(state, projectId, context);
   writeState(state);
   return buildPayload(state, userId);
 }
@@ -2814,7 +2816,9 @@ export function addScreeningDecisionForUser(
       )
   );
   appendEvent(state, currentUser.name, `Voted ${formatDecision(nextDecision.decisionValue)}`, studyId);
-  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
+  const context = createProjectWorkflowContext(state, project);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
+  refreshWorkflowAfterStudyDecision(state, project, studyId, context);
   acquireNextTitleAbstractCheckoutForUser(state, project, userId);
   writeState(state);
 
@@ -3194,26 +3198,22 @@ export function getConsensusExtractionCsvForUser(userId: string, projectId: stri
   const headers = [...metadataHeaders, ...fieldsWithHeaders.map((field) => field.header)];
   const rows: string[][] = [];
   let unresolvedReports = 0;
+  const context = createProjectWorkflowContext(state, project);
 
   for (const report of includedReports) {
-    const study = includedStudies.find((candidate) => candidate.id === report.studyId);
+    const study = context.studiesById.get(report.studyId);
     if (!study) {
       continue;
     }
 
-    const draft = buildExtractionConsensusDraft(state, project, report.id, template);
+    const draft = buildExtractionConsensusDraft(state, project, report.id, template, context);
     if (!draft) {
       unresolvedReports += 1;
       continue;
     }
 
-    const finalizedConsensus = state.extractionConsensus.find(
-      (consensus) =>
-        consensus.projectId === projectId &&
-        consensus.reportId === report.id &&
-        consensus.templateId === template.id &&
-        consensus.status === "finalized"
-    );
+    const consensus = context.consensusByReportAndTemplate.get(extractionConsensusKey(report.id, template.id));
+    const finalizedConsensus = consensus?.status === "finalized" ? consensus : undefined;
     const finalizedAt = Date.parse(finalizedConsensus?.finalizedAt ?? "");
     const consensusIsCurrent = Boolean(finalizedConsensus && Number.isFinite(finalizedAt) && finalizedAt >= draft.latestSubmittedAt);
     if (!consensusIsCurrent || !finalizedConsensus) {
@@ -3364,6 +3364,7 @@ export function updateReportForUser(
       : candidate
   );
 
+  let workflowContext: ProjectWorkflowContext | undefined;
   if (decisionValue) {
     const nextDecision: Decision = {
       id: createId("dec"),
@@ -3396,7 +3397,8 @@ export function updateReportForUser(
         )
     );
     appendEvent(state, currentUser.name, `Full-text ${formatDecision(decisionValue)}`, reportId);
-    syncStudyAfterFullTextDecision(state, project, reportId);
+    workflowContext = createProjectWorkflowContext(state, project);
+    syncStudyAfterFullTextDecision(state, project, reportId, workflowContext);
   } else if (input.retrievalStatus && isRetrievalStatus(input.retrievalStatus)) {
     if (nextRetrievalStatus === "not_retrieved") {
       state.screeningCheckouts = state.screeningCheckouts.filter(
@@ -3406,7 +3408,7 @@ export function updateReportForUser(
     appendEvent(state, currentUser.name, `Updated retrieval status to ${formatRetrievalStatus(nextRetrievalStatus)}`, reportId);
   }
 
-  syncProjectWorkflowCounts(state, projectId);
+  refreshProjectWorkflowSummary(state, projectId, [reportId], workflowContext);
   writeState(state);
   return buildPayload(state, userId);
 }
@@ -3578,7 +3580,9 @@ export function undoScreeningDecisionForUser(
 
   appendEvent(state, currentUser.name, "Undid latest screening vote", studyId);
   const project = requireProjectMember(state, projectId, userId);
-  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
+  const context = createProjectWorkflowContext(state, project);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
+  refreshWorkflowAfterStudyDecision(state, project, studyId, context);
   writeState(state);
   return buildPayload(state, userId);
 }
@@ -3622,7 +3626,9 @@ export function reopenTitleAbstractDecisionForUser(userId: string, projectId: st
   );
 
   appendEvent(state, currentUser.name, "Returned citation to title/abstract queue", studyId);
-  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name);
+  const context = createProjectWorkflowContext(state, project);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
+  refreshWorkflowAfterStudyDecision(state, project, studyId, context);
   writeState(state);
   return {
     ...buildPayload(state, userId),
@@ -3673,8 +3679,9 @@ export function reopenFullTextDecisionForUser(userId: string, projectId: string,
   );
 
   appendEvent(state, currentUser.name, "Returned report to full-text queue", reportId);
-  syncStudyAfterFullTextDecision(state, project, reportId);
-  syncProjectWorkflowCounts(state, projectId);
+  const context = createProjectWorkflowContext(state, project);
+  syncStudyAfterFullTextDecision(state, project, reportId, context);
+  refreshProjectWorkflowSummary(state, projectId, [reportId], context);
   writeState(state);
   return {
     ...buildPayload(state, userId),
@@ -3734,9 +3741,8 @@ export function reopenExtractionResponseForUser(userId: string, projectId: strin
       )
   );
 
-  syncExtractionConsensusForReport(state, projectId, reportId, template.id);
   appendEvent(state, currentUser.name, "Returned extraction to queue", reportId);
-  syncProjectWorkflowCounts(state, projectId);
+  refreshProjectWorkflowSummary(state, projectId, [reportId]);
   writeState(state);
   return {
     ...buildPayload(state, userId),
@@ -3868,10 +3874,79 @@ export function rejectPendingDedupCandidatesForUser(userId: string, projectId: s
   };
 }
 
-function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: ReviewProject, studyId: string, actor: string) {
-  const currentDecisions = state.decisions.filter(
-    (decision) => decision.projectId === project.id && decision.studyId === studyId && decision.stage === "title_abstract" && decision.isCurrent
-  );
+type ExtractionConsensusDraft = {
+  report: Report;
+  study: Study;
+  template: ExtractionTemplate;
+  reviewerResponseIds: string[];
+  sourceFingerprint: string;
+  flaggedFieldIds: string[];
+  autoResolvedValues: Record<string, ExtractionResponseValue>;
+  latestSubmittedAt: number;
+};
+
+function createProjectDecisionContext(state: PersistedState, project: ReviewProject) {
+  const studies = state.studies.filter((study) => study.projectId === project.id);
+  const reports = state.reports.filter((report) => report.projectId === project.id);
+  const decisions = state.decisions.filter((decision) => decision.projectId === project.id);
+  const currentDecisions = decisions.filter((decision) => decision.isCurrent);
+  return {
+    project,
+    studiesById: new Map(studies.map((study) => [study.id, study])),
+    reportsById: new Map(reports.map((report) => [report.id, report])),
+    reportsByStudyId: groupByKey(reports, (report) => report.studyId),
+    titleDecisionsByStudyId: groupByKey(currentDecisions.filter((decision) => decision.stage === "title_abstract"), (decision) => decision.studyId),
+    fullTextDecisionsByReportId: groupByKey(currentDecisions.filter((decision) => decision.stage === "full_text"), (decision) => decision.reportId),
+    fullTextWorkReportIds: new Set(decisions.filter((decision) => decision.stage === "full_text").map((decision) => decision.reportId))
+  };
+}
+
+// These indexes and drafts live only for one synchronous workflow operation.
+// A later submission must always be evaluated again, even if its values match.
+function createProjectWorkflowContext(state: PersistedState, project: ReviewProject) {
+  const responses = state.extractionResponses.filter((response) => response.projectId === project.id && response.isSubmitted);
+  return {
+    ...createProjectDecisionContext(state, project),
+    responsesByReportAndTemplate: groupByKey(responses, (response) => extractionConsensusKey(response.reportId, response.templateId)),
+    consensusByReportAndTemplate: new Map(state.extractionConsensus
+      .filter((consensus) => consensus.projectId === project.id)
+      .map((consensus) => [extractionConsensusKey(consensus.reportId, consensus.templateId), consensus])),
+    consensusUpdates: new Map<string, ExtractionConsensus | undefined>(),
+    drafts: new Map<string, ExtractionConsensusDraft | undefined>()
+  };
+}
+
+type ProjectWorkflowContext = ReturnType<typeof createProjectWorkflowContext>;
+
+function extractionConsensusKey(reportId: string, templateId: string) {
+  return JSON.stringify([reportId, templateId]);
+}
+
+function applyExtractionConsensusUpdates(state: PersistedState, context: ProjectWorkflowContext) {
+  if (context.consensusUpdates.size === 0) {
+    return;
+  }
+  const remaining = new Map(context.consensusUpdates);
+  state.extractionConsensus = state.extractionConsensus.flatMap((consensus) => {
+    const key = extractionConsensusKey(consensus.reportId, consensus.templateId);
+    if (consensus.projectId !== context.project.id || !context.consensusUpdates.has(key)) {
+      return [consensus];
+    }
+    const updated = remaining.get(key);
+    remaining.delete(key);
+    return updated ? [updated] : [];
+  });
+  for (const consensus of remaining.values()) {
+    if (consensus) state.extractionConsensus.push(consensus);
+  }
+  context.consensusUpdates.clear();
+}
+
+function syncStudyAfterTitleAbstractDecision(
+  state: PersistedState, project: ReviewProject, studyId: string, actor: string,
+  context = createProjectWorkflowContext(state, project)
+) {
+  const currentDecisions = context.titleDecisionsByStudyId.get(studyId) ?? [];
   const evaluation = evaluateStage(
     "title_abstract",
     currentDecisions.map((decision) => decision.decisionValue),
@@ -3880,41 +3955,33 @@ function syncStudyAfterTitleAbstractDecision(state: PersistedState, project: Rev
   );
 
   if (evaluation.state === "advance_full_text") {
-    let advancedStudy: Study | undefined;
-    let transitionedToFullText = false;
-    state.studies = state.studies.map((study) => {
-      if (study.id !== studyId || study.projectId !== project.id) {
-        return study;
-      }
-      // Only transition from title/abstract to full-text; never downgrade extraction studies during resync.
-      transitionedToFullText = study.stage === "title_abstract";
-      advancedStudy = transitionedToFullText ? { ...study, stage: "full_text" } : study;
-      return advancedStudy;
-    });
+    const advancedStudy = context.studiesById.get(studyId);
+    // Only transition from title/abstract; never downgrade extraction during resync.
+    const transitionedToFullText = advancedStudy?.stage === "title_abstract";
     if (advancedStudy) {
-      upsertReportForStudy(state, project.id, advancedStudy, actor);
+      if (transitionedToFullText) advancedStudy.stage = "full_text";
+      upsertReportForStudy(state, project.id, advancedStudy, actor, context);
       if (transitionedToFullText) {
         appendEvent(state, actor, "Advanced study to full-text review", studyId);
       }
     }
   } else {
-    const existingReport = state.reports.find((report) => report.projectId === project.id && report.studyId === studyId);
-    const hasFullTextWork = existingReport
-      ? state.decisions.some((decision) => decision.reportId === existingReport.id && decision.stage === "full_text")
-      : false;
+    const existingReport = context.reportsByStudyId.get(studyId)?.[0];
+    const hasFullTextWork = existingReport && context.fullTextWorkReportIds.has(existingReport.id);
     if (existingReport && !hasFullTextWork) {
       const shouldKeepImportedPdf = Boolean(existingReport.sourcePdfUrl || existingReport.fileName);
       if (!shouldKeepImportedPdf) {
         state.reports = state.reports.filter((report) => report.id !== existingReport.id);
+        context.reportsById.delete(existingReport.id);
+        context.reportsByStudyId.set(studyId, (context.reportsByStudyId.get(studyId) ?? []).filter((report) => report.id !== existingReport.id));
       }
-      state.studies = state.studies.map((study) =>
-        study.id === studyId && study.projectId === project.id && study.stage === "full_text" ? { ...study, stage: "title_abstract" } : study
-      );
-      appendEvent(state, actor, "Returned study to title/abstract screening", studyId);
+      const study = context.studiesById.get(studyId);
+      if (study?.stage === "full_text") {
+        study.stage = "title_abstract";
+        appendEvent(state, actor, "Returned study to title/abstract screening", studyId);
+      }
     }
   }
-
-  syncProjectWorkflowCounts(state, project.id);
 }
 
 function buildConsensusFieldHeaders(fields: ExtractionTemplateField[]) {
@@ -3935,38 +4002,28 @@ function buildConsensusFieldHeaders(fields: ExtractionTemplateField[]) {
   });
 }
 
-function buildExtractionConsensusDraft(state: PersistedState, project: ReviewProject, reportId: string, template: ExtractionTemplate) {
-  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === project.id);
+function buildExtractionConsensusDraft(
+  state: PersistedState, project: ReviewProject, reportId: string, template: ExtractionTemplate,
+  context = createProjectWorkflowContext(state, project)
+): ExtractionConsensusDraft | undefined {
+  const report = context.reportsById.get(reportId);
   if (!report) {
     return undefined;
   }
 
-  const study = state.studies.find((candidate) => candidate.id === report.studyId && candidate.projectId === project.id);
+  const study = context.studiesById.get(report.studyId);
   if (!study || study.stage !== "extraction") {
     return undefined;
   }
 
-  const submittedResponses = state.extractionResponses
-    .filter(
-      (response) =>
-        response.projectId === project.id &&
-        response.reportId === report.id &&
-        response.templateId === template.id &&
-        response.isSubmitted
-    )
+  const submittedResponses = [...(context.responsesByReportAndTemplate.get(extractionConsensusKey(report.id, template.id)) ?? [])]
     .sort((left, right) => left.userId.localeCompare(right.userId));
 
   if (submittedResponses.length < project.extractionRequiredVotes) {
     return undefined;
   }
 
-  const latestSubmittedAt = submittedResponses.reduce((latest, response) => {
-    const candidateTime = Date.parse(response.submittedAt ?? response.updatedAt ?? "");
-    if (!Number.isFinite(candidateTime)) {
-      return latest;
-    }
-    return Math.max(latest, candidateTime);
-  }, 0);
+  const latestSubmittedAt = getLatestExtractionSubmissionTime(submittedResponses);
 
   const autoResolvedValues: Record<string, ExtractionResponseValue> = {};
   const flaggedFieldIds: string[] = [];
@@ -4011,8 +4068,18 @@ function buildExtractionConsensusDraft(state: PersistedState, project: ReviewPro
   };
 }
 
-function syncExtractionConsensusForReport(state: PersistedState, projectId: string, reportId: string, templateId: string) {
-  const project = state.projects.find((candidate) => candidate.id === projectId);
+function getLatestExtractionSubmissionTime(responses: ExtractionResponse[]) {
+  return responses.reduce((latest, response) => {
+    const candidateTime = Date.parse(response.submittedAt ?? response.updatedAt ?? "");
+    return Number.isFinite(candidateTime) ? Math.max(latest, candidateTime) : latest;
+  }, 0);
+}
+
+function syncExtractionConsensusForReport(
+  state: PersistedState, projectId: string, reportId: string, templateId: string,
+  context?: ProjectWorkflowContext
+) {
+  const project = context?.project ?? state.projects.find((candidate) => candidate.id === projectId);
   const template = state.extractionTemplates.find(
     (candidate) => candidate.projectId === projectId && candidate.id === templateId && candidate.isActive
   );
@@ -4023,13 +4090,20 @@ function syncExtractionConsensusForReport(state: PersistedState, projectId: stri
     return;
   }
 
-  const draft = buildExtractionConsensusDraft(state, project, reportId, template);
-  const existing = state.extractionConsensus.find(
-    (consensus) => consensus.projectId === projectId && consensus.reportId === reportId && consensus.templateId === template.id
-  );
+  const calculations = context ?? createProjectWorkflowContext(state, project);
+  const key = extractionConsensusKey(reportId, template.id);
+  if (!calculations.drafts.has(key)) {
+    calculations.drafts.set(key, buildExtractionConsensusDraft(state, project, reportId, template, calculations));
+  }
+  const draft = calculations.drafts.get(key);
+  const existing = calculations.consensusByReportAndTemplate.get(key);
 
   if (!draft) {
-    state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.id !== existing?.id);
+    if (existing) {
+      calculations.consensusByReportAndTemplate.delete(key);
+      calculations.consensusUpdates.set(key, undefined);
+      if (!context) applyExtractionConsensusUpdates(state, calculations);
+    }
     return;
   }
 
@@ -4093,10 +4167,14 @@ function syncExtractionConsensusForReport(state: PersistedState, projectId: stri
         : undefined
   };
 
-  state.extractionConsensus = [
-    ...state.extractionConsensus.filter((consensus) => consensus.id !== existing?.id),
-    nextConsensus
-  ];
+  // Preserve timestamps and array order when reconciliation finds no change.
+  if (existing && (Object.keys(nextConsensus) as Array<keyof ExtractionConsensus>)
+    .every((field) => field === "updatedAt" || isDeepStrictEqual(existing[field], nextConsensus[field]))) {
+    return;
+  }
+  calculations.consensusByReportAndTemplate.set(key, nextConsensus);
+  calculations.consensusUpdates.set(key, nextConsensus);
+  if (!context) applyExtractionConsensusUpdates(state, calculations);
 }
 
 function normalizeExtractionResponseValue(value: ExtractionResponseValue | undefined) {
@@ -4126,15 +4204,16 @@ function escapeCsvCell(value: string) {
   return normalized;
 }
 
-function syncStudyAfterFullTextDecision(state: PersistedState, project: ReviewProject, reportId: string) {
-  const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === project.id);
+function syncStudyAfterFullTextDecision(
+  state: PersistedState, project: ReviewProject, reportId: string,
+  context = createProjectWorkflowContext(state, project)
+) {
+  const report = context.reportsById.get(reportId);
   if (!report) {
     return;
   }
 
-  const currentDecisions = state.decisions.filter(
-    (decision) => decision.projectId === project.id && decision.reportId === reportId && decision.stage === "full_text" && decision.isCurrent
-  );
+  const currentDecisions = context.fullTextDecisionsByReportId.get(reportId) ?? [];
   const evaluation = evaluateStage(
     "full_text",
     currentDecisions.map((decision) => decision.decisionValue),
@@ -4143,15 +4222,13 @@ function syncStudyAfterFullTextDecision(state: PersistedState, project: ReviewPr
   );
 
   if (evaluation.state === "advance_extraction") {
-    state.studies = state.studies.map((study) =>
-      study.id === report.studyId && study.projectId === project.id ? { ...study, stage: "extraction" } : study
-    );
+    const study = context.studiesById.get(report.studyId);
+    if (study) study.stage = "extraction";
     return;
   }
 
-  state.studies = state.studies.map((study) =>
-    study.id === report.studyId && study.projectId === project.id && study.stage === "extraction" ? { ...study, stage: "full_text" } : study
-  );
+  const study = context.studiesById.get(report.studyId);
+  if (study?.stage === "extraction") study.stage = "full_text";
 }
 
 function createReportForStudy(projectId: string, study: Study, sourcePdfUrl?: string): Report {
@@ -4177,20 +4254,24 @@ function createReportForStudy(projectId: string, study: Study, sourcePdfUrl?: st
   };
 }
 
-function upsertReportForStudy(state: PersistedState, projectId: string, study: Study, actor: string) {
-  const existing = state.reports.find((report) => report.projectId === projectId && report.studyId === study.id);
+function upsertReportForStudy(
+  state: PersistedState, projectId: string, study: Study, actor: string,
+  context?: ProjectWorkflowContext
+) {
+  const existing = context
+    ? context.reportsByStudyId.get(study.id)?.[0]
+    : state.reports.find((report) => report.projectId === projectId && report.studyId === study.id);
   if (existing) {
     if (study.pdfUrl && !existing.sourcePdfUrl) {
-      state.reports = state.reports.map((report) =>
-        report.id === existing.id && report.projectId === projectId ? { ...report, sourcePdfUrl: study.pdfUrl } : report
-      );
-      return { ...existing, sourcePdfUrl: study.pdfUrl };
+      existing.sourcePdfUrl = study.pdfUrl;
     }
     return existing;
   }
 
   const report = createReportForStudy(projectId, study, study.pdfUrl);
   state.reports.unshift(report);
+  context?.reportsById.set(report.id, report);
+  context?.reportsByStudyId.set(study.id, [report]);
   appendEvent(state, actor, "Created full-text report", report.id);
   return report;
 }
@@ -4352,118 +4433,129 @@ function getSequentialStageForProject(state: PersistedState, project: ReviewProj
   });
 }
 
-function syncProjectWorkflowCounts(state: PersistedState, projectId: string) {
+function syncProjectWorkflowCounts(
+  state: PersistedState, projectId: string,
+  context?: ProjectWorkflowContext
+) {
+  const project = context?.project ?? state.projects.find((candidate) => candidate.id === projectId);
+  if (!project) return;
+  const calculations = context ?? createProjectWorkflowContext(state, project);
   const confirmedDuplicateStudyIds = getConfirmedDuplicateStudyIds(state, projectId);
-  const reports = getWorkflowReportsForProject(state, projectId).filter((report) => !confirmedDuplicateStudyIds.has(report.studyId));
-  const screenedStudyIds = new Set(
-    state.decisions
-      .filter(
-        (decision) =>
-          decision.projectId === projectId &&
-          decision.stage === "title_abstract" &&
-          decision.isCurrent &&
-          !confirmedDuplicateStudyIds.has(decision.studyId)
-      )
-      .map((decision) => decision.studyId)
-  );
-  const includedStudyIds = new Set(
-    state.studies
-      .filter((study) => study.projectId === projectId && study.stage === "extraction" && !confirmedDuplicateStudyIds.has(study.id))
-      .map((study) => study.id)
-  );
+  const studies = [...calculations.studiesById.values()];
+  const reports = [...calculations.reportsById.values()].filter((report) => {
+    const study = calculations.studiesById.get(report.studyId);
+    return study && (study.stage === "full_text" || study.stage === "extraction") && !confirmedDuplicateStudyIds.has(study.id);
+  });
+  const screenedStudyIds = new Set([...calculations.titleDecisionsByStudyId.keys()]
+    .filter((studyId) => !confirmedDuplicateStudyIds.has(studyId)));
+  const includedStudyIds = new Set(studies
+    .filter((study) => study.stage === "extraction" && !confirmedDuplicateStudyIds.has(study.id))
+    .map((study) => study.id));
   const includedStudies = includedStudyIds.size;
   const includedReports = reports.filter((report) => includedStudyIds.has(report.studyId));
+  const activeExtractionTemplate = state.extractionTemplates.find(
+    (template) => template.projectId === projectId && template.isActive
+  );
 
-  state.projects = state.projects.map((project) => {
-    if (project.id !== projectId) {
-      return project;
+  // Consensus is reconciled explicitly by the mutation that changes its inputs.
+  // Completion needs only submission freshness, not another field comparison.
+  const extractionReadyForCompletion = includedStudies > 0 && Boolean(activeExtractionTemplate) &&
+    includedReports.every((report) => {
+      if (!activeExtractionTemplate) return false;
+      const key = extractionConsensusKey(report.id, activeExtractionTemplate.id);
+      const responses = calculations.responsesByReportAndTemplate.get(key) ?? [];
+      if (responses.length < project.extractionRequiredVotes) return false;
+      const consensus = calculations.consensusByReportAndTemplate.get(key);
+      const finalizedAt = Date.parse(consensus?.finalizedAt ?? "");
+      return consensus?.status === "finalized" && Number.isFinite(finalizedAt) &&
+        finalizedAt >= getLatestExtractionSubmissionTime(responses);
+    });
+
+  const updatedProject: ReviewProject = {
+    ...project,
+    status: project.status === "archived" ? "archived" : reports.length > 0 || screenedStudyIds.size > 0 || project.recordsTotal > 0 ? "active" : "draft",
+    stage: extractionReadyForCompletion
+      ? "complete"
+      : includedStudies > 0
+        ? "extraction"
+        : reports.length > 0
+          ? "full_text"
+          : project.recordsTotal > 0
+            ? "screening"
+            : "import",
+    recordsScreened: Math.min(Math.max(project.recordsScreened, screenedStudyIds.size), project.recordsTotal),
+    conflicts: countProjectWorkflowConflicts(state, project, calculations),
+    studiesIncluded: includedStudies
+  };
+  updatedProject.stage = getSequentialStageForProject(state, updatedProject);
+  if ((Object.keys(updatedProject) as Array<keyof ReviewProject>)
+    .every((field) => isDeepStrictEqual(project[field], updatedProject[field]))) {
+    return;
+  }
+  updatedProject.updatedAt = toEuToday();
+  state.projects = state.projects.map((candidate) => candidate.id === projectId ? updatedProject : candidate);
+}
+
+function refreshProjectWorkflowSummary(
+  state: PersistedState, projectId: string, reportIds?: string[],
+  context?: ProjectWorkflowContext
+) {
+  const project = context?.project ?? state.projects.find((candidate) => candidate.id === projectId);
+  if (!project) return;
+  const calculations = context ?? createProjectWorkflowContext(state, project);
+  const template = state.extractionTemplates.find((candidate) => candidate.projectId === projectId && candidate.isActive);
+  if (template) {
+    // Include removed reports so their old consensus is cleaned up as well.
+    const affectedReportIds = new Set(reportIds ?? [
+      ...calculations.reportsById.keys(),
+      ...[...calculations.consensusByReportAndTemplate.values()].map((consensus) => consensus.reportId)
+    ]);
+    for (const reportId of affectedReportIds) {
+      syncExtractionConsensusForReport(state, projectId, reportId, template.id, calculations);
     }
+    applyExtractionConsensusUpdates(state, calculations);
+  } else {
+    state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.projectId !== projectId);
+    calculations.consensusByReportAndTemplate.clear();
+  }
+  syncProjectWorkflowCounts(state, projectId, calculations);
+}
 
-    const activeExtractionTemplate = state.extractionTemplates.find(
-      (template) => template.projectId === project.id && template.isActive
-    );
+function refreshWorkflowAfterStudyDecision(
+  state: PersistedState, project: ReviewProject, studyId: string,
+  context: ProjectWorkflowContext
+) {
+  const affectedReportIds = new Set([
+    ...(context.reportsByStudyId.get(studyId) ?? []).map((report) => report.id),
+    ...[...context.consensusByReportAndTemplate.values()].filter((consensus) => consensus.studyId === studyId).map((consensus) => consensus.reportId)
+  ]);
+  refreshProjectWorkflowSummary(state, project.id, [...affectedReportIds], context);
+}
 
-    if (activeExtractionTemplate) {
-      for (const report of reports) {
-        syncExtractionConsensusForReport(state, project.id, report.id, activeExtractionTemplate.id);
-      }
-    }
-
-    const extractionReadyForCompletion =
-      includedStudies > 0 &&
-      Boolean(activeExtractionTemplate) &&
-      includedReports.every((report) => {
-        if (!activeExtractionTemplate) {
-          return false;
-        }
-
-        const draft = buildExtractionConsensusDraft(state, project, report.id, activeExtractionTemplate);
-        if (!draft) {
-          return false;
-        }
-
-        const finalizedConsensus = state.extractionConsensus.find(
-          (consensus) =>
-            consensus.projectId === project.id &&
-            consensus.reportId === report.id &&
-            consensus.templateId === activeExtractionTemplate.id &&
-            consensus.status === "finalized"
-        );
-        const finalizedAt = Date.parse(finalizedConsensus?.finalizedAt ?? "");
-        return Boolean(finalizedConsensus && Number.isFinite(finalizedAt) && finalizedAt >= draft.latestSubmittedAt);
-      });
-
-    const conflictCount = countProjectWorkflowConflicts(state, project);
-    const updatedProject: ReviewProject = {
-      ...project,
-      status: project.status === "archived" ? "archived" : reports.length > 0 || screenedStudyIds.size > 0 || project.recordsTotal > 0 ? "active" : "draft",
-      stage: extractionReadyForCompletion
-        ? "complete"
-        : includedStudies > 0
-          ? "extraction"
-          : reports.length > 0
-            ? "full_text"
-            : project.recordsTotal > 0
-              ? "screening"
-              : "import",
-      recordsScreened: Math.min(Math.max(project.recordsScreened, screenedStudyIds.size), project.recordsTotal),
-      conflicts: conflictCount,
-      studiesIncluded: includedStudies,
-      updatedAt: toEuToday()
-    };
-    return { ...updatedProject, stage: getSequentialStageForProject(state, updatedProject) };
-  });
+function resyncProjectWorkflowState(state: PersistedState, project: ReviewProject) {
+  const context = createProjectWorkflowContext(state, project);
+  for (const study of context.studiesById.values()) {
+    syncStudyAfterTitleAbstractDecision(state, project, study.id, "System", context);
+  }
+  for (const report of context.reportsById.values()) {
+    syncStudyAfterFullTextDecision(state, project, report.id, context);
+  }
+  refreshProjectWorkflowSummary(state, project.id, undefined, context);
 }
 
 function resyncAllProjectWorkflowState(state: PersistedState) {
   for (const project of state.projects) {
-    const projectStudies = state.studies.filter((study) => study.projectId === project.id);
-    for (const study of projectStudies) {
-      syncStudyAfterTitleAbstractDecision(state, project, study.id, "System");
-    }
-    const projectReports = state.reports.filter((report) => report.projectId === project.id);
-    for (const report of projectReports) {
-      syncStudyAfterFullTextDecision(state, project, report.id);
-    }
-    const activeExtractionTemplate = state.extractionTemplates.find(
-      (template) => template.projectId === project.id && template.isActive
-    );
-    if (activeExtractionTemplate) {
-      for (const report of projectReports) {
-        syncExtractionConsensusForReport(state, project.id, report.id, activeExtractionTemplate.id);
-      }
-    } else {
-      state.extractionConsensus = state.extractionConsensus.filter((consensus) => consensus.projectId !== project.id);
-    }
-    syncProjectWorkflowCounts(state, project.id);
+    resyncProjectWorkflowState(state, project);
   }
 }
 
-function countProjectWorkflowConflicts(state: PersistedState, project: ReviewProject) {
-  const projectDecisions = state.decisions.filter((decision) => decision.projectId === project.id && decision.isCurrent);
-  const decisionsByStudy = groupByKey(projectDecisions, (decision) => decision.studyId);
-  const decisionsByReport = groupByKey(projectDecisions, (decision) => decision.reportId);
-  const projectStudies = state.studies.filter((study) => study.projectId === project.id);
+function countProjectWorkflowConflicts(
+  state: PersistedState, project: ReviewProject,
+  context = createProjectDecisionContext(state, project)
+) {
+  const decisionsByStudy = context.titleDecisionsByStudyId;
+  const decisionsByReport = context.fullTextDecisionsByReportId;
+  const projectStudies = [...context.studiesById.values()];
   const titleAbstractConflicts = projectStudies.filter((study) => {
     const currentDecisions = (decisionsByStudy.get(study.id) ?? []).filter(
       (decision) => decision.projectId === project.id && decision.studyId === study.id && decision.stage === "title_abstract" && decision.isCurrent

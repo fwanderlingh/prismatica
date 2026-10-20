@@ -155,7 +155,7 @@ try {
   assert.match(pendingHtml, /class="mainLoadingOverlay" role="status"/);
   assert.match(pendingHtml, /Opening review/);
 
-  const screeningProps = { projectScreeningStudies: data.screeningStudies, totalScreeningStudyCount: 10, screeningProgress: 20, screenedByMe: 2,
+  const screeningProps = { projectScreeningStudies: data.screeningStudies, totalScreeningStudyCount: 10, screeningProgress: 20,
     decisions: [], selectedProjectId: project.id, currentUserId: user.id, studyIndex: 0, setStudyIndex: noop, titleAbstractEvaluations: new Map(),
     formatDecision: String, decisionTone: () => "info", currentStudy: study, stageEvaluation: { state: "open", label: "Open" }, highlightText: String,
     screeningNote: "", setScreeningNote: noop, screeningMessage: "", canRecordScreeningDecision: true, checkoutError: "", currentStageDecisions: [],
@@ -186,7 +186,7 @@ try {
   const extractionHtml = html(loadSection("extraction-section").ExtractionSection, extractionProps);
   assert.ok(extractionHtml.indexOf("extractionFormPanel") < extractionHtml.indexOf("pdfPane"));
   const overviewProps = { selectedProject: { ...project, stage: "full_text" }, workflowConflicts: [], recordsIdentified: 10, activeCounts: data.prismaCounts,
-    reportsExcludedTotal: 0, exportFailedCount: 0, projectEvents: [], latestProjectEvents: [], projectUserStats: [], projectScreeningStudies: [], projectReportQueue: [],
+    exportFailedCount: 0, projectEvents: [], latestProjectEvents: [], projectUserStats: [], projectScreeningStudies: [], projectReportQueue: [],
     openConflict: noop, formatConflictStage: String, decisionTone: () => "info", formatDecision: String, getWorkflowStepState: () => "pending",
     formatProjectPhase: String, projectPhaseStatusTone: () => "info", formatMaybePolicy: String, formatAuditEntityLabel: String,
     formatAuditTime: String, formatNumber: String, onOpenSettings: noop, onOpenAudit: noop, onNavigate: noop };

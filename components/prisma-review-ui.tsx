@@ -8,7 +8,6 @@ import {
   Database,
   Eye,
   FileSearch,
-  FileText,
   GitMerge,
   ListChecks,
   XCircle

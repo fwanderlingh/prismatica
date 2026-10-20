@@ -1,7 +1,7 @@
 import { ViewLink } from "@/components/navigation-link";
 import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from "lucide-react";
 import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
-import { Badge, EmptyState, Metric, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+import { Badge, EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 import { getProjectPhaseProgress, getScreeningRecordTotal } from "@/lib/workflowSelectors";
 import { ResolveConflictButton } from "./resolve-conflict-button";
 
@@ -24,7 +24,6 @@ type ProjectDashboardSectionProps = {
   workflowConflicts: WorkflowConflict[];
   recordsIdentified: number;
   activeCounts: PrismaCounts;
-  reportsExcludedTotal: number;
   exportFailedCount: number;
   projectEvents: WorkflowEvent[];
   latestProjectEvents: WorkflowEvent[];
@@ -52,7 +51,6 @@ export function ProjectDashboardSection({
   workflowConflicts,
   recordsIdentified,
   activeCounts,
-  reportsExcludedTotal,
   exportFailedCount,
   projectEvents,
   latestProjectEvents,
@@ -113,13 +111,6 @@ export function ProjectDashboardSection({
           </div>
         </div>
       </section>
-
-      {/*<section className="metricGrid" aria-label="Project metrics">
-        <Metric label="Records identified" value={formatNumber(recordsIdentified)} tone="blue" detail="Database, register, and manual sources" />
-        <Metric label="Duplicates removed" value={activeCounts.duplicateRecordsRemoved.toString()} tone="teal" detail="Preserved for PRISMA provenance" />
-        <Metric label="Records screened" value={activeCounts.recordsScreened.toString()} tone="amber" detail={`${activeCounts.recordsExcluded} excluded at title/abstract`} />
-        <Metric label="Studies included" value={activeCounts.studiesIncluded.toString()} tone="green" detail={`${activeCounts.studiesExtracted} extracted`} />
-      </section>*/}
 
       {workflowConflicts.length > 0 ? (
         <section className="panel">

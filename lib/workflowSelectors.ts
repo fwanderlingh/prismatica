@@ -10,7 +10,7 @@ import {
   type ReviewProject,
   type Study
 } from "@/lib/prismaData";
-import { evaluateStage, type StageEvaluation } from "@/lib/workflow";
+import { evaluateStage } from "@/lib/workflow";
 
 export type ProjectPhaseProgress = {
   percent: number;
@@ -96,6 +96,22 @@ export function sortReportsByStudyOrder(reports: Report[], studies: Study[]) {
   });
 }
 
+export function getTitleAbstractStatuses(project: ReviewProject, studies: Study[], decisions: Decision[]) {
+  const currentDecisionsByStudy = groupByKey(
+    decisions.filter((decision) => decision.projectId === project.id && decision.stage === "title_abstract" && decision.isCurrent),
+    (decision) => decision.studyId
+  );
+  // Server aggregates include votes that blind review hides from this payload.
+  return new Map(studies
+    .filter((study) => !study.projectId || study.projectId === project.id)
+    .map((study) => [study.id, study.titleAbstractStatus ?? evaluateStage(
+      "title_abstract",
+      (currentDecisionsByStudy.get(study.id) ?? []).map((decision) => decision.decisionValue),
+      study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes,
+      project.maybePolicy
+    ).state]));
+}
+
 export function getCountsForProject(
   project: ReviewProject,
   projectStudies: Study[] = [],
@@ -105,6 +121,10 @@ export function getCountsForProject(
   extractionTemplates: ExtractionTemplate[] = [],
   projectDedupCandidates: DedupCandidate[] = []
 ): PrismaCounts {
+  const confirmedDuplicateStudyIds = getConfirmedDuplicateStudyIds(projectDedupCandidates);
+  const abstractStatuses = getTitleAbstractStatuses(project, projectStudies, decisions);
+  const recordsExcluded = [...abstractStatuses.entries()]
+    .filter(([studyId, status]) => status === "excluded_abstract" && !confirmedDuplicateStudyIds.has(studyId)).length;
   const fullTextCurrentDecisions = decisions.filter(
     (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
   );
@@ -151,11 +171,11 @@ export function getCountsForProject(
       recordsIdentifiedDatabase: project.recordsTotal,
       recordsIdentifiedRegisters: 0,
       recordsIdentifiedOther: 0,
-      duplicateRecordsRemoved: getConfirmedDuplicateStudyIds(projectDedupCandidates).size,
+      duplicateRecordsRemoved: confirmedDuplicateStudyIds.size,
       automationRemoved: 0,
       removedOtherReasons: 0,
       recordsScreened: project.recordsScreened,
-      recordsExcluded: Math.max(project.recordsScreened - projectReports.length, 0),
+      recordsExcluded,
       reportsSought: projectReports.filter((report) => report.retrievalStatus !== "not_sought").length,
       reportsNotRetrieved: projectReports.filter((report) => report.retrievalStatus === "not_retrieved").length,
       reportsAssessed: new Set(fullTextCurrentDecisions.map((decision) => decision.reportId ?? decision.studyId)).size,
@@ -295,14 +315,6 @@ export function getConfirmedDuplicateStudyIds(candidates: DedupCandidate[]) {
       .filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed")
       .map((candidate) => candidate.excludedStudyId ?? candidate.recordB.id)
   );
-}
-
-export function isTitleAbstractEvaluationComplete(evaluation: StageEvaluation | undefined) {
-  return evaluation?.state === "advance_full_text" || evaluation?.state === "excluded_abstract";
-}
-
-export function isFullTextEvaluationComplete(evaluation: StageEvaluation | undefined) {
-  return evaluation?.state === "advance_extraction" || evaluation?.state === "excluded_full_text";
 }
 
 export function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {

@@ -158,10 +158,8 @@ export function FullTextSection({
   }
 
   const fullTextStudyPool = hasProjectSeedData ? screeningStudies : studies;
-  const matchedCurrentReportStudy = fullTextStudyPool.find((study) => study.id === activeReport.studyId);
-  const currentReportStudy = matchedCurrentReportStudy ?? screeningStudies[0];
+  const currentReportStudy = fullTextStudyPool.find((study) => study.id === activeReport.studyId) ?? screeningStudies[0];
   const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
-  const activeReportFallbackId = activeReportIndex >= 0 ? activeReportIndex + 1 : undefined;
   const activeFullTextDecision = decisions.find(
     (decision) =>
       decision.projectId === selectedProject.id &&
@@ -256,8 +254,6 @@ export function FullTextSection({
               </ViewLink>
             </div>
           }
-          activeFallbackId={activeReportFallbackId}
-          activeStudy={matchedCurrentReportStudy}
           detail={`Active report: ${activeReport.title}`}
           eyebrow="Report queue"
           id="full-text-report-picker"

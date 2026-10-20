@@ -530,6 +530,26 @@ a simulated PostgreSQL client; it does not start a server or contact a database.
 Global review preferences are stored in `review_settings` and exposed through
 `/api/admin/review-settings` using the `reviewSettings` application-state field.
 
+### Workflow reconciliation checks
+
+Run `npm run check:workflow` for isolated workflow fixtures and operation-count
+checks. Reconciliation settles study/report transitions, synchronizes extraction
+consensus, then calculates each project's summary once. Extraction submission
+and reopening recalculate only the affected report; summaries do not synchronize
+consensus or rebuild extraction drafts. Unchanged reconciliation preserves IDs,
+timestamps, and audit history.
+
+Read-time repair remains enabled during this batching phase. Removing it requires
+explicit workflow maintenance and cleanup on account deletion, import changes,
+and other remaining write paths, plus a separate migration and repair path.
+
+Run `npm run check:exports` for screening balance and export guidance checks.
+The screening balance includes every report moved to full text, including those
+awaiting retrieval. Reports sought in the PRISMA diagram still count retrieval
+attempts. The Exports page lists unfinished screening and pending retrieval by
+title, with links to available queue items. Consistency warnings are advisory;
+CSV availability is explained separately from the checks.
+
 ## License
 
 Prismatica is distributed under the [MIT License](./LICENSE).

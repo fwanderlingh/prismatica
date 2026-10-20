@@ -2,7 +2,6 @@ import { ViewLink } from "@/components/navigation-link";
 import type { LucideIcon } from "lucide-react";
 import { Info, PanelRight } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
-import { Badge } from "@/components/prisma-review-ui";
 
 type NavItem = {
   key: ViewKey;
@@ -27,8 +26,6 @@ type AppSidebarProps = {
   exportFailedCount: number;
   getPhaseNavState: (key: ViewKey, stage: ReviewProject["stage"]) => "done" | "current" | "pending" | null;
   canNavigateToProjectView: (key: ViewKey) => boolean;
-  formatProjectPhase: (stage: ReviewProject["stage"]) => string;
-  projectPhaseBadgeTone: (stage: ReviewProject["stage"]) => "success" | "warning" | "danger" | "info" | "neutral";
   onGoDashboard: () => void;
   onNavigate: (view: ViewKey) => void;
   onToggleSidebar: () => void;
@@ -51,8 +48,6 @@ export function AppSidebar({
   exportFailedCount,
   getPhaseNavState,
   canNavigateToProjectView,
-  formatProjectPhase,
-  projectPhaseBadgeTone,
   onGoDashboard,
   onNavigate,
   onToggleSidebar,

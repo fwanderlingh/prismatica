@@ -17,7 +17,6 @@ type ScreeningSectionProps = {
   projectScreeningStudies: Study[];
   totalScreeningStudyCount: number;
   screeningProgress: number;
-  screenedByMe: number;
   decisions: Decision[];
   selectedProjectId: string;
   currentUserId: string;
@@ -52,7 +51,6 @@ export function ScreeningSection({
   projectScreeningStudies,
   totalScreeningStudyCount,
   screeningProgress,
-  screenedByMe,
   decisions,
   selectedProjectId,
   currentUserId,

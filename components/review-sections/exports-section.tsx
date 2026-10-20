@@ -1,28 +1,8 @@
 import { AlertTriangle, BarChart3, Check, CircleEllipsis, FileText, X } from "lucide-react";
 import type { PrismaCounts } from "@/lib/prismaData";
+import type { ExportConsistency } from "@/lib/exportConsistency";
 import { PrismaFlow, SectionTitle } from "@/components/prisma-review-ui";
-
-type ExportConsistency = {
-  identifiedCheckActive: boolean;
-  screenedCheckActive: boolean;
-  retrievalCheckActive: boolean;
-  assessedCheckActive: boolean;
-  exclusionReasonCheckActive: boolean;
-  identifiedCheckOk: boolean;
-  screenedCheckOk: boolean;
-  retrievalCheckOk: boolean;
-  assessedCheckOk: boolean;
-  exclusionReasonCheckOk: boolean;
-  screenedAndPreScreenRemovedTotal: number;
-  screenBalanceTotal: number;
-  retrievalBalanceTotal: number;
-  assessedBalanceTotal: number;
-  excludedWithoutReasonCount: number;
-  activeCount: number;
-  failedCount: number;
-  passedCount: number;
-  totalCount: number;
-};
+import { ViewLink } from "@/components/navigation-link";
 
 type ExportsSectionProps = {
   recordsIdentified: number;
@@ -32,6 +12,11 @@ type ExportsSectionProps = {
   exportMessage: string;
   isExportingConsensusCsv: boolean;
   canExportExtractionCsv: boolean;
+  exportUnavailableReasons: string[];
+  canOpenScreeningStudy: (studyId: string) => boolean;
+  canOpenReport: (reportId: string) => boolean;
+  onOpenScreeningStudy: (studyId: string) => void;
+  onOpenReport: (reportId: string) => void;
   downloadConsensusExtractionCsv: () => void;
   formatNumber: (value: number) => string;
 };
@@ -44,18 +29,20 @@ export function ExportsSection({
   exportMessage,
   isExportingConsensusCsv,
   canExportExtractionCsv,
+  exportUnavailableReasons,
+  canOpenScreeningStudy,
+  canOpenReport,
+  onOpenScreeningStudy,
+  onOpenReport,
   downloadConsensusExtractionCsv,
   formatNumber
 }: ExportsSectionProps) {
   const exportMessageIsSuccess = /downloaded|generated|exported/i.test(exportMessage);
-  const failedConsistencyCopy = canExportExtractionCsv
-    ? "Consensus CSV export is available, but verify these PRISMA consistency issues before final reporting."
-    : "Consensus CSV export is blocked until the review is complete and exportable consensus data are available.";
   const exportReadinessCopy = canExportExtractionCsv
     ? exportConsistency.failedCount > 0
       ? "Export can be downloaded now, but PRISMA consistency checks still need review before final reporting."
       : "Export is available for the current finalized consensus dataset."
-    : "Export is disabled until the review is complete with an active extraction template, included studies, and current finalized consensus data.";
+    : `CSV export is unavailable. ${exportUnavailableReasons.join(" ")}`;
   const isZeroDataProject =
     recordsIdentified === 0 &&
     exportConsistency.screenedAndPreScreenRemovedTotal === 0 &&
@@ -80,7 +67,7 @@ export function ExportsSection({
         ? "Screening decisions are fully balanced"
         : "Screening decisions are not fully balanced",
       status: isZeroDataProject || !exportConsistency.screenedCheckActive ? "muted" : exportConsistency.screenedCheckOk ? "ok" : "warning",
-      detail: `Screened: ${formatNumber(activeCounts.recordsScreened)}. Excluded + moved to full text: ${formatNumber(exportConsistency.screenBalanceTotal)}.`
+      detail: `Screened: ${formatNumber(activeCounts.recordsScreened)}. Excluded: ${formatNumber(activeCounts.recordsExcluded)}. Moved to full text: ${formatNumber(exportConsistency.reportsAdvancedToFullText)}. Total: ${formatNumber(exportConsistency.screenBalanceTotal)}.`
     },
     {
       label: exportConsistency.retrievalCheckOk
@@ -120,7 +107,8 @@ export function ExportsSection({
         <div className="validationItem warning">
           <AlertTriangle size={17} />
           <span>
-            {exportConsistency.failedCount} consistency check{exportConsistency.failedCount === 1 ? "" : "s"} need review. {failedConsistencyCopy}
+            {exportConsistency.failedCount} consistency check{exportConsistency.failedCount === 1 ? " needs" : "s need"} review.
+            {" "}Consistency warnings do not block CSV export. CSV availability is explained separately below.
           </span>
         </div>
       ) : null}
@@ -191,6 +179,54 @@ export function ExportsSection({
               </div>
             ))}
           </div>
+
+          {exportConsistency.unresolvedScreeningStudies.length > 0 ? (
+            <div className="exportReviewItems">
+              <h3>Screening decisions to finish ({formatNumber(exportConsistency.unresolvedScreeningStudies.length)})</h3>
+              <p className="subtle">These records still need a final screening outcome. Open an available record to submit or resolve its votes.</p>
+              <ul>
+                {exportConsistency.unresolvedScreeningStudies.map((study) => (
+                  <li key={study.id}>
+                    <strong>{study.title}</strong>
+                    <small>{study.titleAbstractStatusLabel || "Awaiting a final screening decision"}</small>
+                    <ViewLink
+                      className="ghostButton"
+                      view="screening"
+                      aria-label={`Review screening: ${study.title}`}
+                      disabled={!canOpenScreeningStudy(study.id)}
+                      onNavigate={() => onOpenScreeningStudy(study.id)}
+                    >Review screening</ViewLink>
+                    {!canOpenScreeningStudy(study.id) ? <small>Your vote may already be saved, or another reviewer is working on this record. An eligible reviewer needs to continue screening.</small> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {exportConsistency.pendingRetrievalReports.length > 0 ? (
+            <div className="exportReviewItems">
+              <h3>Retrieval not started ({formatNumber(exportConsistency.pendingRetrievalReports.length)})</h3>
+              <p className="subtle">
+                These reports have moved to full text and are included in the screening balance.
+                Open each report in Full Text and set its retrieval status: Retrieval in progress, Full text available, or Not retrieved after attempts.
+              </p>
+              <ul>
+                {exportConsistency.pendingRetrievalReports.map((report) => (
+                  <li key={report.id}>
+                    <strong>{report.title}</strong>
+                    <ViewLink
+                      className="ghostButton"
+                      view="fullText"
+                      aria-label={`Review retrieval: ${report.title}`}
+                      disabled={!canOpenReport(report.id)}
+                      onNavigate={() => onOpenReport(report.id)}
+                    >Review retrieval</ViewLink>
+                    {!canOpenReport(report.id) ? <small>This report opens when screening is complete and it is available in your Full Text queue.</small> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       </section>
     </div>

@@ -463,8 +463,6 @@ export function ExtractionSection({
   const activeStudyForExtraction = activeReportForExtraction
     ? projectScreeningStudies.find((study) => study.id === activeReportForExtraction.studyId)
     : undefined;
-  const activeExtractionReportIndex = projectExtractionReports.findIndex((report) => report.id === activeReportForExtraction?.id);
-  const activeExtractionFallbackId = activeExtractionReportIndex >= 0 ? activeExtractionReportIndex + 1 : undefined;
   const extractionPdfUrl = activeReportForExtraction?.fileName
     ? `/api/projects/${selectedProject.id}/reports/${activeReportForExtraction.id}?pdf=1&checksum=${encodeURIComponent(activeReportForExtraction.checksum ?? "")}${pdfViewerPreferences}`
     : "";
@@ -518,8 +516,6 @@ export function ExtractionSection({
               </ViewLink>
             </div>
           }
-          activeFallbackId={activeExtractionFallbackId}
-          activeStudy={activeStudyForExtraction}
           detail={`At least ${requiredExtractionVotes} submitted extraction vote${requiredExtractionVotes === 1 ? "" : "s"} required.`}
           eyebrow="Included reports"
           id="extraction-report-picker"
