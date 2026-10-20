@@ -800,7 +800,7 @@ async function writeProjects(client, state) {
   }
 }
 
-async function writeStudies(client, state) {
+async function writeStudies(client, state, positionOffset = 0) {
   const studies = Array.isArray(state.studies) ? state.studies : [];
   for (let index = 0; index < studies.length; index += 1) {
     const study = studies[index];
@@ -820,7 +820,7 @@ async function writeStudies(client, state) {
         study.id,
         study.projectId ?? null,
         study.importBatchId ?? null,
-        index,
+        positionOffset + index,
         typeof study.importItemId === "number" ? study.importItemId : null,
         study.title,
         study.abstract,
@@ -839,7 +839,7 @@ async function writeStudies(client, state) {
   }
 }
 
-async function writeReports(client, state) {
+async function writeReports(client, state, positionOffset = 0) {
   const reports = Array.isArray(state.reports) ? state.reports : [];
   for (let index = 0; index < reports.length; index += 1) {
     const report = reports[index];
@@ -865,7 +865,7 @@ async function writeReports(client, state) {
         report.id,
         report.projectId,
         report.studyId,
-        index,
+        positionOffset + index,
         report.title,
         report.citation,
         report.retrievalStatus,
@@ -973,7 +973,6 @@ async function writeImportStudyMutation(client, mutation) {
         ON CONFLICT (id) DO UPDATE SET
           project_id = EXCLUDED.project_id,
           import_batch_id = EXCLUDED.import_batch_id,
-          position = EXCLUDED.position,
           import_item_id = EXCLUDED.import_item_id,
           title = EXCLUDED.title,
           abstract = EXCLUDED.abstract,
@@ -1014,7 +1013,6 @@ async function writeImportStudyMutation(client, mutation) {
         VALUES ($1, $2, $3, $4::jsonb)
         ON CONFLICT (id) DO UPDATE SET
           project_id = EXCLUDED.project_id,
-          position = EXCLUDED.position,
           payload = EXCLUDED.payload
       `,
       [batch.id, batch.projectId ?? null, batchPosition, JSON.stringify(batch)]
@@ -1094,6 +1092,144 @@ async function writeImportStudyMutation(client, mutation) {
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
+async function readImportRevision(client, projectId) {
+  // Hash database rows, rather than normalized application objects, so a retry can
+  // detect every change affecting project metadata, item numbering, or deduplication.
+  const result = await client.query(
+    `SELECT md5(jsonb_build_object(
+       'project', (SELECT to_jsonb(p) FROM review_projects p WHERE p.id = $1),
+       'studies', COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id)
+         FROM review_studies s WHERE s.project_id = $1), '[]'::jsonb),
+       'imports', COALESCE((SELECT jsonb_agg(to_jsonb(b) ORDER BY b.id)
+         FROM import_batches b WHERE b.project_id = $1), '[]'::jsonb),
+       'dedupCandidates', COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id)
+         FROM review_dedup_candidates c
+         WHERE COALESCE(c.payload->>'projectId', c.payload->'recordA'->>'projectId',
+                        c.payload->'recordB'->>'projectId') = $1
+            OR c.record_a_id IN (SELECT id FROM review_studies WHERE project_id = $1)
+            OR c.record_b_id IN (SELECT id FROM review_studies WHERE project_id = $1)), '[]'::jsonb)
+     )::text) AS revision`,
+    [projectId]
+  );
+  return result.rows[0].revision;
+}
+
+async function readImportState(client, projectId) {
+  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  try {
+    const state = await readRelationalState(client);
+    const revision = await readImportRevision(client, projectId);
+    await client.query("COMMIT");
+    return { state, revision };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
+async function writeImportBatchMutation(client, mutation) {
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN");
+    transactionOpen = true;
+    // Do not wait while holding some locks: full-state writers acquire user locks
+    // before review-table locks, and incremental mutations use their own order.
+    await client.query("LOCK TABLE app_users IN SHARE MODE NOWAIT");
+    await client.query(`LOCK TABLE review_projects, import_batches, review_studies,
+      review_reports, review_dedup_candidates, workflow_events
+      IN SHARE ROW EXCLUSIVE MODE NOWAIT`);
+
+    const { userId, projectId, revision, project, batch, studies, reports, dedupCandidates, event } = mutation;
+    const users = await client.query("SELECT id, is_admin FROM app_users WHERE id = $1", [userId]);
+    const actor = users.rows[0];
+    const currentProject = (await readProjects(client)).find((candidate) => candidate.id === projectId);
+    let accessError;
+    if (!actor) {
+      accessError = { updated: false, status: 401, error: "Your session is no longer valid. Sign in again." };
+    } else if (!currentProject || (!actor.is_admin && ![
+      currentProject.ownerId, ...asArray(currentProject.ownerIds), ...asArray(currentProject.memberIds)
+    ].includes(userId))) {
+      accessError = { updated: false, status: 403, error: "You do not have access to that project." };
+    }
+    if (accessError) {
+      await client.query("ROLLBACK");
+      transactionOpen = false;
+      return accessError;
+    }
+    if (await readImportRevision(client, projectId) !== revision) {
+      await client.query("ROLLBACK");
+      transactionOpen = false;
+      return { updated: false };
+    }
+
+    if (project?.id !== projectId || batch?.projectId !== projectId || event?.entity !== projectId ||
+        !Array.isArray(studies) || !Array.isArray(reports) || !Array.isArray(dedupCandidates) ||
+        studies.some((study) => study.projectId !== projectId || study.importBatchId !== batch.id) ||
+        reports.some((report) => report.projectId !== projectId || !studies.some((study) => study.id === report.studyId)) ||
+        dedupCandidates.some((candidate) =>
+          (candidate.projectId ?? candidate.recordA?.projectId ?? candidate.recordB?.projectId) !== projectId)) {
+      throw new Error("Import batch persistence data is incomplete.");
+    }
+
+    const batchPosition = await client.query("SELECT COALESCE(MIN(position), 0) - 1 AS position FROM import_batches");
+    await client.query(
+      "INSERT INTO import_batches (id, project_id, position, payload) VALUES ($1, $2, $3, $4::jsonb)",
+      [batch.id, projectId, Number(batchPosition.rows[0].position), JSON.stringify(batch)]
+    );
+    const studyPosition = await client.query("SELECT COALESCE(MIN(position), 0) AS position FROM review_studies");
+    await writeStudies(client, { studies }, Number(studyPosition.rows[0].position) - studies.length);
+    const reportPosition = await client.query("SELECT COALESCE(MIN(position), 0) AS position FROM review_reports");
+    await writeReports(client, { reports }, Number(reportPosition.rows[0].position) - reports.length);
+
+    // Preserve all fresh project metadata; an import owns only these summary fields.
+    const updatedProject = {
+      ...currentProject,
+      status: project.status,
+      stage: project.stage,
+      lastEvent: project.lastEvent,
+      updatedAt: project.updatedAt,
+      recordsTotal: project.recordsTotal
+    };
+    await client.query(
+      `UPDATE review_projects SET status = $1, stage = $2, last_event = $3,
+         updated_at_text = $4, records_total = $5, payload = $6::jsonb WHERE id = $7`,
+      [updatedProject.status, updatedProject.stage, updatedProject.lastEvent, updatedProject.updatedAt,
+        Number(updatedProject.recordsTotal ?? 0), JSON.stringify(updatedProject), projectId]
+    );
+
+    await client.query(
+      `DELETE FROM review_dedup_candidates
+       WHERE COALESCE(payload->>'projectId', payload->'recordA'->>'projectId',
+                      payload->'recordB'->>'projectId') = $1
+          OR record_a_id IN (SELECT id FROM review_studies WHERE project_id = $1)
+          OR record_b_id IN (SELECT id FROM review_studies WHERE project_id = $1)`,
+      [projectId]
+    );
+    const candidatePosition = await client.query("SELECT COALESCE(MAX(position), 0) + 1 AS position FROM review_dedup_candidates");
+    for (let index = 0; index < dedupCandidates.length; index += 1) {
+      const candidate = dedupCandidates[index];
+      await client.query(
+        `INSERT INTO review_dedup_candidates (id, record_a_id, record_b_id, position, payload)
+         VALUES ($1, $2, $3, $4, $5::jsonb)`,
+        [candidate.id, candidate.recordA?.id ?? null, candidate.recordB?.id ?? null,
+          Number(candidatePosition.rows[0].position) + index, JSON.stringify(candidate)]
+      );
+    }
+    await appendWorkflowEvent(client, event);
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return { updated: true };
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK");
+    }
+    if (error?.code === "55P03" || error?.code === "40P01") {
+      return { updated: false };
+    }
     throw error;
   }
 }
@@ -1222,8 +1358,8 @@ async function writeUserRoleMutation(client, mutation) {
 
 async function run() {
   const action = process.argv[2];
-  if (action !== "read" && action !== "read-auth-config" && action !== "write" && action !== "write-import-study" && action !== "write-dedup-decisions" && action !== "write-user-role") {
-    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|write|write-import-study|write-dedup-decisions|write-user-role>");
+  if (!["read", "read-auth-config", "read-import-state", "write", "write-import-batch", "write-import-study", "write-dedup-decisions", "write-user-role"].includes(action)) {
+    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|read-import-state|write|write-import-batch|write-import-study|write-dedup-decisions|write-user-role>");
   }
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -1271,6 +1407,14 @@ async function run() {
     }
 
     const parsed = JSON.parse(raw);
+    if (action === "read-import-state") {
+      process.stdout.write(JSON.stringify(await readImportState(client, parsed.projectId)));
+      return;
+    }
+    if (action === "write-import-batch") {
+      process.stdout.write(JSON.stringify(await writeImportBatchMutation(client, parsed)));
+      return;
+    }
     if (action === "write-user-role") {
       process.stdout.write(JSON.stringify(await writeUserRoleMutation(client, parsed)));
       return;

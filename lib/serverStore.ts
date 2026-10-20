@@ -178,7 +178,7 @@ function postgresStateIoScriptPath() {
 }
 
 function runPostgresStateIo(
-  action: "read" | "read-auth-config" | "write" | "write-import-study" | "write-dedup-decisions" | "write-user-role",
+  action: "read" | "read-auth-config" | "read-import-state" | "write" | "write-import-batch" | "write-import-study" | "write-dedup-decisions" | "write-user-role",
   payload?: unknown
 ) {
   const output = execFileSync(process.execPath, [postgresStateIoScriptPath(), action], {
@@ -355,6 +355,81 @@ function writeState(state: PersistedState) {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(/*turbopackIgnore: true*/ tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   fs.renameSync(/*turbopackIgnore: true*/ tempPath, filePath);
+}
+
+function persistImportBatchForUser(
+  userId: string,
+  projectId: string,
+  prepared: { batch: ImportBatch; studies: Study[]; reports: Report[]; fileWarnings: string[] }
+): PersistedState {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const snapshot = usePostgresStateStore()
+      ? JSON.parse(runPostgresStateIo("read-import-state", { projectId })) as { state: Partial<PersistedState> | null; revision: string }
+      : null;
+    if (snapshot && !snapshot.state) {
+      throw new ApiError("The review is no longer available. Refresh the page to continue.", 409);
+    }
+    // No await between this fresh read and persistence: asynchronous preparation
+    // must never write its old account, settings, or review snapshot back.
+    const state = snapshot?.state ? normalizeState(snapshot.state, false) : readState();
+    const currentUser = getUser(state, userId);
+    if (!currentUser) {
+      throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+    }
+    const project = requireProjectMember(state, projectId, userId);
+    const nextImportItemId = getNextImportItemId(state, projectId);
+    const studies = prepared.studies.map((study, index) => ({ ...study, importItemId: nextImportItemId + index }));
+    const parserWarningMessages = [...buildImportWarningMessages(studies), ...prepared.fileWarnings];
+    const batch: ImportBatch = {
+      ...prepared.batch,
+      uploadedBy: currentUser.name,
+      parserWarningMessages,
+      parserWarnings: parserWarningMessages.length,
+      status: parserWarningMessages.length > 0 ? "needs_review" : "parsed"
+    };
+    state.imports.unshift(batch);
+    state.studies.unshift(...studies);
+    state.reports.unshift(...prepared.reports);
+    syncDedupCandidatesForProject(state, projectId);
+    const updatedProject: ReviewProject = {
+      ...project,
+      status: project.status === "draft" ? "active" : project.status,
+      stage: batch.records > 0 ? "screening" : project.stage === "setup" ? "import" : project.stage,
+      recordsTotal: project.recordsTotal + batch.records,
+      updatedAt: toEuToday(),
+      lastEvent: `Imported ${batch.filename}`
+    };
+    state.projects = state.projects.map((candidate) => candidate.id === projectId ? updatedProject : candidate);
+    const pdfSummary = (batch.pdfLinks ?? 0) > 0
+      ? `; retrieved ${batch.pdfsRetrieved ?? 0} of ${batch.pdfLinks ?? 0} linked PDFs`
+      : "";
+    appendEvent(state, currentUser.name, `Imported ${batch.records} records from ${batch.filename}${pdfSummary}`, projectId, currentUser.id);
+
+    if (!snapshot) {
+      writeState(state);
+      return state;
+    }
+    const result = JSON.parse(runPostgresStateIo("write-import-batch", {
+      userId,
+      projectId,
+      revision: snapshot.revision,
+      project: updatedProject,
+      batch,
+      studies,
+      reports: prepared.reports,
+      dedupCandidates: state.dedupCandidates.filter((candidate) => isDedupCandidateForProject(candidate, projectId)),
+      event: state.events[0]
+    })) as { updated: boolean; status?: number; error?: string };
+    if (result.updated) {
+      return state;
+    }
+    if (result.status) {
+      throw new ApiError(result.error ?? "You no longer have access to this review.", result.status);
+    }
+    // Another database writer changed this review before the transaction locked
+    // it. Re-read and rebuild import IDs and dedup candidates before retrying.
+  }
+  throw new ApiError("The review changed while saving this import. Please try again.", 409);
 }
 
 function persistImportStudyMutation(
@@ -2283,7 +2358,7 @@ export async function createImportBatchForUser(
   await onProgress?.({ label: "Loading review data", detail: "Preparing the review for this import." });
   const state = readState();
   const currentUser = getUser(state, userId);
-  const project = requireProjectMember(state, projectId, userId);
+  requireProjectMember(state, projectId, userId);
   if (!currentUser) {
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
   }
@@ -2352,34 +2427,22 @@ export async function createImportBatchForUser(
   state.studies.unshift(...importedStudies);
   state.reports.unshift(...importedReports);
   await onProgress?.({ label: "Checking duplicate candidates", detail: `Comparing ${records} imported citations with the review. Larger imports can take longer.` });
-  syncDedupCandidatesForProject(state, projectId);
   if (importedReports.length > 0) {
     await retrieveImportedPdfReports(state, projectId, batch.id, importedReports, currentUser, onProgress);
   }
-  state.projects = state.projects.map((candidate) =>
-    candidate.id === projectId
-      ? {
-          ...candidate,
-          status: candidate.status === "draft" ? "active" : candidate.status,
-          stage: records > 0 ? "screening" : candidate.stage === "setup" ? "import" : candidate.stage,
-          recordsTotal: candidate.recordsTotal + records,
-          updatedAt: toEuToday(),
-          lastEvent: `Imported ${filename}`
-        }
-      : candidate
-  );
-  const refreshedBatch = state.imports.find((candidate) => candidate.id === batch.id);
-  const pdfSummary =
-    refreshedBatch && (refreshedBatch.pdfLinks ?? 0) > 0
-      ? `; retrieved ${refreshedBatch.pdfsRetrieved ?? 0} of ${refreshedBatch.pdfLinks ?? 0} linked PDFs`
-      : "";
-  appendEvent(state, currentUser.name, `Imported ${records} records from ${filename}${pdfSummary}`, project.id, currentUser.id);
   await onProgress?.({ label: "Saving import", detail: "Saving citations, duplicate candidates, and retrieval results." });
-  writeState(state);
+  const importedStudyIds = new Set(importedStudies.map((study) => study.id));
+  const savedState = persistImportBatchForUser(userId, projectId, {
+    batch: state.imports.find((candidate) => candidate.id === batch.id)!,
+    studies: importedStudies,
+    reports: state.reports.filter((report) => report.projectId === projectId && importedStudyIds.has(report.studyId)),
+    fileWarnings: importFileWarnings
+  });
   await onProgress?.({ label: "Preparing updated review", detail: "The import is saved. Preparing the updated citation list." });
+  const refreshedBatch = savedState.imports.find((candidate) => candidate.id === batch.id);
 
   return {
-    ...buildPayload(state, userId),
+    ...buildPayload(savedState, userId),
     message:
       refreshedBatch && (refreshedBatch.pdfLinks ?? 0) > 0
         ? `${filename} imported with ${refreshedBatch.pdfsRetrieved ?? 0} of ${refreshedBatch.pdfLinks ?? 0} linked PDFs retrieved.`
