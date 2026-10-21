@@ -2832,7 +2832,7 @@ export function addScreeningDecisionForUser(
     note: input.note?.trim() || undefined,
     isCurrent: true,
     supersedesDecisionId: previousDecision?.id,
-    createdAt: new Date().toLocaleString()
+    createdAt: new Date().toISOString()
   };
 
   state.decisions = [
@@ -3425,7 +3425,7 @@ export function updateReportForUser(
       note: input.note?.trim() || undefined,
       isCurrent: true,
       supersedesDecisionId: previousFullTextDecision?.id,
-      createdAt: new Date().toLocaleString()
+      createdAt: new Date().toISOString()
     };
     state.decisions = [
       ...state.decisions.map((decision) =>
@@ -3620,7 +3620,7 @@ export function undoScreeningDecisionForUser(
       id: createId("dec"),
       isCurrent: true,
       supersedesDecisionId: current?.id,
-      createdAt: new Date().toLocaleString()
+      createdAt: new Date().toISOString()
     });
   }
 

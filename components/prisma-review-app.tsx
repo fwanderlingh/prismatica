@@ -928,31 +928,32 @@ export function PrismaReviewApp() {
   }, [currentUser.id, decisions, selectedProject.id]);
 
   const reviewedScreeningItems = useMemo<ReviewedQueueItem[]>(() => {
-    const currentDecisionsByStudyId = new Map(
-      decisions
-        .filter(
-          (decision) =>
-            decision.projectId === selectedProject.id &&
-            decision.userId === currentUser.id &&
-            decision.stage === "title_abstract" &&
-            decision.isCurrent
-        )
-        .map((decision) => [decision.studyId, decision])
-    );
+    const studiesById = new Map(projectScreeningStudies.map((study) => [study.id, study]));
+    const reviewedStudyIds = new Set<string>();
 
-    return projectScreeningStudies
-      .filter((study) => currentDecisionsByStudyId.has(study.id))
-      .map((study) => {
-        const decision = currentDecisionsByStudyId.get(study.id);
-        return {
+    // Decisions are appended when saved, including reviews saved in the same second.
+    return decisions
+      .filter(
+        (decision) =>
+          decision.projectId === selectedProject.id &&
+          decision.userId === currentUser.id &&
+          decision.stage === "title_abstract" &&
+          decision.isCurrent
+      )
+      .reverse()
+      .flatMap((decision) => {
+        const study = studiesById.get(decision.studyId);
+        if (!study || reviewedStudyIds.has(study.id)) return [];
+        reviewedStudyIds.add(study.id);
+        return [{
           id: study.id,
           title: study.title,
           subtitle: formatStudySubtitle(study),
           detail: study.titleAbstractStatusLabel ? `Queue state: ${study.titleAbstractStatusLabel}` : undefined,
-          statusLabel: decision ? formatDecision(decision.decisionValue) : "Reviewed",
-          statusTone: decision ? decisionTone(decision.decisionValue) : "neutral",
-          completedAt: decision?.createdAt
-        };
+          statusLabel: formatDecision(decision.decisionValue),
+          statusTone: decisionTone(decision.decisionValue),
+          completedAt: decision.createdAt
+        }];
       });
   }, [currentUser.id, decisions, projectScreeningStudies, selectedProject.id]);
 
@@ -1019,7 +1020,7 @@ export function PrismaReviewApp() {
           detail: `${filledFieldCount}/${activeExtractionTemplate.fields.length} fields completed`,
           statusLabel: "Submitted",
           statusTone: "success",
-          completedAt: response?.submittedAt ? formatAuditTime(response.submittedAt) : undefined
+          completedAt: response?.submittedAt
         };
       });
   }, [activeExtractionTemplate, currentUser.id, extractionResponses, projectExtractionReports, projectScreeningStudies, selectedProject.id]);

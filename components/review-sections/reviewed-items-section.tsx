@@ -1,5 +1,6 @@
 import { ViewLink } from "@/components/navigation-link";
 import type { ViewKey } from "@/lib/prismaData";
+import { formatReviewDateTime } from "@/lib/reviewDisplay";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, ArrowLeft, Check, RotateCcw } from "lucide-react";
 import { Badge, EmptyState, SectionTitle } from "@/components/prisma-review-ui";
@@ -100,7 +101,7 @@ export function ReviewedItemsSection({
                       <td>
                         <Badge label={item.statusLabel} tone={item.statusTone} />
                       </td>
-                      <td>{item.completedAt ?? "Recorded"}</td>
+                      <td>{item.completedAt ? formatReviewDateTime(item.completedAt) : "Recorded"}</td>
                       <td>
                         <button
                           className="ghostButton"

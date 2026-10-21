@@ -15,7 +15,7 @@ const originalLoad = Module._load;
 const originalDocument = globalThis.document;
 const originalWindow = globalThis.window;
 try {
-  const sections = ["app-shell", "app-sidebar", "review-queue", "screening-section", "dedup-section", "full-text-section", "extraction-section", "project-dashboard-section"];
+  const sections = ["app-shell", "app-sidebar", "review-queue", "screening-section", "reviewed-items-section", "dedup-section", "full-text-section", "extraction-section", "project-dashboard-section"];
   const config = path.join(temp, "tsconfig.json");
   fs.writeFileSync(config, JSON.stringify({ compilerOptions: {
     target: "ES2020", module: "Node16", moduleResolution: "Node16", jsx: "react-jsx", esModuleInterop: true,
@@ -96,6 +96,34 @@ try {
   const user = { id: project.ownerId, name: "Alex Reviewer", initials: "AR", avatarColor: "#456" };
   const noop = () => {};
   const html = (Component, props) => renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id, homeView: props.currentUser?.isAdmin ? "adminReviews" : "dashboard" }, React.createElement(Component, props)));
+
+  const originalTimezone = process.env.TZ;
+  try {
+    process.env.TZ = "Europe/Rome";
+    const { formatReviewDateTime } = require(path.join(temp, "lib/reviewDisplay.js"));
+    const dateFixtures = [
+      ["5/6/2026, 1:02:03 PM", "06/05/2026 13:02:03"],
+      ["5/26/2026, 12:04:09 AM", "26/05/2026 00:04:09"],
+      ["20/10/2026, 12:00:00", "20/10/2026 12:00:00"],
+      ["2026-05-26T21:07:09.000Z", "26/05/2026 23:07:09"],
+      ["2026-05-25T22:00:05.000Z", "26/05/2026 00:00:05"],
+      ["2026-05-26 10:22", "26/05/2026 10:22:00"],
+      ["Unavailable", "Unavailable"]
+    ];
+    for (const [input, expected] of dateFixtures) assert.equal(formatReviewDateTime(input), expected);
+    const reviewedHtml = html(loadSection("reviewed-items-section").ReviewedItemsSection, {
+      icon: require("lucide-react").Check, eyebrow: "Screening", title: "Reviewed Citations", description: "Completed screening",
+      queueLabel: "Screening queue", queueView: "screening", emptyTitle: "No reviews", emptyDescription: "Review a citation",
+      items: [...dateFixtures.map(([completedAt], index) => ({ id: String(index), title: `Citation ${index}`, subtitle: "Study", statusLabel: "Included", statusTone: "success", completedAt })),
+        { id: "undated", title: "Undated citation", subtitle: "Study", statusLabel: "Included", statusTone: "success" }],
+      message: "", pendingItemId: "", actionLabel: "Return to queue", onOpenQueue: noop, onReturnToQueue: noop
+    });
+    assert.deepEqual(Array.from(reviewedHtml.matchAll(/<td>([^<]*)<\/td>/g), match => match[1]), [...dateFixtures.map(([, expected]) => expected), "Recorded"], "reviewed citations display European dates and 24-hour times");
+    process.env.TZ = "UTC";
+    assert.equal(formatReviewDateTime("2026-05-26T21:07:09.000Z"), "26/05/2026 21:07:09", "ISO timestamps use the viewer's timezone");
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ; else process.env.TZ = originalTimezone;
+  }
 
   assert.equal(buildPathForState("pdfUpload", "review / one"), "/projects/review%20%2F%20one/full-text/pdf-upload");
   const sidebarProps = { brandName: "Prismatica", brandTagline: "Reviews", brandLogoAlt: "Home", isSidebarCollapsed: true,
@@ -421,6 +449,43 @@ try {
     return dependencies.length === 2 && dependencies.includes("pathname") && dependencies.includes("pendingRoutePath");
   });
   const sourceText = node => appSource.slice(node.start, node.end);
+  const reviewedSelector = appFunction.body.body
+    .filter(node => node.type === "VariableDeclaration")
+    .flatMap(node => node.declarations)
+    .find(node => node.id.name === "reviewedScreeningItems").init.arguments[0];
+  const reviewedSelectorCode = babel.core().transformSync(`(${sourceText(reviewedSelector)})`, {
+    filename: "reviewed-screening.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()]
+  }).code;
+  const reviewedStudyIds = ["oldest", "latest", "same-second-first", "same-second-last", "inactive", "other-user", "other-stage", "other-project"];
+  const reviewedDecision = (studyId, createdAt, extra = {}) => ({
+    id: `${studyId}-decision`, projectId: project.id, studyId, userId: user.id, stage: "title_abstract", isCurrent: true,
+    decisionValue: "include", createdAt, ...extra
+  });
+  const reviewedDecisions = [
+    reviewedDecision("oldest", "10/21/2026, 9:00:00 AM"),
+    reviewedDecision("latest", "10/21/2026, 9:30:00 AM", { id: "superseded", isCurrent: false }),
+    reviewedDecision("same-second-first", "10/21/2026, 10:00:00 AM"),
+    reviewedDecision("same-second-last", "10/21/2026, 10:00:00 AM"),
+    reviewedDecision("latest", "2026-10-21T10:01:00.000Z", { decisionValue: "exclude" }),
+    reviewedDecision("inactive", "2026-10-21T10:02:00.000Z", { isCurrent: false }),
+    reviewedDecision("other-user", "2026-10-21T10:03:00.000Z", { userId: "another-reviewer" }),
+    reviewedDecision("other-stage", "2026-10-21T10:04:00.000Z", { stage: "full_text" }),
+    reviewedDecision("other-project", "2026-10-21T10:05:00.000Z", { projectId: "another-review" }),
+    reviewedDecision("missing-study", "2026-10-21T10:06:00.000Z")
+  ];
+  const selectReviewedItems = decisions => vm.runInNewContext(reviewedSelectorCode, {
+    selectedProject: project, currentUser: user, decisions,
+    projectScreeningStudies: reviewedStudyIds.map(id => ({ ...study, id, title: id })),
+    formatStudySubtitle: item => item.title, formatDecision: String, decisionTone: () => "neutral"
+  })();
+  const savedDecisionIds = reviewedDecisions.map(item => item.id);
+  const reviewedItems = selectReviewedItems(reviewedDecisions);
+  assert.deepEqual(Array.from(reviewedItems, item => item.id), ["latest", "same-second-last", "same-second-first", "oldest"], "reviewed citations follow newest save first, independently of study order and equal-second timestamps");
+  assert.equal(reviewedItems[0].statusLabel, "exclude", "the current revision supplies the displayed decision");
+  assert.deepEqual(reviewedDecisions.map(item => item.id), savedDecisionIds, "display ordering preserves the stored decision history");
+  const duplicateCurrentItems = selectReviewedItems([...reviewedDecisions, reviewedDecision("oldest", "Unparseable legacy time", { decisionValue: "maybe" })]);
+  assert.deepEqual(Array.from(duplicateCurrentItems, item => item.id), ["oldest", "latest", "same-second-last", "same-second-first"], "legacy dates and duplicate current revisions retain the latest saved decision per citation");
+  assert.equal(duplicateCurrentItems[0].statusLabel, "maybe");
   const routeCode = babel.core().transformSync([
     findFunction(appProgram.body, "normalizePathname"),
     ...["clearPendingRoute", "setActiveView", "deleteCurrentProjectFromSettings"].map(name => findFunction(appFunction.body.body, name))
@@ -529,7 +594,7 @@ try {
   assert.deepEqual(failedDeletion.routeRequests, []);
   assert.deepEqual(failedDeletion.hardRedirects, []);
 
-  console.log("Navigation checks passed: deletion redirects with delayed router commits, missing-project access checks, link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
+  console.log("Navigation checks passed: European reviewed timestamps and newest-first citations, deletion redirects with delayed router commits, missing-project access checks, link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
 } finally {
   Module._resolveFilename = originalResolve; Module._load = originalLoad;
   if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;
