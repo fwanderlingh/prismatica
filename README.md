@@ -359,6 +359,11 @@ When enabled (and `DATABASE_URL` is set), these mutations sync to PostgreSQL aut
 
 Note: when `PRISMATICA_STORAGE_MODE=postgres` is enabled, full review state is persisted in PostgreSQL relational tables; `PRISMATICA_USERS_SYNC_POSTGRES` is only needed for the legacy JSON-primary transition mode.
 
+Screening and full-text decisions update only changed records in a transaction, including
+workflow summaries, reviewer reservations, and audit events. Concurrent changes trigger
+a fresh calculation before retrying; stale full-state saves are rejected. Run
+`npm run check:decisions` to verify persistence and concurrency behavior.
+
 Schema file:
 
 - `db/users_preferences.sql`

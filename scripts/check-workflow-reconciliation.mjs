@@ -525,14 +525,41 @@ exports.__workflowTest = {
         process.env.PRISMATICA_STORAGE_MODE = backend;
         process.env.PRISMATICA_DATA_FILE = dataFile;
         let databaseState = plain(initialState);
+        let databaseRevision = 1;
         const bridgeOperations = [];
         childProcess.execFileSync = backend === 'postgres'
           ? (_command, args, options) => {
               const action = args[1];
               bridgeOperations.push(action);
-              if (action === 'read') return JSON.stringify(databaseState);
+              if (action === 'read') return JSON.stringify({ ...databaseState, __storageRevision: String(databaseRevision) });
+              if (action === 'read-screening-state') return JSON.stringify({
+                state: { ...databaseState, __storageRevision: String(databaseRevision) }, revision: String(databaseRevision)
+              });
               if (action === 'write') {
                 databaseState = JSON.parse(options.input);
+                databaseRevision += 1;
+                return JSON.stringify({ updated: true });
+              }
+              if (action === 'write-screening-patch') {
+                const mutation = JSON.parse(options.input);
+                assert.equal(mutation.revision, String(databaseRevision));
+                if (mutation.project) databaseState.projects = databaseState.projects.map(project => project.id === mutation.projectId ? mutation.project : project);
+                for (const [key, changes] of Object.entries(mutation.changes)) {
+                  const deleted = new Set(changes.deleteIds);
+                  const replacements = new Map(changes.upserts.map(item => [item.id, item]));
+                  databaseState[key] = databaseState[key].filter(item => !deleted.has(item.id)).map(item => {
+                    const replacement = replacements.get(item.id);
+                    replacements.delete(item.id);
+                    return replacement ?? item;
+                  });
+                  databaseState[key].push(...replacements.values());
+                }
+                databaseState.screeningCheckouts = [
+                  ...databaseState.screeningCheckouts.filter(checkout => checkout.projectId !== mutation.projectId),
+                  ...mutation.screeningCheckouts
+                ];
+                for (const event of mutation.events) databaseState.events.unshift(event);
+                databaseRevision += 1;
                 return JSON.stringify({ updated: true });
               }
               throw new Error(`Unexpected parity bridge operation: ${action}`);
@@ -555,7 +582,8 @@ exports.__workflowTest = {
         }
         if (backend === 'postgres') {
           assert.ok(bridgeOperations.filter(action => action === 'read').length >= actions.length);
-          assert.equal(bridgeOperations.filter(action => action === 'write').length, actions.length - 1, 'every public mutation uses the real PostgreSQL writeState path');
+          assert.equal(bridgeOperations.filter(action => action === 'write-screening-patch').length, 2, 'full-text reopen and re-vote use atomic incremental persistence');
+          assert.equal(bridgeOperations.filter(action => action === 'write').length, actions.length - 3, 'other mutations retain full-state persistence');
         }
         results.push(snapshots);
       }

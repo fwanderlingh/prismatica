@@ -69,6 +69,9 @@ type PersistedState = {
   dedupCandidates: DedupCandidate[];
 };
 
+type StorageSnapshot = Partial<PersistedState> & { __storageRevision?: string };
+const storageRevisions = new WeakMap<PersistedState, string>();
+
 type ScreeningCheckout = {
   projectId: string;
   stage: "title_abstract" | "full_text" | "extraction";
@@ -180,7 +183,7 @@ function postgresStateIoScriptPath() {
 }
 
 function runPostgresStateIo(
-  action: "read" | "read-auth-config" | "read-import-state" | "write" | "write-import-batch" | "write-import-study" | "write-dedup-decisions" | "write-user-role",
+  action: "read" | "read-auth-config" | "read-import-state" | "read-screening-state" | "write" | "write-import-batch" | "write-import-study" | "write-dedup-decisions" | "write-user-role" | "write-screening-patch",
   payload?: unknown
 ) {
   const output = execFileSync(process.execPath, [postgresStateIoScriptPath(), action], {
@@ -310,6 +313,12 @@ function createSeedState(): PersistedState {
   };
 }
 
+function normalizeStorageSnapshot(snapshot: StorageSnapshot, rebuildDerivedState = false): PersistedState {
+  const state = normalizeState(snapshot, rebuildDerivedState);
+  if (snapshot.__storageRevision) storageRevisions.set(state, snapshot.__storageRevision);
+  return state;
+}
+
 function readState(): PersistedState {
   if (usePostgresStateStore()) {
     const serializedState = runPostgresStateIo("read");
@@ -320,13 +329,13 @@ function readState(): PersistedState {
       return seededState;
     }
 
-    const parsed = JSON.parse(serializedState) as Partial<PersistedState>;
+    const parsed = JSON.parse(serializedState) as StorageSnapshot;
     const hasUnmaterializedLegacyImports = (parsed.imports ?? []).some(
       (batch) =>
         batch.records > 0 &&
         !(parsed.studies ?? []).some((study) => study.projectId === batch.projectId && study.importBatchId === batch.id)
     );
-    const normalized = normalizeState(parsed, hasUnmaterializedLegacyImports);
+    const normalized = normalizeStorageSnapshot(parsed, hasUnmaterializedLegacyImports);
     if (hasUnmaterializedLegacyImports) {
       writeState(normalized);
     }
@@ -342,13 +351,23 @@ function readState(): PersistedState {
 
   const parsed = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ filePath, "utf8")) as Partial<PersistedState>;
   const normalized = normalizeState(parsed);
-  writeState(normalized);
+  if (JSON.stringify(parsed) !== JSON.stringify(normalized)) writeState(normalized);
   return normalized;
 }
 
 function writeState(state: PersistedState) {
   if (usePostgresStateStore()) {
-    runPostgresStateIo("write", state);
+    const serializedResult = runPostgresStateIo("write", {
+      ...state,
+      __expectedRevision: storageRevisions.get(state)
+    });
+    if (serializedResult) {
+      const result = JSON.parse(serializedResult) as { updated: boolean; revision?: string };
+      if (!result.updated) {
+        throw new ApiError("The workspace changed while saving. Refresh the page and try again.", 409);
+      }
+      if (result.revision) storageRevisions.set(state, result.revision);
+    }
     return;
   }
 
@@ -357,6 +376,76 @@ function writeState(state: PersistedState) {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(/*turbopackIgnore: true*/ tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   fs.renameSync(/*turbopackIgnore: true*/ tempPath, filePath);
+}
+
+function changedReviewItems<T extends { id: string }>(before: T[], after: T[]) {
+  const previous = new Map(before.map((item) => [item.id, item]));
+  const nextIds = new Set(after.map((item) => item.id));
+  return {
+    upserts: after.filter((item) => !isDeepStrictEqual(previous.get(item.id), item)),
+    deleteIds: before.filter((item) => !nextIds.has(item.id)).map((item) => item.id)
+  };
+}
+
+function withReviewMutation(
+  userId: string,
+  projectId: string,
+  mutate: (state: PersistedState) => AppMutationPayload
+): AppMutationPayload {
+  if (!usePostgresStateStore()) {
+    const state = readState();
+    const payload = mutate(state);
+    writeState(state);
+    return payload;
+  }
+
+  let sessionVersion: string | undefined;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const snapshot = JSON.parse(runPostgresStateIo("read-screening-state", { projectId })) as {
+      state: StorageSnapshot | null;
+      revision: string;
+    };
+    if (!snapshot.state) throw new ApiError("The review is no longer available. Refresh the page to continue.", 404);
+    const state = normalizeStorageSnapshot(snapshot.state);
+    const user = getUser(state, userId);
+    const currentVersion = user?.emailAuth?.sessionVersion ?? "";
+    if (!user || (sessionVersion !== undefined && currentVersion !== sessionVersion)) {
+      throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+    }
+    sessionVersion ??= currentVersion;
+
+    // Recompute the decision and all derived workflow data after any conflict.
+    // Copy only this project's mutable data when calculating the changed rows.
+    const projectItems = <T extends { projectId?: string }>(items: T[]) => items.filter((item) => item.projectId === projectId);
+    const before = structuredClone({
+      project: state.projects.find((project) => project.id === projectId),
+      studies: projectItems(state.studies),
+      reports: projectItems(state.reports),
+      decisions: projectItems(state.decisions),
+      extractionConsensus: projectItems(state.extractionConsensus)
+    });
+    const oldEventIds = new Set(state.events.map((event) => event.id));
+    const payload = mutate(state);
+    const project = state.projects.find((item) => item.id === projectId);
+    const result = JSON.parse(runPostgresStateIo("write-screening-patch", {
+      userId,
+      projectId,
+      revision: snapshot.revision,
+      sessionVersion,
+      project: isDeepStrictEqual(before.project, project) ? undefined : project,
+      changes: {
+        studies: changedReviewItems(before.studies, projectItems(state.studies)),
+        reports: changedReviewItems(before.reports, projectItems(state.reports)),
+        decisions: changedReviewItems(before.decisions, projectItems(state.decisions)),
+        extractionConsensus: changedReviewItems(before.extractionConsensus, projectItems(state.extractionConsensus))
+      },
+      screeningCheckouts: state.screeningCheckouts.filter((checkout) => checkout.projectId === projectId),
+      events: state.events.filter((event) => !oldEventIds.has(event.id)).reverse()
+    })) as { updated: boolean; status?: number; error?: string };
+    if (result.updated) return payload;
+    if (result.status) throw new ApiError(result.error ?? "You no longer have access to this review.", result.status);
+  }
+  throw new ApiError("The review changed while saving. Please try your choice again.", 409);
 }
 
 function persistImportBatchForUser(
@@ -454,7 +543,8 @@ function persistImportStudyMutation(
     throw new Error("Import study persistence data is incomplete.");
   }
 
-  runPostgresStateIo("write-import-study", {
+  const serializedResult = runPostgresStateIo("write-import-study", {
+    __expectedRevision: storageRevisions.get(state),
     study,
     studyPosition: state.studies.findIndex((item) => item.id === study.id) + 1,
     batch,
@@ -468,6 +558,9 @@ function persistImportStudyMutation(
       ? state.dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === projectId)
       : undefined
   });
+  if (serializedResult && !JSON.parse(serializedResult).updated) {
+    throw new ApiError("The review changed while saving. Refresh the page and try again.", 409);
+  }
 }
 
 function persistDedupDecisions(
@@ -482,7 +575,7 @@ function persistDedupDecisions(
   }
 
   const result = JSON.parse(
-    runPostgresStateIo("write-dedup-decisions", { candidates, project, event })
+    runPostgresStateIo("write-dedup-decisions", { candidates, project, event, __expectedRevision: storageRevisions.get(state) })
   ) as { updated: boolean };
   return result.updated;
 }
@@ -2764,7 +2857,10 @@ export function addScreeningDecisionForUser(
     note?: string;
   }
 ): AppMutationPayload {
-  const state = readState();
+  return withReviewMutation(userId, input.projectId ?? "", (state) => addScreeningDecisionInState(state, userId, input));
+}
+
+function addScreeningDecisionInState(state: PersistedState, userId: Parameters<typeof addScreeningDecisionForUser>[0], input: Parameters<typeof addScreeningDecisionForUser>[1]): AppMutationPayload {
   const currentUser = getUser(state, userId);
   if (!currentUser) {
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
@@ -2855,7 +2951,6 @@ export function addScreeningDecisionForUser(
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
   acquireNextTitleAbstractCheckoutForUser(state, project, userId, studyId);
-  writeState(state);
 
   return {
     ...buildPayload(state, userId),
@@ -2954,7 +3049,10 @@ export function updateScreeningCheckoutForUser(
     action?: string;
   }
 ): AppMutationPayload {
-  const state = readState();
+  return withReviewMutation(userId, input.projectId ?? "", (state) => updateScreeningCheckoutInState(state, userId, input));
+}
+
+function updateScreeningCheckoutInState(state: PersistedState, userId: Parameters<typeof updateScreeningCheckoutForUser>[0], input: Parameters<typeof updateScreeningCheckoutForUser>[1]): AppMutationPayload {
   const currentUser = getUser(state, userId);
   if (!currentUser) {
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
@@ -2998,7 +3096,6 @@ export function updateScreeningCheckoutForUser(
     );
 
     if (action === "release") {
-      writeState(state);
       return buildPayload(state, userId);
     }
 
@@ -3011,7 +3108,6 @@ export function updateScreeningCheckoutForUser(
         response.isSubmitted
     );
     if (existingResponse) {
-      writeState(state);
       return {
         ...buildPayload(state, userId),
         message: "You have already submitted extraction data for this report."
@@ -3027,7 +3123,6 @@ export function updateScreeningCheckoutForUser(
       state.screeningCheckouts
     );
     if (capacity <= 0 || activeExtractionCheckouts.length >= capacity) {
-      writeState(state);
       return {
         ...buildPayload(state, userId),
         message: "This report is already checked out by enough extraction reviewers."
@@ -3046,7 +3141,6 @@ export function updateScreeningCheckoutForUser(
       checkedOutAt: new Date(now).toISOString(),
       expiresAt: new Date(now + getCheckoutTtlMs("extraction", state.reviewSettings)).toISOString()
     });
-    writeState(state);
     return buildPayload(state, userId);
   }
 
@@ -3069,7 +3163,6 @@ export function updateScreeningCheckoutForUser(
     );
 
     if (action === "release") {
-      writeState(state);
       return buildPayload(state, userId);
     }
 
@@ -3091,7 +3184,6 @@ export function updateScreeningCheckoutForUser(
     );
     const isConflictCheckout = currentEvaluation.state === "conflict" || currentEvaluation.state === "needs_third_vote";
     if (previousDecision && !isConflictCheckout) {
-      writeState(state);
       return {
         ...buildPayload(state, userId),
         message: "You have already voted on this report."
@@ -3103,7 +3195,6 @@ export function updateScreeningCheckoutForUser(
       projectId, reportId, state.decisions, state.screeningCheckouts, isConflictCheckout
     );
     if (capacity <= 0 || activeReportCheckouts.length >= capacity) {
-      writeState(state);
       return {
         ...buildPayload(state, userId),
         message: "This report is already checked out by enough reviewers."
@@ -3121,7 +3212,6 @@ export function updateScreeningCheckoutForUser(
       checkedOutAt: new Date(now).toISOString(),
       expiresAt: new Date(now + getCheckoutTtlMs("full_text", state.reviewSettings)).toISOString()
     });
-    writeState(state);
     return buildPayload(state, userId);
   }
 
@@ -3131,7 +3221,6 @@ export function updateScreeningCheckoutForUser(
     throw new ApiError("Citation entry not found.", 404);
   }
   if (getConfirmedDuplicateStudyIds(state, projectId).has(studyId)) {
-    writeState(state);
     return {
       ...buildPayload(state, userId),
       message: "This citation has been excluded as a duplicate."
@@ -3150,7 +3239,6 @@ export function updateScreeningCheckoutForUser(
     );
 
   if (action === "release") {
-    writeState(state);
     return buildPayload(state, userId);
   }
 
@@ -3171,7 +3259,6 @@ export function updateScreeningCheckoutForUser(
   );
   const isConflictCheckout = currentEvaluation.state === "conflict" || currentEvaluation.state === "needs_third_vote";
   if (previousDecision && !isConflictCheckout) {
-    writeState(state);
     return {
       ...buildPayload(state, userId),
       message: "You have already voted on this citation."
@@ -3183,7 +3270,6 @@ export function updateScreeningCheckoutForUser(
     projectId, studyId, state.decisions, state.screeningCheckouts, isConflictCheckout
   );
   if (capacity <= 0 || activeStudyCheckouts.length >= capacity) {
-    writeState(state);
     return {
       ...buildPayload(state, userId),
       message: "This citation is already checked out by enough reviewers."
@@ -3200,7 +3286,6 @@ export function updateScreeningCheckoutForUser(
     checkedOutAt: new Date(now).toISOString(),
     expiresAt: new Date(now + getCheckoutTtlMs("title_abstract", state.reviewSettings)).toISOString()
   });
-  writeState(state);
   return buildPayload(state, userId);
 }
 
@@ -3307,7 +3392,10 @@ export function updateReportForUser(
     note?: string;
   }
 ): AppMutationPayload {
-  const state = readState();
+  return withReviewMutation(userId, projectId, (state) => updateReportInState(state, userId, projectId, reportId, input));
+}
+
+function updateReportInState(state: PersistedState, userId: Parameters<typeof updateReportForUser>[0], projectId: Parameters<typeof updateReportForUser>[1], reportId: Parameters<typeof updateReportForUser>[2], input: Parameters<typeof updateReportForUser>[3]): AppMutationPayload {
   const currentUser = getUser(state, userId);
   const project = requireProjectMember(state, projectId, userId);
   if (!currentUser) {
@@ -3455,7 +3543,6 @@ export function updateReportForUser(
   }
 
   refreshProjectWorkflowSummary(state, projectId, [reportId], workflowContext);
-  writeState(state);
   return buildPayload(state, userId);
 }
 
@@ -3588,7 +3675,10 @@ export function undoScreeningDecisionForUser(
   userId: string,
   input: { projectId?: string; studyId?: string; previousDecisionId?: string }
 ): AppMutationPayload {
-  const state = readState();
+  return withReviewMutation(userId, input.projectId ?? "", (state) => undoScreeningDecisionInState(state, userId, input));
+}
+
+function undoScreeningDecisionInState(state: PersistedState, userId: Parameters<typeof undoScreeningDecisionForUser>[0], input: Parameters<typeof undoScreeningDecisionForUser>[1]): AppMutationPayload {
   const currentUser = getUser(state, userId);
   if (!currentUser) {
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
@@ -3610,6 +3700,16 @@ export function undoScreeningDecisionForUser(
     ? state.decisions.find((decision) => decision.id === input.previousDecisionId)
     : undefined;
 
+  if (input.previousDecisionId) {
+    if (!previous || previous.projectId !== projectId || previous.studyId !== studyId ||
+        previous.userId !== userId || previous.stage !== "title_abstract" || previous.isCurrent) {
+      throw new ApiError("Choose a previous screening decision for this citation.");
+    }
+    if (current?.supersedesDecisionId !== previous.id) {
+      throw new ApiError("The latest screening decision changed. Refresh the page before undoing.", 409);
+    }
+  }
+
   state.decisions = state.decisions.map((decision) =>
     current && decision.id === current.id ? { ...decision, isCurrent: false } : decision
   );
@@ -3629,12 +3729,14 @@ export function undoScreeningDecisionForUser(
   const context = createProjectWorkflowContext(state, project);
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
-  writeState(state);
   return buildPayload(state, userId);
 }
 
 export function reopenTitleAbstractDecisionForUser(userId: string, projectId: string, studyId: string): AppMutationPayload {
-  const state = readState();
+  return withReviewMutation(userId, projectId, (state) => reopenTitleAbstractDecisionInState(state, userId, projectId, studyId));
+}
+
+function reopenTitleAbstractDecisionInState(state: PersistedState, userId: Parameters<typeof reopenTitleAbstractDecisionForUser>[0], projectId: Parameters<typeof reopenTitleAbstractDecisionForUser>[1], studyId: Parameters<typeof reopenTitleAbstractDecisionForUser>[2]): AppMutationPayload {
   const currentUser = getUser(state, userId);
   if (!currentUser) {
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
@@ -3675,7 +3777,6 @@ export function reopenTitleAbstractDecisionForUser(userId: string, projectId: st
   const context = createProjectWorkflowContext(state, project);
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
-  writeState(state);
   return {
     ...buildPayload(state, userId),
     message: "Citation returned to the title/abstract queue."
@@ -3683,7 +3784,10 @@ export function reopenTitleAbstractDecisionForUser(userId: string, projectId: st
 }
 
 export function reopenFullTextDecisionForUser(userId: string, projectId: string, reportId: string): AppMutationPayload {
-  const state = readState();
+  return withReviewMutation(userId, projectId, (state) => reopenFullTextDecisionInState(state, userId, projectId, reportId));
+}
+
+function reopenFullTextDecisionInState(state: PersistedState, userId: Parameters<typeof reopenFullTextDecisionForUser>[0], projectId: Parameters<typeof reopenFullTextDecisionForUser>[1], reportId: Parameters<typeof reopenFullTextDecisionForUser>[2]): AppMutationPayload {
   const currentUser = getUser(state, userId);
   if (!currentUser) {
     throw new ApiError("Your session is no longer valid. Sign in again.", 401);
@@ -3728,7 +3832,6 @@ export function reopenFullTextDecisionForUser(userId: string, projectId: string,
   const context = createProjectWorkflowContext(state, project);
   syncStudyAfterFullTextDecision(state, project, reportId, context);
   refreshProjectWorkflowSummary(state, projectId, [reportId], context);
-  writeState(state);
   return {
     ...buildPayload(state, userId),
     message: "Report returned to the full-text queue."

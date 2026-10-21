@@ -243,6 +243,11 @@ async function ensureSchema(client) {
       payload JSONB NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS review_screening_checkouts (
+      project_id TEXT PRIMARY KEY,
+      payload JSONB NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS workflow_events (
       id TEXT PRIMARY KEY,
       entity TEXT,
@@ -380,6 +385,7 @@ function defaultState() {
     extractionResponses: [],
     extractionConsensus: [],
     decisions: [],
+    screeningCheckouts: [],
     events: [],
     dedupCandidates: []
   };
@@ -570,6 +576,8 @@ async function readRelationalState(client) {
   const extractionResponses = await readRows(client, "review_extraction_responses");
   const extractionConsensus = await readRows(client, "review_extraction_consensus");
   const decisions = await readRows(client, "review_decisions");
+  const checkoutRows = await client.query("SELECT payload FROM review_screening_checkouts ORDER BY project_id ASC");
+  const screeningCheckouts = checkoutRows.rows.flatMap((row) => asArray(row.payload));
   const auditLimit = normalizeAuditHistoryLimit(reviewSettingsResult.rows[0]?.audit_history_limit);
   const eventRows = await client.query(
     `${rankedWorkflowEventsSql()}
@@ -591,6 +599,7 @@ async function readRelationalState(client) {
     extractionResponses.length > 0 ||
     extractionConsensus.length > 0 ||
     decisions.length > 0 ||
+    screeningCheckouts.length > 0 ||
     events.length > 0 ||
     dedupCandidates.length > 0;
 
@@ -636,6 +645,7 @@ async function readRelationalState(client) {
     extractionResponses,
     extractionConsensus,
     decisions,
+    screeningCheckouts,
     events,
     dedupCandidates
   };
@@ -658,6 +668,7 @@ async function truncateReviewStateTables(client) {
       review_extraction_responses,
       review_extraction_consensus,
       review_decisions,
+      review_screening_checkouts,
       workflow_events,
       review_dedup_candidates
   `);
@@ -800,7 +811,11 @@ async function writeProjects(client, state) {
   }
 }
 
-async function writeStudies(client, state, positionOffset = 0) {
+function updateInsertedColumns(columns) {
+  return `ON CONFLICT (id) DO UPDATE SET ${columns.map((column) => `${column} = EXCLUDED.${column}`).join(", ")}`;
+}
+
+async function writeStudies(client, state, positionOffset = 0, upsert = false) {
   const studies = Array.isArray(state.studies) ? state.studies : [];
   for (let index = 0; index < studies.length; index += 1) {
     const study = studies[index];
@@ -815,6 +830,7 @@ async function writeStudies(client, state, positionOffset = 0) {
           $6, $7, $8::jsonb, $9, $10, $11, $12, $13,
           $14::jsonb, $15, $16::jsonb, $17::jsonb
         )
+        ${upsert ? updateInsertedColumns(["project_id", "import_batch_id", "import_item_id", "title", "abstract", "authors", "journal", "year", "doi", "source", "stage", "keywords", "raw_citation", "parser_warnings", "payload"]) : ""}
       `,
       [
         study.id,
@@ -839,7 +855,7 @@ async function writeStudies(client, state, positionOffset = 0) {
   }
 }
 
-async function writeReports(client, state, positionOffset = 0) {
+async function writeReports(client, state, positionOffset = 0, upsert = false) {
   const reports = Array.isArray(state.reports) ? state.reports : [];
   for (let index = 0; index < reports.length; index += 1) {
     const report = reports[index];
@@ -860,6 +876,7 @@ async function writeReports(client, state, positionOffset = 0) {
           $16, $17, $18, $19,
           $20, $21::jsonb, $22, $23::jsonb
         )
+        ${upsert ? updateInsertedColumns(["project_id", "study_id", "title", "citation", "retrieval_status", "pdf_name", "file_name", "mime_type", "size", "checksum", "storage_path", "uploaded_by_user_id", "uploaded_by_user_name", "full_text_status", "full_text_status_label", "full_text_vote_count", "full_text_required_votes", "is_pdf_validated", "validation_notes", "notes", "payload"]) : ""}
       `,
       [
         report.id,
@@ -902,6 +919,17 @@ async function writeReviewTables(client, state) {
         config.valuesForItem(item, index)
       );
     }
+  }
+  const checkoutsByProject = new Map();
+  const projectIds = new Set(asArray(state.projects).map((project) => project.id));
+  for (const checkout of asArray(state.screeningCheckouts)) {
+    if (!projectIds.has(checkout.projectId)) continue;
+    const checkouts = checkoutsByProject.get(checkout.projectId) ?? [];
+    checkouts.push(checkout);
+    checkoutsByProject.set(checkout.projectId, checkouts);
+  }
+  for (const [projectId, checkouts] of checkoutsByProject) {
+    await writeScreeningCheckouts(client, projectId, checkouts);
   }
   // Resolve ownership after all records (including duplicate candidates) are saved.
   await pruneWorkflowEvents(client, state.reviewSettings?.auditHistoryLimit);
@@ -958,6 +986,14 @@ async function appendWorkflowEvent(client, event) {
 async function writeImportStudyMutation(client, mutation) {
   await client.query("BEGIN");
   try {
+    if (mutation.__expectedRevision !== undefined) {
+      await lockStateTables(client);
+      if (await readStorageRevision(client) !== mutation.__expectedRevision) {
+        await client.query("ROLLBACK");
+        process.stdout.write(JSON.stringify({ updated: false }));
+        return;
+      }
+    }
     const { study, studyPosition, batch, batchPosition, project, reports, event, dedupCandidates } = mutation;
     await client.query(
       `
@@ -1090,8 +1126,13 @@ async function writeImportStudyMutation(client, mutation) {
     }
 
     await client.query("COMMIT");
+    process.stdout.write(JSON.stringify({ updated: true }));
   } catch (error) {
     await client.query("ROLLBACK");
+    if (error?.code === "55P03" || error?.code === "40P01" || error?.code === "40001") {
+      process.stdout.write(JSON.stringify({ updated: false }));
+      return;
+    }
     throw error;
   }
 }
@@ -1116,6 +1157,237 @@ async function readImportRevision(client, projectId) {
     [projectId]
   );
   return result.rows[0].revision;
+}
+
+const stateTables = [
+  ["app_users", "id"], ["auth_settings", "id"], ["review_settings", "id"],
+  ["review_projects", "id"], ["import_batches", "id"], ["review_studies", "id"],
+  ["review_reports", "id"], ["review_extraction_templates", "id"],
+  ["review_extraction_responses", "id"], ["review_extraction_consensus", "id"],
+  ["review_decisions", "id"], ["review_screening_checkouts", "project_id"],
+  ["workflow_events", "id"], ["review_dedup_candidates", "id"]
+];
+
+async function lockStateTables(client, incremental = false) {
+  // NOWAIT avoids deadlocks with older mutations that acquire row locks first.
+  // A conflict leaves the caller free to reread and recalculate its mutation.
+  if (incremental) {
+    await client.query("LOCK TABLE app_users, auth_settings, review_settings IN SHARE MODE NOWAIT");
+    await client.query(`LOCK TABLE ${stateTables.slice(3).map(([table]) => table).join(", ")} IN SHARE ROW EXCLUSIVE MODE NOWAIT`);
+  } else {
+    await client.query(`LOCK TABLE ${stateTables.map(([table]) => table).join(", ")} IN SHARE ROW EXCLUSIVE MODE NOWAIT`);
+  }
+}
+
+async function readStorageRevision(client, projectId) {
+  // xmin changes on every database update, including full-state replacement.
+  // Hashing IDs and transaction IDs avoids serializing every citation's payload.
+  const entries = stateTables.filter(([table]) => projectId === undefined || table !== "workflow_events")
+    .map(([table, idColumn]) => {
+      let condition = "";
+      if (projectId !== undefined && !["app_users", "auth_settings", "review_settings"].includes(table)) {
+        if (table === "review_projects") condition = " WHERE id = $1";
+        else if (table === "review_dedup_candidates") {
+          condition = ` WHERE COALESCE(payload->>'projectId', payload->'recordA'->>'projectId',
+            payload->'recordB'->>'projectId') = $1
+            OR record_a_id IN (SELECT id FROM review_studies WHERE project_id = $1)
+            OR record_b_id IN (SELECT id FROM review_studies WHERE project_id = $1)`;
+        } else condition = " WHERE project_id = $1";
+      }
+      return `'${table}', (SELECT COALESCE(jsonb_agg(jsonb_build_array(${idColumn}, xmin::text) ORDER BY ${idColumn}), '[]'::jsonb) FROM ${table}${condition})`;
+    });
+  const result = await client.query(
+    `SELECT md5(jsonb_build_object(${entries.join(", ")})::text) AS revision`,
+    projectId === undefined ? [] : [projectId]
+  );
+  return result.rows[0].revision;
+}
+
+async function readScreeningRevision(client, projectId) {
+  return readStorageRevision(client, projectId);
+}
+
+async function readStateSnapshot(client, projectId) {
+  await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  try {
+    const state = await readRelationalState(client);
+    const globalRevision = await readStorageRevision(client);
+    const revision = projectId === undefined ? undefined : await readScreeningRevision(client, projectId);
+    const legacy = state ? "" : await readLegacyBlobState(client);
+    await client.query("COMMIT");
+    return {
+      state: state ? { ...state, __storageRevision: globalRevision }
+        : legacy ? { ...JSON.parse(legacy), __storageRevision: globalRevision } : null,
+      revision
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
+async function readScreeningState(client, projectId) {
+  return readStateSnapshot(client, projectId);
+}
+
+async function writeScreeningCheckouts(client, projectId, checkouts) {
+  if (checkouts.length === 0) {
+    await client.query("DELETE FROM review_screening_checkouts WHERE project_id = $1", [projectId]);
+    return;
+  }
+  await client.query(
+    `INSERT INTO review_screening_checkouts (project_id, payload) VALUES ($1, $2::jsonb)
+     ON CONFLICT (project_id) DO UPDATE SET payload = EXCLUDED.payload`,
+    [projectId, JSON.stringify(checkouts)]
+  );
+}
+
+async function writeScreeningProject(client, currentProject, project) {
+  // Screening owns summary fields; metadata and membership stay with their writers.
+  const updated = {
+    ...currentProject,
+    status: project.status,
+    stage: project.stage,
+    lastEvent: project.lastEvent,
+    updatedAt: project.updatedAt,
+    recordsTotal: project.recordsTotal,
+    recordsScreened: project.recordsScreened,
+    conflicts: project.conflicts,
+    studiesIncluded: project.studiesIncluded
+  };
+  await client.query(
+    `UPDATE review_projects SET status = $1, stage = $2, last_event = $3,
+       updated_at_text = $4, records_total = $5, records_screened = $6,
+       conflicts = $7, studies_included = $8, payload = $9::jsonb WHERE id = $10`,
+    [updated.status, updated.stage, updated.lastEvent, updated.updatedAt,
+      Number(updated.recordsTotal ?? 0), Number(updated.recordsScreened ?? 0),
+      Number(updated.conflicts ?? 0), Number(updated.studiesIncluded ?? 0),
+      JSON.stringify(updated), updated.id]
+  );
+}
+
+async function writeScreeningPatch(client, mutation) {
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN");
+    transactionOpen = true;
+    await lockStateTables(client, true);
+    const { userId, projectId, revision, project, changes = {}, screeningCheckouts, events = [], sessionVersion } = mutation;
+    const actorResult = await client.query("SELECT id, name, is_admin, email_auth FROM app_users WHERE id = $1", [userId]);
+    const actor = actorResult.rows[0];
+    const currentProject = (await readProjects(client)).find((candidate) => candidate.id === projectId);
+    const authSettings = await client.query("SELECT transactional_email_enabled FROM auth_settings WHERE id = 1");
+    let accessError;
+    if (!actor || (sessionVersion !== undefined && (actor.email_auth?.sessionVersion ?? "") !== sessionVersion) ||
+        (authSettings.rows[0]?.transactional_email_enabled && actor.email_auth?.verificationRequired)) {
+      accessError = { updated: false, status: 401, error: "Your session is no longer valid. Sign in again." };
+    } else if (!currentProject || (!actor.is_admin && ![
+      currentProject.ownerId, ...asArray(currentProject.ownerIds), ...asArray(currentProject.memberIds)
+    ].includes(userId))) {
+      accessError = { updated: false, status: 403, error: "You do not have access to that project." };
+    }
+    if (accessError) {
+      await client.query("ROLLBACK");
+      transactionOpen = false;
+      return accessError;
+    }
+    if (!revision || await readScreeningRevision(client, projectId) !== revision) {
+      await client.query("ROLLBACK");
+      transactionOpen = false;
+      return { updated: false };
+    }
+    const patchTables = {
+      studies: "review_studies", reports: "review_reports",
+      decisions: "review_decisions", extractionConsensus: "review_extraction_consensus"
+    };
+    if ((project && project.id !== projectId) || !Array.isArray(screeningCheckouts) ||
+        screeningCheckouts.some((checkout) => checkout.projectId !== projectId) ||
+        !Array.isArray(events) || Object.keys(changes).some((key) => !patchTables[key])) {
+      throw new Error("Screening persistence data is incomplete.");
+    }
+    for (const [key, change] of Object.entries(changes)) {
+      if (!Array.isArray(change.upserts) || !Array.isArray(change.deleteIds) ||
+          change.upserts.some((item) => !item.id || item.projectId !== projectId) ||
+          change.deleteIds.some((id) => typeof id !== "string")) {
+        throw new Error("Screening persistence data is incomplete.");
+      }
+      const table = patchTables[key];
+      if (change.upserts.length > 0) {
+        const existing = await client.query(`SELECT id, project_id FROM ${table} WHERE id = ANY($1::text[])`, [change.upserts.map((item) => item.id)]);
+        if (existing.rows.some((row) => row.project_id !== projectId)) {
+          throw new Error("Screening persistence cannot move records between reviews.");
+        }
+      }
+    }
+    for (const [key, change] of Object.entries(changes)) {
+      const table = patchTables[key];
+      if (change.deleteIds.length > 0) {
+        await client.query(`DELETE FROM ${table} WHERE id = ANY($1::text[]) AND project_id = $2`, [change.deleteIds, projectId]);
+      }
+      if (change.upserts.length === 0) continue;
+      const positions = await client.query(`SELECT COALESCE(MAX(position), -1) + 1 AS position FROM ${table}`);
+      const firstPosition = Number(positions.rows[0].position);
+      if (key === "studies") {
+        await writeStudies(client, { studies: change.upserts }, firstPosition, true);
+      } else if (key === "reports") {
+        await writeReports(client, { reports: change.upserts }, firstPosition, true);
+      } else {
+        const config = tableConfigs.find((candidate) => candidate.arrayKey === key);
+        const columns = [config.idColumn, ...config.extraColumns, "payload"];
+        for (let index = 0; index < change.upserts.length; index += 1) {
+          await client.query(
+            `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map((_, valueIndex) => `$${valueIndex + 1}`).join(", ")})
+             ${updateInsertedColumns(columns.filter((column) => column !== "id" && column !== "position"))}`,
+            config.valuesForItem(change.upserts[index], firstPosition + index)
+          );
+        }
+      }
+    }
+    if (project) await writeScreeningProject(client, currentProject, project);
+    await writeScreeningCheckouts(client, projectId, screeningCheckouts);
+    // Preserve events appended by other reviews. The caller supplies new events only.
+    for (const event of events) await appendWorkflowEvent(client, event);
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return { updated: true };
+  } catch (error) {
+    if (transactionOpen) await client.query("ROLLBACK");
+    if (error?.code === "55P03" || error?.code === "40P01" || error?.code === "40001") {
+      return { updated: false };
+    }
+    throw error;
+  }
+}
+
+async function writeFullStateMutation(client, parsed) {
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN");
+    transactionOpen = true;
+    await lockStateTables(client);
+    if (parsed.__expectedRevision !== undefined && await readStorageRevision(client) !== parsed.__expectedRevision) {
+      await client.query("ROLLBACK");
+      transactionOpen = false;
+      return { updated: false };
+    }
+    const nextState = { ...defaultState(), ...parsed };
+    await writeAuthSettings(client, nextState);
+    await writeReviewSettings(client, nextState);
+    await writeUsers(client, nextState);
+    await truncateReviewStateTables(client);
+    await writeProjects(client, nextState);
+    await writeStudies(client, nextState);
+    await writeReports(client, nextState);
+    await writeReviewTables(client, nextState);
+    const revision = await readStorageRevision(client);
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return { updated: true, revision };
+  } catch (error) {
+    if (transactionOpen) await client.query("ROLLBACK");
+    if (error?.code === "55P03" || error?.code === "40P01" || error?.code === "40001") return { updated: false };
+    throw error;
+  }
 }
 
 async function readImportState(client, projectId) {
@@ -1239,6 +1511,15 @@ async function writeDedupDecisions(client, mutation) {
   try {
     await client.query("BEGIN");
     transactionOpen = true;
+    if (mutation.__expectedRevision !== undefined) {
+      await lockStateTables(client);
+      if (await readStorageRevision(client) !== mutation.__expectedRevision) {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        process.stdout.write(JSON.stringify({ updated: false }));
+        return;
+      }
+    }
     const { candidates, project, event } = mutation;
     const projectLock = await client.query("SELECT id FROM review_projects WHERE id = $1 FOR UPDATE", [project.id]);
     if (projectLock.rowCount !== 1) {
@@ -1319,6 +1600,10 @@ async function writeDedupDecisions(client, mutation) {
     if (transactionOpen) {
       await client.query("ROLLBACK");
     }
+    if (error?.code === "55P03" || error?.code === "40P01" || error?.code === "40001") {
+      process.stdout.write(JSON.stringify({ updated: false }));
+      return;
+    }
     throw error;
   }
 }
@@ -1358,8 +1643,8 @@ async function writeUserRoleMutation(client, mutation) {
 
 async function run() {
   const action = process.argv[2];
-  if (!["read", "read-auth-config", "read-import-state", "write", "write-import-batch", "write-import-study", "write-dedup-decisions", "write-user-role"].includes(action)) {
-    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|read-import-state|write|write-import-batch|write-import-study|write-dedup-decisions|write-user-role>");
+  if (!["read", "read-auth-config", "read-import-state", "read-screening-state", "write", "write-screening-patch", "write-import-batch", "write-import-study", "write-dedup-decisions", "write-user-role"].includes(action)) {
+    throw new Error("Usage: node scripts/postgres-state-io.mjs <read|read-auth-config|read-import-state|read-screening-state|write|write-screening-patch|write-import-batch|write-import-study|write-dedup-decisions|write-user-role>");
   }
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -1388,16 +1673,8 @@ async function run() {
     await ensureSchema(client);
 
     if (action === "read") {
-      const relationalState = await readRelationalState(client);
-      if (relationalState) {
-        process.stdout.write(JSON.stringify(relationalState));
-        return;
-      }
-
-      const payload = await readLegacyBlobState(client);
-      if (payload) {
-        process.stdout.write(payload);
-      }
+      const { state } = await readStateSnapshot(client);
+      if (state) process.stdout.write(JSON.stringify(state));
       return;
     }
 
@@ -1407,6 +1684,14 @@ async function run() {
     }
 
     const parsed = JSON.parse(raw);
+    if (action === "read-screening-state") {
+      process.stdout.write(JSON.stringify(await readScreeningState(client, parsed.projectId)));
+      return;
+    }
+    if (action === "write-screening-patch") {
+      process.stdout.write(JSON.stringify(await writeScreeningPatch(client, parsed)));
+      return;
+    }
     if (action === "read-import-state") {
       process.stdout.write(JSON.stringify(await readImportState(client, parsed.projectId)));
       return;
@@ -1428,20 +1713,7 @@ async function run() {
       return;
     }
 
-    const nextState = {
-      ...defaultState(),
-      ...parsed
-    };
-    await client.query("BEGIN");
-    await writeAuthSettings(client, nextState);
-    await writeReviewSettings(client, nextState);
-    await writeUsers(client, nextState);
-    await truncateReviewStateTables(client);
-    await writeProjects(client, nextState);
-    await writeStudies(client, nextState);
-    await writeReports(client, nextState);
-    await writeReviewTables(client, nextState);
-    await client.query("COMMIT");
+    process.stdout.write(JSON.stringify(await writeFullStateMutation(client, parsed)));
   } finally {
     await client.end();
   }
