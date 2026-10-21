@@ -79,7 +79,16 @@ try {
   store.reopenFullTextDecisionForUser(admin.id, project.id, report.id);
   update({ retrievalStatus: 'sought' });
   payload = update({ retrievalStatus: 'retrieved', decisionValue: 'exclude', exclusionReasonId: 'Wrong population' });
-  const assessedCounts = selectors.getCountsForProject(project, payload.studies, payload.reports, payload.decisions);
+  const pendingCounts = selectors.getCountsForProject(payload.projects[0], payload.studies, payload.reports, payload.decisions);
+  assert.equal(pendingCounts.reportsAssessed, 1);
+  assert.equal(pendingCounts.reportsExcludedWithReasons['Wrong population'], 0, 'one vote cannot finalize a report requiring two independent reviews');
+  const secondReviewer = { ...admin, id: 'retrieval-second-reviewer', email: 'retrieval-second@example.test', isAdmin: false };
+  const stateWithSecondReviewer = JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE, 'utf8'));
+  stateWithSecondReviewer.users.push(secondReviewer);
+  stateWithSecondReviewer.projects[0].memberIds.push(secondReviewer.id);
+  fs.writeFileSync(process.env.PRISMATICA_DATA_FILE, JSON.stringify(stateWithSecondReviewer));
+  payload = store.updateReportForUser(secondReviewer.id, project.id, report.id, { decisionValue: 'exclude', exclusionReasonId: 'Wrong population' });
+  const assessedCounts = selectors.getCountsForProject(payload.projects[0], payload.studies, payload.reports, payload.decisions);
   assert.equal(assessedCounts.reportsAssessed, 1);
   assert.equal(assessedCounts.reportsNotRetrieved, 0);
   assert.equal(assessedCounts.reportsExcludedWithReasons['Wrong population'], 1);

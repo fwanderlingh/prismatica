@@ -553,6 +553,14 @@ CSV availability is explained separately from the checks.
 Run `npm run check:checkouts` for checkout renewal, cancellation, and release
 checks across all review stages, plus single-request project settings saves.
 
+Run `npm run check:conflicts` for conflict queue ordering, reservations, and blind
+vote privacy. After voting, a conflicted paper moves behind the reviewer's other
+work. Other reviewers can resolve it first; it remains available at the end if
+unresolved. Blind mode hides peer votes and vote audit entries for all roles,
+including owners and administrators. Stored audit history remains complete;
+legacy vote events without actor IDs are hidden while blind mode is enabled.
+Aggregate outcomes and PRISMA totals remain available without individual votes.
+
 ## License
 
 Prismatica is distributed under the [MIT License](./LICENSE).

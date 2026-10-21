@@ -67,6 +67,7 @@ import {
   getConfirmedDuplicateStudyIds,
   getCountsForProject,
   getDedupCandidateProjectId,
+  getNextReviewQueueItemId,
   getProjectPhaseProgress,
   getWorkflowReportsForProject,
   getSequentialPhaseAccess,
@@ -810,14 +811,18 @@ export function PrismaReviewApp() {
       new Map(
         projectScreeningStudies.map((study) => {
           const currentDecisions = titleAbstractDecisionsByStudy.get(study.id) ?? [];
+          const evaluation = evaluateStage(
+            "title_abstract",
+            currentDecisions.map((decision) => decision.decisionValue),
+            selectedProject.abstractRequiredVotes,
+            selectedProject.maybePolicy
+          );
           return [
             study.id,
-            evaluateStage(
-              "title_abstract",
-              currentDecisions.map((decision) => decision.decisionValue),
-              selectedProject.abstractRequiredVotes,
-              selectedProject.maybePolicy
-            )
+            {
+              state: study.titleAbstractStatus ?? evaluation.state,
+              label: study.titleAbstractStatusLabel ?? evaluation.label
+            }
           ];
         })
       ),
@@ -2799,10 +2804,11 @@ export function PrismaReviewApp() {
       setScreeningMessage(payload.message ?? `Saved ${formatDecision(decisionValue)} decision.`);
       setScreeningNote("");
       const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
-      const nextProjectStudies = hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id);
+      const nextDuplicateIds = getConfirmedDuplicateStudyIds(payload.dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === selectedProject.id));
+      const nextProjectStudies = (hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id))
+        .filter((study) => !nextDuplicateIds.has(study.id));
       const nextActiveStudies = getActiveTitleAbstractStudies(nextProject, nextProjectStudies, payload.decisions, currentUser.id);
-      const currentStudyNextIndex = nextActiveStudies.findIndex((study) => study.id === currentStudy.id);
-      setSelectedScreeningStudyId(nextActiveStudies[currentStudyNextIndex >= 0 ? currentStudyNextIndex : 0]?.id ?? "");
+      setSelectedScreeningStudyId(getNextReviewQueueItemId(nextActiveStudies, currentStudy.id) ?? "");
       setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: currentStudy.id });
     } catch (error) {
       setScreeningMessage(getErrorMessage(error));
@@ -3053,6 +3059,13 @@ export function PrismaReviewApp() {
       applyAppState(payload);
       setFullTextMessage(input.decisionValue ? "Full-text decision saved." : "Retrieval status updated.");
       if (input.decisionValue || input.retrievalStatus === "not_retrieved") {
+        const nextProject = payload.projects.find((project) => project.id === selectedProject.id) ?? selectedProject;
+        const nextDuplicateIds = getConfirmedDuplicateStudyIds(payload.dedupCandidates.filter((candidate) => getDedupCandidateProjectId(candidate) === selectedProject.id));
+        const nextProjectStudies = (hasProjectSeedData ? screeningStudies : payload.studies.filter((study) => study.projectId === selectedProject.id))
+          .filter((study) => !nextDuplicateIds.has(study.id));
+        const nextReports = hasProjectSeedData ? reportQueue : getWorkflowReportsForProject(nextProject, nextProjectStudies, payload.reports);
+        const nextActiveReports = getActiveFullTextReports(nextProject, nextReports, payload.decisions, currentUser.id);
+        setActiveReportId(getNextReviewQueueItemId(nextActiveReports, activeReport.id) ?? "");
         setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: activeReport.id });
       }
     } catch (error) {
@@ -3205,6 +3218,7 @@ export function PrismaReviewApp() {
     return (
       <ProjectDashboardSection
         selectedProject={selectedProject}
+        currentUserId={currentUser.id}
         recordsIdentified={recordsIdentified}
         activeCounts={activeCounts}
         workflowConflicts={workflowConflicts}
@@ -3318,6 +3332,8 @@ export function PrismaReviewApp() {
 
   function renderScreening() {
     const conflicts = workflowConflicts.filter((conflict) => conflict.stage === "title_abstract");
+    const currentEvaluation = titleAbstractConflictEvaluations.get(currentStudy.id) ?? stageEvaluation;
+    const hasConflict = currentEvaluation.state === "conflict" || currentEvaluation.state === "needs_third_vote";
     return (
       <ScreeningSection
         conflictCount={conflicts.length}
@@ -3327,16 +3343,17 @@ export function PrismaReviewApp() {
         screeningProgress={screeningProgress}
         decisions={decisions}
         selectedProjectId={selectedProject.id}
+        blindMode={selectedProject.blindMode}
         currentUserId={currentUser.id}
         studyIndex={studyIndex}
         setStudyIndex={setStudyIndex}
         titleAbstractEvaluations={titleAbstractConflictEvaluations}
         currentStudy={currentStudy}
-        stageEvaluation={titleAbstractConflictEvaluations.get(currentStudy.id) ?? stageEvaluation}
+        stageEvaluation={currentEvaluation}
         screeningNote={screeningNote}
         setScreeningNote={setScreeningNote}
         screeningMessage={screeningMessage}
-        canRecordScreeningDecision={Boolean(currentStudy.titleAbstractCheckedOutByCurrentUser || currentUserDecision)}
+        canRecordScreeningDecision={Boolean(currentStudy.titleAbstractCheckedOutByCurrentUser || (currentUserDecision && !hasConflict))}
         checkoutError={screeningCheckoutIssue?.key === `${selectedProject.id}:${currentStudy.id}` ? screeningCheckoutIssue.error : ""}
         currentUserDecision={currentUserDecision}
         currentStageDecisions={currentStageDecisions}

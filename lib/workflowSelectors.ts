@@ -112,6 +112,29 @@ export function getTitleAbstractStatuses(project: ReviewProject, studies: Study[
     ).state]));
 }
 
+// Completed report outcomes are safe aggregates in blind reviews. Individual
+// decisions are only a fallback for snapshots without server workflow metadata.
+export function getFullTextExclusionReasons(project: ReviewProject, reports: Report[], decisions: Decision[]) {
+  const currentDecisionsByReport = groupByKey(decisions.filter(
+    (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
+  ), (decision) => decision.reportId ?? decision.studyId);
+  const reportsById = new Map(reports.filter((report) => report.projectId === project.id).map((report) => [report.id, report]));
+  const reportIds = new Set([...reportsById.keys(), ...currentDecisionsByReport.keys()]);
+  return [...reportIds].flatMap((reportId) => {
+    const report = reportsById.get(reportId);
+    const currentDecisions = currentDecisionsByReport.get(reportId) ?? [];
+    const status = report?.fullTextStatus ?? evaluateStage(
+      "full_text", currentDecisions.map((decision) => decision.decisionValue),
+      report?.fullTextRequiredVotes ?? project.fullTextRequiredVotes, project.maybePolicy
+    ).state;
+    if (status !== "excluded_full_text") return [];
+    const reasonId = report?.fullTextExclusionReasonId !== undefined
+      ? report.fullTextExclusionReasonId
+      : currentDecisions.find((decision) => decision.decisionValue === "exclude")?.exclusionReasonId ?? null;
+    return [{ reportId, reasonId }];
+  });
+}
+
 export function getCountsForProject(
   project: ReviewProject,
   projectStudies: Study[] = [],
@@ -133,20 +156,20 @@ export function getCountsForProject(
     const reportKey = decision.reportId ?? decision.studyId;
     fullTextDecisionsByReport.set(reportKey, [...(fullTextDecisionsByReport.get(reportKey) ?? []), decision]);
   }
-  const fullTextExcluded = Array.from(fullTextDecisionsByReport.values())
-    .filter(
-      (reportDecisions) =>
-        reportDecisions.length >= project.fullTextRequiredVotes &&
-        reportDecisions.every((decision) => decision.decisionValue === "exclude")
-    )
-    .map((reportDecisions) => reportDecisions[0]);
+  const fullTextExcluded = getFullTextExclusionReasons(project, projectReports, decisions);
   const reportsExcludedWithReasons = Object.fromEntries(project.exclusionReasons.map((reason) => [reason, 0])) as Record<string, number>;
-  for (const decision of fullTextExcluded) {
-    const reason = decision.exclusionReasonId;
+  for (const { reasonId: reason } of fullTextExcluded) {
     if (!reason || !(reason in reportsExcludedWithReasons)) {
       continue;
     }
     reportsExcludedWithReasons[reason] = (reportsExcludedWithReasons[reason] ?? 0) + 1;
+  }
+  const assessedReportIds = new Set(fullTextDecisionsByReport.keys());
+  for (const report of projectReports) {
+    if (report.projectId !== project.id) continue;
+    const voteCount = report.fullTextVoteCount ?? fullTextDecisionsByReport.get(report.id)?.length ?? 0;
+    if (voteCount > 0) assessedReportIds.add(report.id);
+    else assessedReportIds.delete(report.id);
   }
 
   const activeExtractionTemplate = extractionTemplates.find(
@@ -178,7 +201,7 @@ export function getCountsForProject(
       recordsExcluded,
       reportsSought: projectReports.filter((report) => report.retrievalStatus !== "not_sought").length,
       reportsNotRetrieved: projectReports.filter((report) => report.retrievalStatus === "not_retrieved").length,
-      reportsAssessed: new Set(fullTextCurrentDecisions.map((decision) => decision.reportId ?? decision.studyId)).size,
+      reportsAssessed: assessedReportIds.size,
       reportsExcludedWithReasons,
       studiesIncluded: project.studiesIncluded,
       studiesExtracted,
@@ -293,6 +316,32 @@ export function randomizeReviewQueueItems<T extends { id: string }>(
   }).map(({ item }) => item);
 }
 
+export function getNextReviewQueueItemId<T extends { id: string }>(items: T[], previousItemId: string): string | null {
+  return items.find((item) => item.id !== previousItemId)?.id ?? items[0]?.id ?? null;
+}
+
+function getOwnDecisionOrder(decisions: Decision[], currentUserId: string, getItemId: (decision: Decision) => string | undefined) {
+  const order = new Map<string, number>();
+  decisions.forEach((decision, index) => {
+    const itemId = getItemId(decision);
+    if (itemId && decision.userId === currentUserId) order.set(itemId, index);
+  });
+  return order;
+}
+
+function deferReviewedConflicts<T extends { id: string }>(items: T[], conflictIds: Set<string>, ownDecisionOrder: Map<string, number>) {
+  const priority = (item: T) => conflictIds.has(item.id) ? ownDecisionOrder.has(item.id) ? 2 : 1 : 0;
+  return items.sort((left, right) => {
+    const leftPriority = priority(left);
+    const rightPriority = priority(right);
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+    // Votes are appended in save order. Their locale-formatted timestamps can tie
+    // or be unparseable, so append order reliably puts a newly created conflict last.
+    if (leftPriority === 2) return ownDecisionOrder.get(left.id)! - ownDecisionOrder.get(right.id)!;
+    return 0;
+  });
+}
+
 export function isFullTextReportComplete(report: Report, project: ReviewProject) {
   if (report.retrievalStatus === "not_retrieved") {
     return true;
@@ -318,10 +367,14 @@ export function getConfirmedDuplicateStudyIds(candidates: DedupCandidate[]) {
 }
 
 export function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {
+  const currentDecisions = decisions.filter(
+    (decision) => decision.projectId === project.id && decision.stage === "title_abstract" && decision.isCurrent
+  );
   const decisionsByItem = groupByKey(
-    decisions.filter((decision) => decision.projectId === project.id && decision.stage === "title_abstract" && decision.isCurrent),
+    currentDecisions,
     (decision) => decision.studyId
   );
+  const ownDecisionOrder = getOwnDecisionOrder(currentDecisions, currentUserId, (decision) => decision.studyId);
   const conflictIds = new Set<string>();
   const activeStudies = studies.filter((study) => {
     const currentDecisions = decisionsByItem.get(study.id) ?? [];
@@ -349,20 +402,24 @@ export function getActiveTitleAbstractStudies(project: ReviewProject, studies: S
     return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
   });
 
-  return randomizeReviewQueueItems(activeStudies, {
+  return deferReviewedConflicts(randomizeReviewQueueItems(activeStudies, {
     projectId: project.id,
     currentUserId,
     phase: "title_abstract",
     isPinned: (study) => Boolean(study.titleAbstractCheckedOutByCurrentUser),
     isLast: (study) => conflictIds.has(study.id)
-  });
+  }), conflictIds, ownDecisionOrder);
 }
 
 export function getActiveFullTextReports(project: ReviewProject, reports: Report[], decisions: Decision[], currentUserId: string) {
+  const currentDecisions = decisions.filter(
+    (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent
+  );
   const decisionsByItem = groupByKey(
-    decisions.filter((decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent),
+    currentDecisions,
     (decision) => decision.reportId
   );
+  const ownDecisionOrder = getOwnDecisionOrder(currentDecisions, currentUserId, (decision) => decision.reportId);
   const conflictIds = new Set<string>();
   const activeReports = reports.filter((report) => {
     if (report.retrievalStatus === "not_retrieved") {
@@ -399,13 +456,13 @@ export function getActiveFullTextReports(project: ReviewProject, reports: Report
     return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
   });
 
-  return randomizeReviewQueueItems(activeReports, {
+  return deferReviewedConflicts(randomizeReviewQueueItems(activeReports, {
     projectId: project.id,
     currentUserId,
     phase: "full_text",
     isPinned: (report) => Boolean(report.fullTextCheckedOutByCurrentUser),
     isLast: (report) => conflictIds.has(report.id)
-  });
+  }), conflictIds, ownDecisionOrder);
 }
 
 export function getActiveExtractionReports(

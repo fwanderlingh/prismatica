@@ -156,7 +156,7 @@ try {
   assert.match(pendingHtml, /Opening review/);
 
   const screeningProps = { projectScreeningStudies: data.screeningStudies, totalScreeningStudyCount: 10, screeningProgress: 20,
-    decisions: [], selectedProjectId: project.id, currentUserId: user.id, studyIndex: 0, setStudyIndex: noop, titleAbstractEvaluations: new Map(),
+    decisions: [], selectedProjectId: project.id, blindMode: project.blindMode, currentUserId: user.id, studyIndex: 0, setStudyIndex: noop, titleAbstractEvaluations: new Map(),
     formatDecision: String, decisionTone: () => "info", currentStudy: study, stageEvaluation: { state: "open", label: "Open" }, highlightText: String,
     screeningNote: "", setScreeningNote: noop, screeningMessage: "", canRecordScreeningDecision: true, checkoutError: "", currentStageDecisions: [],
     pendingScreeningDecision: null, isUndoingScreeningDecision: false, reviewedCount: 2, onOpenReviewed: noop, formatConflictResolutionHint: String,
@@ -185,7 +185,7 @@ try {
   assert.match(fullTextHtml, /href="[^"]+\/full-text\/pdf-upload"/);
   const extractionHtml = html(loadSection("extraction-section").ExtractionSection, extractionProps);
   assert.ok(extractionHtml.indexOf("extractionFormPanel") < extractionHtml.indexOf("pdfPane"));
-  const overviewProps = { selectedProject: { ...project, stage: "full_text" }, workflowConflicts: [], recordsIdentified: 10, activeCounts: data.prismaCounts,
+  const overviewProps = { selectedProject: { ...project, stage: "full_text" }, currentUserId: user.id, workflowConflicts: [], recordsIdentified: 10, activeCounts: data.prismaCounts,
     exportFailedCount: 0, projectEvents: [], latestProjectEvents: [], projectUserStats: [], projectScreeningStudies: [], projectReportQueue: [],
     openConflict: noop, formatConflictStage: String, decisionTone: () => "info", formatDecision: String, getWorkflowStepState: () => "pending",
     formatProjectPhase: String, projectPhaseStatusTone: () => "info", formatMaybePolicy: String, formatAuditEntityLabel: String,

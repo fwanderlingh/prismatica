@@ -21,6 +21,7 @@ type ProjectUserStatRow = {
 
 type ProjectDashboardSectionProps = {
   selectedProject: ReviewProject;
+  currentUserId: string;
   workflowConflicts: WorkflowConflict[];
   recordsIdentified: number;
   activeCounts: PrismaCounts;
@@ -48,6 +49,7 @@ type ProjectDashboardSectionProps = {
 
 export function ProjectDashboardSection({
   selectedProject,
+  currentUserId,
   workflowConflicts,
   recordsIdentified,
   activeCounts,
@@ -116,36 +118,38 @@ export function ProjectDashboardSection({
         <section className="panel">
           <SectionTitle icon={AlertTriangle} title="Conflict Resolution" action={`${workflowConflicts.length} open`} />
           <div className="conflictList">
-            {workflowConflicts.map((conflict) => (
-              <article className="conflictItem" key={conflict.id}>
-                <div className="conflictMain">
-                  <div>
-                    <Badge label={formatConflictStage(conflict.stage)} tone={conflict.stage === "full_text" ? "info" : "warning"} />
-                    <h3>{conflict.title}</h3>
-                    <p>{conflict.subtitle}</p>
-                  </div>
-                  <div className="voteStrip" aria-label={`${conflict.title} votes`}>
-                    {conflict.decisions.length > 0 ? (
-                      conflict.decisions.map((decision) => (
-                        <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
-                          <strong>{decision.userName}</strong>
-                          {formatDecision(decision.decisionValue)}
+            {workflowConflicts.map((conflict) => {
+              const visibleDecisions = conflict.decisions.filter((decision) => !selectedProject.blindMode || decision.userId === currentUserId);
+              return (
+                <article className="conflictItem" key={conflict.id}>
+                  <div className="conflictMain">
+                    <div>
+                      <Badge label={formatConflictStage(conflict.stage)} tone={conflict.stage === "full_text" ? "info" : "warning"} />
+                      <h3>{conflict.title}</h3>
+                      <p>{conflict.subtitle}</p>
+                    </div>
+                    <div className="voteStrip" aria-label={`${conflict.title} votes`}>
+                      {visibleDecisions.length > 0 ? (
+                        visibleDecisions.map((decision) => (
+                          <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
+                            <strong>{decision.userName}</strong>
+                            {formatDecision(decision.decisionValue)}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="votePill neutral">
+                          {selectedProject.blindMode ? <><strong>Blind mode</strong>Vote details hidden</> : "No current votes"}
                         </span>
-                      ))
-                    ) : (
-                      <span className="votePill neutral">
-                        <strong>Blind mode</strong>
-                        Vote details hidden
-                      </span>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-                <ViewLink className="ghostButton" view={conflict.stage === "full_text" && conflict.reportId ? "fullText" : "screening"} onNavigate={() => openConflict(conflict)}>
-                  <ChevronRight size={17} />
-                  Resolve
-                </ViewLink>
-              </article>
-            ))}
+                  <ViewLink className="ghostButton" view={conflict.stage === "full_text" && conflict.reportId ? "fullText" : "screening"} onNavigate={() => openConflict(conflict)}>
+                    <ChevronRight size={17} />
+                    Resolve
+                  </ViewLink>
+                </article>
+              );
+            })}
           </div>
         </section>
       ) : null}
@@ -275,9 +279,9 @@ export function ProjectDashboardSection({
                   </td>
                   <td>{row.importedRecords}</td>
                   <td>{row.duplicatePairsResolved}</td>
-                  <td>{row.screened}</td>
+                  <td>{selectedProject.blindMode && row.user.id !== currentUserId ? "Hidden" : row.screened}</td>
                   <td>{row.uploadedPdf}</td>
-                  <td>{row.fullTextReviews}</td>
+                  <td>{selectedProject.blindMode && row.user.id !== currentUserId ? "Hidden" : row.fullTextReviews}</td>
                   <td>{row.extractions}</td>
                 </tr>
               ))}

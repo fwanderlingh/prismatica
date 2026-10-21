@@ -1,5 +1,5 @@
 import type { Decision, PrismaCounts, Report, ReviewProject, Study } from "@/lib/prismaData";
-import { getTitleAbstractStatuses } from "@/lib/workflowSelectors";
+import { getFullTextExclusionReasons, getTitleAbstractStatuses } from "@/lib/workflowSelectors";
 
 type ExportConsistencyInput = {
   project: ReviewProject;
@@ -31,13 +31,19 @@ export function getExportConsistency({ project, counts, studies, reports, decisi
   const excludedFullTextDecisions = decisions.filter(
     (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent && decision.decisionValue === "exclude"
   );
-  const excludedWithoutReasonCount = excludedFullTextDecisions.filter((decision) => !decision.exclusionReasonId).length;
+  const finalExclusions = getFullTextExclusionReasons(project, reports, decisions);
+  const missingReasonReportIds = new Set(excludedFullTextDecisions.filter((decision) => !decision.exclusionReasonId)
+    .map((decision) => decision.reportId ?? decision.studyId));
+  for (const exclusion of finalExclusions) {
+    if (!exclusion.reasonId || !project.exclusionReasons.includes(exclusion.reasonId)) missingReasonReportIds.add(exclusion.reportId);
+  }
+  const excludedWithoutReasonCount = missingReasonReportIds.size;
 
   const identifiedCheckActive = recordsIdentified > 0 || screenedAndPreScreenRemovedTotal > 0;
   const screenedCheckActive = counts.recordsScreened > 0 || screenBalanceTotal > 0;
   const retrievalCheckActive = counts.reportsSought > 0 || retrievalBalanceTotal > 0;
   const assessedCheckActive = counts.reportsAssessed > 0 || assessedBalanceTotal > 0;
-  const exclusionReasonCheckActive = excludedFullTextDecisions.length > 0;
+  const exclusionReasonCheckActive = excludedFullTextDecisions.length > 0 || finalExclusions.length > 0;
 
   const identifiedCheckOk = identifiedCheckActive && recordsIdentified >= screenedAndPreScreenRemovedTotal;
   const screenedCheckOk = screenedCheckActive && counts.recordsScreened === screenBalanceTotal;

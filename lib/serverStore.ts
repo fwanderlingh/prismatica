@@ -11,7 +11,7 @@ import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePa
 import { createPdfStorageAdapter } from "./pdfStorage";
 import { fetchPublicPdf, RemotePdfSizeError } from "./remotePdf";
 import { collectStorageInfo } from "./storageInfo";
-import { getSequentialProjectStage, randomizeReviewQueueItems } from "./workflowSelectors";
+import { getActiveTitleAbstractStudies, getSequentialProjectStage } from "./workflowSelectors";
 import { formatAuthorList } from "./reviewDisplay";
 import {
   type AppUser,
@@ -866,7 +866,10 @@ function withReportWorkflowState(
     requiredVotes,
     project.maybePolicy
   );
-  const activeReportCheckouts = getEligibleReportCheckouts(project.id, report.id, decisions, screeningCheckouts);
+  const activeReportCheckouts = getEligibleReportCheckouts(
+    project.id, report.id, decisions, screeningCheckouts,
+    evaluation.state === "conflict" || evaluation.state === "needs_third_vote"
+  );
   const currentUserCheckout = activeReportCheckouts.find((checkout) => checkout.userId === currentUserId);
   const activeExtractionTemplate = extractionTemplates.find((template) => template.projectId === project.id && template.isActive);
   const extractionSubmittedResponses = activeExtractionTemplate
@@ -880,6 +883,9 @@ function withReportWorkflowState(
     ...report,
     fullTextStatus: evaluation.state,
     fullTextStatusLabel: evaluation.label,
+    fullTextExclusionReasonId: evaluation.state === "excluded_full_text"
+      ? currentDecisions.find((decision) => decision.decisionValue === "exclude")?.exclusionReasonId ?? null
+      : undefined,
     fullTextVoteCount: currentDecisions.length,
     fullTextRequiredVotes: requiredVotes,
     fullTextActiveViewerCount: activeReportCheckouts.length,
@@ -912,7 +918,10 @@ function withStudyWorkflowState(
     project.abstractRequiredVotes,
     project.maybePolicy
   );
-  const activeStudyCheckouts = getEligibleStudyCheckouts(project.id, study.id, decisions, screeningCheckouts);
+  const activeStudyCheckouts = getEligibleStudyCheckouts(
+    project.id, study.id, decisions, screeningCheckouts,
+    evaluation.state === "conflict" || evaluation.state === "needs_third_vote"
+  );
   const currentUserCheckout = activeStudyCheckouts.find((checkout) => checkout.userId === currentUserId);
   return {
     ...study,
@@ -982,25 +991,29 @@ function getActiveScreeningCheckouts(checkouts: ScreeningCheckout[], now = Date.
   });
 }
 
-function getEligibleStudyCheckouts(projectId: string, studyId: string, decisions: Decision[], checkouts: ScreeningCheckout[]) {
+function getEligibleStudyCheckouts(
+  projectId: string, studyId: string, decisions: Decision[], checkouts: ScreeningCheckout[], includeVotedReviewers = false
+) {
   const votedUserIds = new Set(getCurrentTitleAbstractDecisions(decisions, projectId, studyId).map((decision) => decision.userId));
   return getActiveScreeningCheckouts(checkouts).filter(
     (checkout) =>
       getScreeningCheckoutStage(checkout) === "title_abstract" &&
       checkout.projectId === projectId &&
       checkout.studyId === studyId &&
-      !votedUserIds.has(checkout.userId)
+      (includeVotedReviewers || !votedUserIds.has(checkout.userId))
   );
 }
 
-function getEligibleReportCheckouts(projectId: string, reportId: string, decisions: Decision[], checkouts: ScreeningCheckout[]) {
+function getEligibleReportCheckouts(
+  projectId: string, reportId: string, decisions: Decision[], checkouts: ScreeningCheckout[], includeVotedReviewers = false
+) {
   const votedUserIds = new Set(getCurrentFullTextDecisions(decisions, projectId, reportId).map((decision) => decision.userId));
   return getActiveScreeningCheckouts(checkouts).filter(
     (checkout) =>
       getScreeningCheckoutStage(checkout) === "full_text" &&
       checkout.projectId === projectId &&
       checkout.reportId === reportId &&
-      !votedUserIds.has(checkout.userId)
+      (includeVotedReviewers || !votedUserIds.has(checkout.userId))
   );
 }
 
@@ -1151,9 +1164,7 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
   state.screeningCheckouts = getActiveScreeningCheckouts(state.screeningCheckouts);
   const activeScreeningCheckouts = state.screeningCheckouts;
   const projectById = new Map(projects.map((project) => [project.id, project]));
-  const allProjectIds = new Set(state.projects.map((project) => project.id));
   const visibleDedupCandidates = state.dedupCandidates.filter((candidate) => projectIds.has(getDedupCandidateProjectId(candidate)));
-  const visibleDedupCandidateIds = new Set(visibleDedupCandidates.map((candidate) => candidate.id));
 
   const decisionsByStudy = groupByKey(state.decisions, (decision) => decision.studyId);
   const decisionsByReport = groupByKey(state.decisions, (decision) => decision.reportId);
@@ -1205,28 +1216,39 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
       if (!project) {
         return false;
       }
-      return !project.blindMode || isProjectOwner(project, userId) || decision.userId === userId;
+      return !project.blindMode || decision.userId === userId;
     }),
     workflowConflicts: projects.flatMap((project) => buildProjectWorkflowConflicts(state, project, userId)),
-    events: state.events
-      .filter(
-        (event) =>
-          projectIds.has(event.entity) ||
-          studyIds.has(event.entity) ||
-          reportIds.has(event.entity) ||
-          visibleDedupCandidateIds.has(event.entity) ||
-          (projectIds.has("demo-review") && !allProjectIds.has(event.entity))
-      ),
+    events: buildVisibleWorkflowEvents(state, projectById, currentUser),
     dedupCandidates: visibleDedupCandidates
   };
 }
 
+function buildVisibleWorkflowEvents(state: PersistedState, projectById: Map<string, ReviewProject>, currentUser: StoredUser) {
+  const projectIdByEntity = getWorkflowEventProjectIds(state);
+  return state.events.filter((event) => {
+    const projectId = projectIdByEntity.get(event.entity) ?? (projectById.has("demo-review") ? "demo-review" : "");
+    const project = projectById.get(projectId);
+    if (!project) return false;
+    if (!project.blindMode || !isScreeningDecisionEvent(event.action)) return true;
+
+    // Display names can change or be reused, so legacy names cannot establish
+    // that a decision belongs to the viewer. Keep the full stored history.
+    return event.actorId === currentUser.id;
+  });
+}
+
+function isScreeningDecisionEvent(action: string) {
+  return /^(?:Voted\b|Full[- ]text\b|Undid latest screening vote\b|Returned (?:citation|study) to title\/abstract\b|Returned report to full[- ]text queue\b|Advanced study to full[- ]text review\b|Created full[- ]text report\b|Resolved (?:title\/abstract|screening|full[- ]text) conflict\b)/i.test(action);
+}
+
 function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewProject, userId: string): ProjectWorkflowConflict[] {
-  const canSeeAllVotes = !project.blindMode || isProjectOwner(project, userId);
+  const canSeeAllVotes = !project.blindMode;
   const visibleDecisions = (decisions: Decision[]) => (canSeeAllVotes ? decisions : decisions.filter((decision) => decision.userId === userId));
   const projectDecisions = state.decisions.filter((decision) => decision.projectId === project.id && decision.isCurrent);
   const decisionsByStudy = groupByKey(projectDecisions, (decision) => decision.studyId);
   const decisionsByReport = groupByKey(projectDecisions, (decision) => decision.reportId);
+  const importBatchesById = new Map(state.imports.filter((batch) => batch.projectId === project.id).map((batch) => [batch.id, batch]));
   const projectStudies = state.studies.filter((study) => study.projectId === project.id);
   const titleAbstractConflicts = projectStudies.flatMap((study): ProjectWorkflowConflict[] => {
     const currentDecisions = (decisionsByStudy.get(study.id) ?? []).filter(
@@ -1243,6 +1265,13 @@ function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
       return [];
     }
 
+    const batch = study.importBatchId ? importBatchesById.get(study.importBatchId) : undefined;
+    const sourceName = (batch?.sourceName || study.source)
+      .replace(/^BibTeX upload$/i, "BibTeX Upload")
+      .replace(/^RIS upload$/i, "RIS Upload");
+    const filename = batch?.filename?.trim();
+    const sourceLabel = filename ? `${sourceName}: ${filename}` : sourceName;
+
     return [
       {
         id: `title_abstract:${study.id}`,
@@ -1250,7 +1279,7 @@ function buildProjectWorkflowConflicts(state: PersistedState, project: ReviewPro
         stage: "title_abstract",
         studyId: study.id,
         title: study.title,
-        subtitle: `${study.source} · ${study.year > 0 ? study.year : "Year needs review"}`,
+        subtitle: `${sourceLabel} · ${study.year > 0 ? study.year : "Year needs review"}`,
         label: evaluation.label,
         decisions: visibleDecisions(currentDecisions)
       }
@@ -2772,6 +2801,12 @@ export function addScreeningDecisionForUser(
   if (!previousDecision && currentDecisions.length >= project.abstractRequiredVotes && !canAcceptAdditionalVote) {
     throw new ApiError("This citation already has the required independent votes.");
   }
+  const activeStudyCheckouts = getEligibleStudyCheckouts(
+    projectId, studyId, state.decisions, state.screeningCheckouts, canAcceptAdditionalVote
+  );
+  if (canAcceptAdditionalVote && activeStudyCheckouts.some((checkout) => checkout.userId !== userId)) {
+    throw new ApiError("Another reviewer is resolving this citation's conflict. Open the next active citation to continue.", 409);
+  }
   let hasActiveCheckout = state.screeningCheckouts.some(
     (checkout) =>
       getScreeningCheckoutStage(checkout) === "title_abstract" &&
@@ -2779,10 +2814,10 @@ export function addScreeningDecisionForUser(
       checkout.studyId === studyId &&
       checkout.userId === userId
   );
-  if (!previousDecision && !hasActiveCheckout) {
+  if ((!previousDecision || canAcceptAdditionalVote) && !hasActiveCheckout) {
     hasActiveCheckout = acquireTitleAbstractCheckoutForUser(state, project, studyId, userId);
   }
-  if (!previousDecision && !hasActiveCheckout) {
+  if ((!previousDecision || canAcceptAdditionalVote) && !hasActiveCheckout) {
     throw new ApiError("This citation is no longer checked out to you. Open the next active citation to continue.");
   }
 
@@ -2815,11 +2850,11 @@ export function addScreeningDecisionForUser(
         checkout.userId === userId
       )
   );
-  appendEvent(state, currentUser.name, `Voted ${formatDecision(nextDecision.decisionValue)}`, studyId);
+  appendEvent(state, currentUser.name, `Voted ${formatDecision(nextDecision.decisionValue)}`, studyId, currentUser.id);
   const context = createProjectWorkflowContext(state, project);
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
-  acquireNextTitleAbstractCheckoutForUser(state, project, userId);
+  acquireNextTitleAbstractCheckoutForUser(state, project, userId, studyId);
   writeState(state);
 
   return {
@@ -2868,7 +2903,9 @@ function acquireTitleAbstractCheckoutForUser(state: PersistedState, project: Rev
   );
 
   const capacity = getTitleAbstractCheckoutCapacity(project, studyId, state.decisions);
-  const activeStudyCheckouts = getEligibleStudyCheckouts(projectId, studyId, state.decisions, state.screeningCheckouts);
+  const activeStudyCheckouts = getEligibleStudyCheckouts(
+    projectId, studyId, state.decisions, state.screeningCheckouts, isConflictCheckout
+  );
   if (capacity <= 0 || activeStudyCheckouts.length >= capacity) {
     return false;
   }
@@ -2886,16 +2923,16 @@ function acquireTitleAbstractCheckoutForUser(state: PersistedState, project: Rev
   return true;
 }
 
-function acquireNextTitleAbstractCheckoutForUser(state: PersistedState, project: ReviewProject, userId: string) {
+function acquireNextTitleAbstractCheckoutForUser(state: PersistedState, project: ReviewProject, userId: string, previousStudyId?: string) {
   const projectStudies = state.studies
     .filter((study) => study.projectId === project.id && study.stage === "title_abstract")
     .slice()
     .sort(compareStudiesByImportItemId);
-  const orderedCandidates = randomizeReviewQueueItems(projectStudies, {
-    projectId: project.id,
-    currentUserId: userId,
-    phase: "title_abstract"
-  });
+  const activeStudies = getActiveTitleAbstractStudies(project, projectStudies, state.decisions, userId);
+  const orderedCandidates = [
+    ...activeStudies.filter((study) => study.id !== previousStudyId),
+    ...activeStudies.filter((study) => study.id === previousStudyId)
+  ];
 
   for (const study of orderedCandidates) {
     if (acquireTitleAbstractCheckoutForUser(state, project, study.id, userId)) {
@@ -3062,7 +3099,9 @@ export function updateScreeningCheckoutForUser(
     }
 
     const capacity = getFullTextCheckoutCapacity(project, report, state.decisions);
-    const activeReportCheckouts = getEligibleReportCheckouts(projectId, reportId, state.decisions, state.screeningCheckouts);
+    const activeReportCheckouts = getEligibleReportCheckouts(
+      projectId, reportId, state.decisions, state.screeningCheckouts, isConflictCheckout
+    );
     if (capacity <= 0 || activeReportCheckouts.length >= capacity) {
       writeState(state);
       return {
@@ -3140,7 +3179,9 @@ export function updateScreeningCheckoutForUser(
   }
 
   const capacity = getTitleAbstractCheckoutCapacity(project, studyId, state.decisions);
-  const activeStudyCheckouts = getEligibleStudyCheckouts(projectId, studyId, state.decisions, state.screeningCheckouts);
+  const activeStudyCheckouts = getEligibleStudyCheckouts(
+    projectId, studyId, state.decisions, state.screeningCheckouts, isConflictCheckout
+  );
   if (capacity <= 0 || activeStudyCheckouts.length >= capacity) {
     writeState(state);
     return {
@@ -3327,6 +3368,12 @@ export function updateReportForUser(
     if (!previousFullTextDecision && currentDecisions.length >= requiredVotes && !canAcceptAdditionalVote) {
       throw new ApiError("This report already has the required independent full-text votes.");
     }
+    const activeReportCheckouts = getEligibleReportCheckouts(
+      projectId, reportId, state.decisions, state.screeningCheckouts, canAcceptAdditionalVote
+    );
+    if (canAcceptAdditionalVote && activeReportCheckouts.some((checkout) => checkout.userId !== userId)) {
+      throw new ApiError("Another reviewer is resolving this report's conflict. Open the next active report to continue.", 409);
+    }
     const hasActiveCheckout = state.screeningCheckouts.some(
       (checkout) =>
         getScreeningCheckoutStage(checkout) === "full_text" &&
@@ -3334,9 +3381,8 @@ export function updateReportForUser(
         checkout.reportId === reportId &&
         checkout.userId === userId
     );
-    if (!previousFullTextDecision && !hasActiveCheckout) {
+    if ((!previousFullTextDecision || canAcceptAdditionalVote) && !hasActiveCheckout) {
       const checkoutCapacity = getFullTextCheckoutCapacity(project, report, state.decisions);
-      const activeReportCheckouts = getEligibleReportCheckouts(projectId, reportId, state.decisions, state.screeningCheckouts);
       if (checkoutCapacity <= 0 || activeReportCheckouts.length >= checkoutCapacity) {
         throw new ApiError("This report is no longer checked out to you. Open the next active report to continue.");
       }
@@ -3396,7 +3442,7 @@ export function updateReportForUser(
           checkout.userId === userId
         )
     );
-    appendEvent(state, currentUser.name, `Full-text ${formatDecision(decisionValue)}`, reportId);
+    appendEvent(state, currentUser.name, `Full-text ${formatDecision(decisionValue)}`, reportId, currentUser.id);
     workflowContext = createProjectWorkflowContext(state, project);
     syncStudyAfterFullTextDecision(state, project, reportId, workflowContext);
   } else if (input.retrievalStatus && isRetrievalStatus(input.retrievalStatus)) {
@@ -3578,7 +3624,7 @@ export function undoScreeningDecisionForUser(
     });
   }
 
-  appendEvent(state, currentUser.name, "Undid latest screening vote", studyId);
+  appendEvent(state, currentUser.name, "Undid latest screening vote", studyId, currentUser.id);
   const project = requireProjectMember(state, projectId, userId);
   const context = createProjectWorkflowContext(state, project);
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
@@ -3625,7 +3671,7 @@ export function reopenTitleAbstractDecisionForUser(userId: string, projectId: st
       )
   );
 
-  appendEvent(state, currentUser.name, "Returned citation to title/abstract queue", studyId);
+  appendEvent(state, currentUser.name, "Returned citation to title/abstract queue", studyId, currentUser.id);
   const context = createProjectWorkflowContext(state, project);
   syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
@@ -3678,7 +3724,7 @@ export function reopenFullTextDecisionForUser(userId: string, projectId: string,
       )
   );
 
-  appendEvent(state, currentUser.name, "Returned report to full-text queue", reportId);
+  appendEvent(state, currentUser.name, "Returned report to full-text queue", reportId, currentUser.id);
   const context = createProjectWorkflowContext(state, project);
   syncStudyAfterFullTextDecision(state, project, reportId, context);
   refreshProjectWorkflowSummary(state, projectId, [reportId], context);
@@ -4909,17 +4955,22 @@ function appendEvent(state: PersistedState, actor: string, action: string, entit
   state.events = capEventsPerProject(state, [nextEvent, ...state.events], state.reviewSettings.auditHistoryLimit);
 }
 
+function getWorkflowEventProjectIds(state: Pick<PersistedState, "projects" | "studies" | "reports" | "dedupCandidates">) {
+  const projectIdByEntity = new Map<string, string>();
+  for (const project of state.projects) projectIdByEntity.set(project.id, project.id);
+  for (const study of state.studies) projectIdByEntity.set(study.id, study.projectId ?? "");
+  for (const report of state.reports) projectIdByEntity.set(report.id, report.projectId);
+  for (const candidate of state.dedupCandidates ?? []) projectIdByEntity.set(candidate.id, getDedupCandidateProjectId(candidate) ?? "");
+  return projectIdByEntity;
+}
+
 // Keeps the newest `limit` events for each project so busy projects cannot evict others' history.
 function capEventsPerProject(
   state: Pick<PersistedState, "projects" | "studies" | "reports" | "dedupCandidates">,
   events: WorkflowEvent[],
   limit: number
 ) {
-  const ownerByEntity = new Map<string, string>();
-  for (const project of state.projects) ownerByEntity.set(project.id, project.id);
-  for (const study of state.studies) ownerByEntity.set(study.id, study.projectId ?? "");
-  for (const report of state.reports) ownerByEntity.set(report.id, report.projectId);
-  for (const candidate of state.dedupCandidates ?? []) ownerByEntity.set(candidate.id, getDedupCandidateProjectId(candidate) ?? "");
+  const ownerByEntity = getWorkflowEventProjectIds(state);
   const counts = new Map<string, number>();
   return events.filter((event) => {
     const owner = ownerByEntity.get(event.entity) ?? "";

@@ -119,6 +119,39 @@ try {
   assert.equal(blind.consistency.reportsAdvancedToFullText, 1);
   assert.deepEqual(blind.consistency.unresolvedScreeningStudies.map(item => item.id), [hiddenPending.id]);
 
+  // Completed full-text aggregates remain accurate when no peer decisions are visible.
+  const fullTextExcludedStudy = study('blind-full-text-excluded', 'advance_full_text');
+  const fullTextIncludedStudy = study('blind-full-text-included', 'advance_full_text', { stage: 'extraction' });
+  const aggregateReports = [
+    report(fullTextExcludedStudy, 'retrieved', {
+      fullTextVoteCount: 3, fullTextStatus: 'excluded_full_text', fullTextExclusionReasonId: 'Wrong population'
+    }),
+    report(fullTextIncludedStudy, 'retrieved', { fullTextVoteCount: 2, fullTextStatus: 'advance_extraction' })
+  ];
+  const aggregateInput = {
+    project: { ...project, recordsTotal: 2, recordsScreened: 2, studiesIncluded: 1, blindMode: true },
+    studies: [fullTextExcludedStudy, fullTextIncludedStudy], reports: aggregateReports, decisions: []
+  };
+  const aggregate = calculate(aggregateInput);
+  assert.equal(aggregate.counts.reportsAssessed, 2);
+  assert.equal(aggregate.counts.reportsExcludedWithReasons['Wrong population'], 1);
+  assert.equal(aggregate.consistency.assessedCheckOk, true);
+  assert.equal(aggregate.consistency.retrievalCheckOk, true);
+  assert.equal(aggregate.consistency.exclusionReasonCheckActive, true);
+  assert.equal(aggregate.consistency.exclusionReasonCheckOk, true);
+  const missingAggregateReason = calculate({ ...aggregateInput, reports: [
+    { ...aggregateReports[0], fullTextExclusionReasonId: null }, aggregateReports[1]
+  ] });
+  assert.equal(missingAggregateReason.consistency.excludedWithoutReasonCount, 1);
+  assert.equal(missingAggregateReason.consistency.exclusionReasonCheckOk, false);
+  const excludedReport = report(fullTextExcludedStudy, 'retrieved');
+  const majority = calculate({ studies: [fullTextExcludedStudy], reports: [excludedReport], decisions: [
+    vote(fullTextExcludedStudy, 'include', { stage: 'full_text', reportId: excludedReport.id }),
+    vote(fullTextExcludedStudy, 'exclude', { stage: 'full_text', reportId: excludedReport.id, exclusionReasonId: 'Wrong population' }),
+    vote(fullTextExcludedStudy, 'exclude', { stage: 'full_text', reportId: excludedReport.id, exclusionReasonId: 'Wrong population' })
+  ] });
+  assert.equal(majority.counts.reportsExcludedWithReasons['Wrong population'], 1, 'legacy majority resolution selects an exclusion reason, not the first include vote');
+
   // Historical decisions and other projects cannot settle a current citation.
   const currentIncluded = study("current-included", undefined);
   const reopened = study("reopened", undefined);

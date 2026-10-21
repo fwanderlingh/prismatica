@@ -20,6 +20,7 @@ type ScreeningSectionProps = {
   decisions: Decision[];
   selectedProjectId: string;
   currentUserId: string;
+  blindMode: boolean;
   studyIndex: number;
   setStudyIndex: (index: number | ((previous: number) => number)) => void;
   titleAbstractEvaluations: Map<string, StageEvaluation>;
@@ -54,6 +55,7 @@ export function ScreeningSection({
   decisions,
   selectedProjectId,
   currentUserId,
+  blindMode,
   studyIndex,
   setStudyIndex,
   titleAbstractEvaluations,
@@ -89,6 +91,7 @@ export function ScreeningSection({
     }
     return result;
   }, [decisions, selectedProjectId, currentUserId]);
+  const visibleStageDecisions = currentStageDecisions.filter((decision) => !blindMode || decision.userId === currentUserId);
   const isSubmittingDecision = pendingScreeningDecision !== null;
   const activeDecisionValue = currentUserDecision?.decisionValue;
   const isDecisionDisabled = isSubmittingDecision || isUndoingScreeningDecision || !canRecordScreeningDecision;
@@ -152,7 +155,7 @@ export function ScreeningSection({
         <div>
           <p className="eyebrow">Title and abstract screening</p>
           <h1>Reviewer Queue</h1>
-          <p className="subtle">Blind mode returns only your decision and aggregate state.</p>
+          <p className="subtle">{blindMode ? "Blind mode shows only your decision and aggregate state." : "Review titles and abstracts and record your decision."}</p>
         </div>
         <div className="progressBlock">
           <span>{screeningProgress}% of project queue</span>
@@ -215,7 +218,7 @@ export function ScreeningSection({
               <strong>{stageEvaluation.label}</strong>
               <p>{formatConflictResolutionHint(selectedProjectAbstractRequiredVotes)}</p>
               <div className="voteStrip">
-                {currentStageDecisions.map((decision) => (
+                {visibleStageDecisions.map((decision) => (
                   <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
                     <strong>{decision.userName}</strong>
                     {formatDecision(decision.decisionValue)}
@@ -283,10 +286,12 @@ export function ScreeningSection({
               <ArrowRight size={17} />
             </button>
           </div>
-          <div className="validationItem muted">
-            <Lock size={17} />
-            <span>Other reviewer votes are hidden while blind mode is enabled.</span>
-          </div>
+          {blindMode ? (
+            <div className="validationItem muted">
+              <Lock size={17} />
+              <span>Other reviewer votes are hidden while blind mode is enabled.</span>
+            </div>
+          ) : null}
         </aside>
 
         <ReviewQueueDisclosure label={`Screening queue · ${projectScreeningStudies.length} records`}>

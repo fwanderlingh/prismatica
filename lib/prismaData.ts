@@ -137,6 +137,7 @@ export type Report = {
   uploadedByUserName?: string;
   fullTextStatus?: string;
   fullTextStatusLabel?: string;
+  fullTextExclusionReasonId?: string | null;
   fullTextVoteCount?: number;
   fullTextRequiredVotes?: number;
   fullTextActiveViewerCount?: number;

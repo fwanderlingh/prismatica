@@ -168,16 +168,19 @@ export function FullTextSection({
       decision.stage === "full_text" &&
       decision.isCurrent
   );
-  const visibleFullTextDecisions = decisions.filter(
+  const currentFullTextDecisions = decisions.filter(
     (decision) =>
       decision.projectId === selectedProject.id &&
       decision.reportId === activeReport.id &&
       decision.stage === "full_text" &&
       decision.isCurrent
   );
+  const visibleFullTextDecisions = currentFullTextDecisions.filter(
+    (decision) => !selectedProject.blindMode || decision.userId === currentUser.id
+  );
   const visibleFullTextEvaluation = evaluateStage(
     "full_text",
-    visibleFullTextDecisions.map((decision) => decision.decisionValue),
+    currentFullTextDecisions.map((decision) => decision.decisionValue),
     activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes,
     selectedProject.maybePolicy
   );
@@ -194,14 +197,14 @@ export function FullTextSection({
   }[activeReport.retrievalStatus];
   const hasConfiguredExclusionReasons = exclusionReasons.length > 0;
   const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
-  const canRecordFullTextDecision = hasFullTextCheckout || Boolean(activeFullTextDecision);
-  const fullTextVoteCount = activeReport.fullTextVoteCount ?? visibleFullTextDecisions.length;
+  const fullTextVoteCount = activeReport.fullTextVoteCount ?? currentFullTextDecisions.length;
   const retrievalLocked = Boolean(activeReport.storagePath || activeReport.fileName || fullTextVoteCount > 0);
   const canAssessFullText = activeReport.retrievalStatus === "retrieved";
   const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
   const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
   const fullTextStatusLabel = activeReport.fullTextStatusLabel ?? visibleFullTextEvaluation.label;
   const hasFullTextConflict = fullTextStatus === "conflict" || fullTextStatus === "needs_third_vote";
+  const canRecordFullTextDecision = hasFullTextCheckout || (!hasFullTextConflict && Boolean(activeFullTextDecision));
   const messageIsSuccess = /updated|saved|uploaded|completed/i.test(fullTextMessage);
   const messageIsError = /error|failed|invalid|cannot|unable|missing|required|not found|forbidden|unauthorized|denied/i.test(fullTextMessage);
   const fullTextMessageClassName = messageIsSuccess
@@ -345,6 +348,7 @@ export function FullTextSection({
             <div className="conflictVotesBox">
               <strong>{fullTextStatusLabel}</strong>
               <p>{formatConflictResolutionHint(fullTextRequiredVotes)}</p>
+              {selectedProject.blindMode ? <p>Other reviewer votes are hidden while blind mode is enabled.</p> : null}
               <div className="voteStrip">
                 {visibleFullTextDecisions.map((decision) => (
                   <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
@@ -449,7 +453,7 @@ export function FullTextSection({
             <StatusRow
               label="Reviewer slot"
               value={canRecordFullTextDecision ? "Reserved for you" : checkoutError ? "Unavailable" : "Preparing your review"}
-              tone={hasFullTextCheckout || activeFullTextDecision ? "secure" : "warning"}
+              tone={canRecordFullTextDecision ? "secure" : "warning"}
             />
             <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
           </div>

@@ -221,7 +221,6 @@ export function ExportsSection({
                       disabled={!canOpenReport(report.id)}
                       onNavigate={() => onOpenReport(report.id)}
                     >Review retrieval</ViewLink>
-                    {!canOpenReport(report.id) ? <small>This report opens when screening is complete and it is available in your Full Text queue.</small> : null}
                   </li>
                 ))}
               </ul>

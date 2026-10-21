@@ -16,6 +16,7 @@
     "check:audit": "node scripts/check-audit-history.mjs",
     "check:workflow": "node scripts/check-workflow-reconciliation.mjs",
     "check:checkouts": "node scripts/check-review-checkout.mjs",
+    "check:conflicts": "node scripts/check-conflict-queue.mjs && node scripts/check-blind-votes.mjs && node scripts/check-conflict-ui.mjs",
     "check:exports": "node scripts/check-export-consistency.mjs",
     "check:import-concurrency": "node scripts/check-import-concurrency.mjs",
     "check:retrieval": "node scripts/check-retrieval.mjs",
