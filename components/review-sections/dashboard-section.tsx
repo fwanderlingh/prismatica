@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react";
 import { ViewLink } from "@/components/navigation-link";
-import { BookOpen, Building2, CalendarClock, ChevronRight, ClipboardCheck, FileSearch, FolderPlus, GitMerge, Import as ImportIcon, User } from "lucide-react";
+import { BookOpen, Building2, CalendarClock, ChevronRight, ClipboardCheck, FileSearch, FolderPlus, GitMerge, Import as ImportIcon, LayoutGrid, List, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
 import { Badge, EmptyState } from "@/components/prisma-review-ui";
+
+const REVIEW_LAYOUT_COOKIE = "prismatica_review_layout";
 
 type DashboardSectionProps = {
   currentUser: AppUser;
@@ -54,6 +57,28 @@ export function DashboardSection({
   openProject,
   formatEuDate
 }: DashboardSectionProps) {
+  const [isRowView, setIsRowView] = useState(() => {
+    if (typeof document === "undefined") return true;
+    try {
+      const layoutCookie = document.cookie.split(";")
+        .map((cookie) => cookie.trim())
+        .find((cookie) => cookie.startsWith(`${REVIEW_LAYOUT_COOKIE}=`));
+      return layoutCookie !== `${REVIEW_LAYOUT_COOKIE}=grid`;
+    } catch {
+      return true;
+    }
+  });
+  const layoutActionLabel = isRowView ? "Switch to grid view" : "Switch to row view";
+
+  useEffect(() => {
+    try {
+      const secure = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `${REVIEW_LAYOUT_COOKIE}=${isRowView ? "rows" : "grid"}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+    } catch {
+      // Keep layout switching available when cookies are blocked.
+    }
+  }, [isRowView]);
+
   return (
     <div className="viewStack">
       <section className="overviewBand">
@@ -64,6 +89,18 @@ export function DashboardSection({
             {currentUser.name} · {currentUser.organization} · {userProjects.length} accessible reviews{currentUser.isAdmin ? " · admin view" : ""}
           </p>
         </div>
+        {userProjects.length > 0 ? (
+          <button
+            className="ghostButton iconOnly reviewLayoutToggle"
+            type="button"
+            aria-label={layoutActionLabel}
+            aria-controls="review-projects"
+            title={layoutActionLabel}
+            onClick={() => setIsRowView((previous) => !previous)}
+          >
+            {isRowView ? <LayoutGrid size={18} aria-hidden="true" /> : <List size={18} aria-hidden="true" />}
+          </button>
+        ) : null}
       </section>
 
       {dashboardMessage ? (
@@ -75,7 +112,7 @@ export function DashboardSection({
       ) : null}
 
       {userProjects.length > 0 ? (
-      <section className="reviewGrid">
+      <section id="review-projects" className={`reviewGrid${isRowView ? " reviewRows" : ""}`}>
         {userProjects.map((project) => {
           const ownerNames = project.ownerIds
             .map((ownerId) => users.find((user) => user.id === ownerId)?.name)

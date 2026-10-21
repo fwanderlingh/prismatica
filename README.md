@@ -10,7 +10,7 @@ An open source review platform,following the PRISMA (Preferred Reporting Items f
 
 Full information about the PRISMA guidelines can be found at [https://www.prisma-statement.org/](https://www.prisma-statement.org/).
 
-![Dashboard](images/dashboard_1.png "Dashboard")
+![Dashboard](images/prismatica_v1.3_dashboard.png "Dashboard")
 
 Prismatica is designed for teams running evidence reviews, offering a clear workflow path and and auditability:
 

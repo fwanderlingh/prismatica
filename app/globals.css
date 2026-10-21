@@ -1523,6 +1523,56 @@ a.primaryButton[target="_blank"]:focus-visible {
   font-size: 0.86rem;
 }
 
+.reviewLayoutToggle {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.reviewGrid.reviewRows {
+  grid-template-columns: minmax(0, 1fr);
+  gap: calc(10px * var(--ui-scale));
+}
+
+.reviewRows .projectCard {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 0;
+  padding: calc(16px * var(--ui-scale));
+}
+
+.reviewRows .projectCardHeader {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reviewRows .projectCardHeader > .iconOnly {
+  display: none;
+}
+
+.reviewRows .projectCardHeader h2 {
+  margin-top: calc(6px * var(--ui-scale));
+  overflow-wrap: anywhere;
+}
+
+.reviewRows .projectCardHeader p {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.reviewRows .projectMeta,
+.reviewRows .progressBlock {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.reviewRows .projectMeta svg {
+  flex-shrink: 0;
+}
+
+.reviewRows .buttonRow {
+  justify-content: flex-end;
+}
+
 .projectStats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4582,6 +4632,10 @@ button:disabled {
 }
 
 @media (max-width: 1180px) {
+  .reviewRows .projectCard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workflowMap {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     overflow-x: visible;
@@ -4692,6 +4746,14 @@ button:disabled {
 }
 
 @media (max-width: 860px) {
+  .reviewRows .projectCard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reviewRows .buttonRow {
+    justify-content: flex-start;
+  }
+
   .workflowMap {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     overflow-x: visible;

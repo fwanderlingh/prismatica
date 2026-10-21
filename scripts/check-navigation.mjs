@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Module, { createRequire } from "node:module";
+import vm from "node:vm";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -404,7 +405,131 @@ try {
     assert.equal(declaration(".mainLoadingPanel", "max-height", width), "100%");
     assert.equal(declaration(".mainLoadingPanel", "overflow-y", width), "auto");
   }
-  console.log("Navigation checks passed: link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
+
+  // Execute the production deletion/navigation functions and route effects while
+  // Next's router deliberately leaves the old project pathname in place.
+  const babel = require("next/dist/compiled/babel/bundle");
+  const appSource = fs.readFileSync(path.join(root, "components/prisma-review-app.tsx"), "utf8");
+  const appProgram = babel.parser().parse(appSource, { sourceType: "module", plugins: ["typescript", "jsx"] }).program;
+  const findFunction = (statements, name) => statements.map(node => node.declaration ?? node).find(node => node.type === "FunctionDeclaration" && node.id?.name === name);
+  const appFunction = findFunction(appProgram.body, "PrismaReviewApp");
+  const routeEffects = appFunction.body.body.filter(node => node.type === "ExpressionStatement" && node.expression.type === "CallExpression" && node.expression.callee.name === "useEffect");
+  const effectDependencies = node => node.expression.arguments[1]?.elements?.filter(item => item?.type === "Identifier").map(item => item.name) ?? [];
+  const accessEffect = routeEffects.find(node => effectDependencies(node).includes("requestedProjectId"));
+  const completedRouteEffect = routeEffects.find(node => {
+    const dependencies = effectDependencies(node);
+    return dependencies.length === 2 && dependencies.includes("pathname") && dependencies.includes("pendingRoutePath");
+  });
+  const sourceText = node => appSource.slice(node.start, node.end);
+  const routeCode = babel.core().transformSync([
+    findFunction(appProgram.body, "normalizePathname"),
+    ...["clearPendingRoute", "setActiveView", "deleteCurrentProjectFromSettings"].map(name => findFunction(appFunction.body.body, name))
+  ].map(sourceText).join("\n") + `\nfunction renderRouteEffects() {\n${sourceText(completedRouteEffect)}\n${sourceText(accessEffect)}\n}`, {
+    filename: "project-navigation.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()]
+  }).code;
+
+  function projectRouteHarness({ isAdmin = false, lastProject = false, missing = false, deletionError = false } = {}) {
+    const review = { id: "delete-review", title: "Deleted test review" };
+    const remaining = { id: "remaining-review", title: "Remaining review" };
+    const requestedId = missing ? "missing / review" : review.id;
+    const hardRedirects = [], routeRequests = [], apiRequests = [], effects = [], dependencies = [];
+    let effectIndex = 0;
+    const scope = {
+      isAuthenticated: true, isAuthResolved: true,
+      pathname: `/projects/${encodeURIComponent(requestedId)}/settings`, requestedProjectId: requestedId,
+      selectedProject: review, selectedProjectId: review.id,
+      userProjects: lastProject ? [review] : [review, remaining],
+      homeView: isAdmin ? "adminReviews" : "dashboard", pendingRoutePath: null,
+      dashboardMessage: "", deleteProjectMessage: "", isDeletingProject: false,
+      buildPathForState, startTransition: callback => callback(),
+      getPendingRouteLabel: () => "Opening reviews", getErrorMessage: error => error.message,
+      setPendingRoutePath: value => scope.pendingRoutePath = value,
+      setPendingRouteLabel: noop,
+      setSelectedProjectId: value => scope.selectedProjectId = value,
+      setDashboardMessage: value => scope.dashboardMessage = value,
+      setDeleteProjectMessage: value => scope.deleteProjectMessage = value,
+      setIsDeletingProject: value => scope.isDeletingProject = value,
+      applyAppState(payload) {
+        scope.userProjects = payload.projects;
+        scope.selectedProjectId = payload.projects[0]?.id ?? "demo-review";
+      },
+      async apiRequest(url, options) {
+        apiRequests.push({ url, method: options.method });
+        if (deletionError) throw new Error("Deletion failed.");
+        return { projects: scope.userProjects.filter(item => item.id !== review.id), message: "Review deleted successfully." };
+      },
+      router: {
+        replace: target => routeRequests.push({ method: "replace", target }),
+        push: target => routeRequests.push({ method: "push", target })
+      },
+      window: { confirm: () => true, location: { pathname: "", replace: target => hardRedirects.push(target) } },
+      useEffect(effect, nextDependencies) {
+        const index = effectIndex++, previous = dependencies[index];
+        if (!previous || nextDependencies.some((value, position) => !Object.is(value, previous[position]))) {
+          dependencies[index] = nextDependencies;
+          effects.push(effect);
+        }
+      }
+    };
+    scope.window.location.pathname = scope.pathname;
+    vm.runInContext(routeCode, vm.createContext(scope));
+    function render() {
+      effectIndex = 0;
+      scope.renderRouteEffects();
+      effects.splice(0).forEach(effect => effect());
+    }
+    function commitRoute(target) {
+      scope.pathname = target;
+      scope.window.location.pathname = target;
+      scope.requestedProjectId = null;
+      render();
+    }
+    return { scope, render, commitRoute, hardRedirects, routeRequests, apiRequests };
+  }
+
+  for (const isAdmin of [false, true]) {
+    for (const lastProject of [false, true]) {
+      const navigation = projectRouteHarness({ isAdmin, lastProject });
+      navigation.render();
+      await navigation.scope.deleteCurrentProjectFromSettings();
+      const destination = isAdmin ? "/admin/reviews" : "/dashboard";
+      assert.deepEqual(navigation.apiRequests, [{ url: "/api/projects/delete-review", method: "DELETE" }]);
+      assert.deepEqual(navigation.routeRequests, [{ method: "replace", target: destination }]);
+      assert.equal(navigation.scope.pathname, "/projects/delete-review/settings", "Next has not committed the destination yet");
+      navigation.render();
+      assert.deepEqual(navigation.hardRedirects, [], `deletion waits for ${destination}, including lastProject=${lastProject}`);
+      navigation.commitRoute(destination);
+      assert.equal(navigation.scope.pendingRoutePath, null, "navigation completes after the dashboard pathname commits");
+      assert.equal(navigation.scope.dashboardMessage, "Review deleted successfully.");
+      assert.equal(navigation.scope.userProjects.length, lastProject ? 0 : 1);
+      assert.deepEqual(navigation.hardRedirects, []);
+    }
+  }
+  const missingProject = projectRouteHarness({ missing: true });
+  missingProject.render();
+  assert.deepEqual(missingProject.hardRedirects, ["/__not-found?missingProjectId=missing%20%2F%20review"], "direct visits to inaccessible reviews still open the missing-project page");
+  const missingDestination = projectRouteHarness({ missing: true });
+  missingDestination.scope.pendingRoutePath = missingDestination.scope.pathname;
+  missingDestination.render();
+  assert.equal(missingDestination.hardRedirects.length, 1, "a committed navigation to a missing review still checks access");
+  const cancelledNavigation = projectRouteHarness({ missing: true });
+  cancelledNavigation.scope.pendingRoutePath = "/dashboard";
+  cancelledNavigation.render();
+  assert.deepEqual(cancelledNavigation.hardRedirects, []);
+  cancelledNavigation.scope.pendingRoutePath = null;
+  cancelledNavigation.render();
+  assert.equal(cancelledNavigation.hardRedirects.length, 1, "clearing a pending navigation reruns the access check");
+  const failedDeletion = projectRouteHarness({ deletionError: true });
+  failedDeletion.render();
+  await failedDeletion.scope.deleteCurrentProjectFromSettings();
+  failedDeletion.render();
+  assert.equal(failedDeletion.scope.deleteProjectMessage, "Deletion failed.");
+  assert.equal(failedDeletion.scope.isDeletingProject, false);
+  assert.equal(failedDeletion.scope.userProjects.length, 2);
+  assert.deepEqual(failedDeletion.routeRequests, []);
+  assert.deepEqual(failedDeletion.hardRedirects, []);
+
+  console.log("Navigation checks passed: deletion redirects with delayed router commits, missing-project access checks, link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
 } finally {
   Module._resolveFilename = originalResolve; Module._load = originalLoad;
   if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;

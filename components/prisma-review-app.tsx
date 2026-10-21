@@ -1307,6 +1307,11 @@ export function PrismaReviewApp() {
       return;
     }
 
+    // Wait for navigation away before checking access to the old project URL.
+    if (pendingRoutePath && pendingRoutePath !== normalizePathname(pathname ?? window.location.pathname)) {
+      return;
+    }
+
     const routeProjectId = requestedProjectId;
     if (routeProjectId) {
       const canAccessRouteProject = userProjects.some((project) => project.id === routeProjectId);
@@ -1332,7 +1337,7 @@ export function PrismaReviewApp() {
     if (!canAccessSelected) {
       setSelectedProjectId(userProjects[0].id);
     }
-  }, [isAuthenticated, isAuthResolved, requestedProjectId, selectedProjectId, userProjects]);
+  }, [isAuthenticated, isAuthResolved, pathname, pendingRoutePath, requestedProjectId, selectedProjectId, userProjects]);
 
   useEffect(() => {
     if (!isAuthenticated || !isAuthResolved || !selectedProject.requireSequentialPhases || !reviewPhaseNavKeys.has(activeView)) {
