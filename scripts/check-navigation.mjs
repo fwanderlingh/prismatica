@@ -443,7 +443,7 @@ try {
   const appFunction = findFunction(appProgram.body, "PrismaReviewApp");
   const routeEffects = appFunction.body.body.filter(node => node.type === "ExpressionStatement" && node.expression.type === "CallExpression" && node.expression.callee.name === "useEffect");
   const effectDependencies = node => node.expression.arguments[1]?.elements?.filter(item => item?.type === "Identifier").map(item => item.name) ?? [];
-  const accessEffect = routeEffects.find(node => effectDependencies(node).includes("requestedProjectId"));
+  const accessEffect = routeEffects.find(node => effectDependencies(node).includes("requestedProjectId") && appSource.slice(node.start, node.end).includes("missingProjectId"));
   const completedRouteEffect = routeEffects.find(node => {
     const dependencies = effectDependencies(node);
     return dependencies.length === 2 && dependencies.includes("pathname") && dependencies.includes("pendingRoutePath");
@@ -594,7 +594,125 @@ try {
   assert.deepEqual(failedDeletion.routeRequests, []);
   assert.deepEqual(failedDeletion.hardRedirects, []);
 
-  console.log("Navigation checks passed: European reviewed timestamps and newest-first citations, deletion redirects with delayed router commits, missing-project access checks, link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
+  // Hold router commits until after auth changes to reproduce logout/login races.
+  const authRouteEffect = routeEffects.find(node => sourceText(node).includes("applyPostAuthRedirect()"));
+  const clearUnauthenticatedRouteEffect = routeEffects.find(node => {
+    const dependencies = effectDependencies(node);
+    return dependencies.length === 1 && dependencies[0] === "isAuthenticated" && sourceText(node).includes("clearPendingRoute()");
+  });
+  const authLoader = appFunction.body.body.find(node => node.type === "IfStatement" && sourceText(node.consequent).includes("authLoadingPanel"));
+  const viewKeyDeclaration = appProgram.body.find(node => node.type === "VariableDeclaration" && node.declarations.some(declaration => declaration.id.name === "viewKeySet"));
+  const authCode = babel.core().transformSync([
+    viewKeyDeclaration,
+    ...["isViewKey", "normalizePathname", "parseRouteState", "sanitizeRedirectTarget"].map(name => findFunction(appProgram.body, name)),
+    ...["clearPendingRoute", "setActiveView", "applyPostAuthRedirect", "handleLogout"].map(name => findFunction(appFunction.body.body, name))
+  ].map(sourceText).join("\n") + `\nfunction renderAuthEffects() {\n${sourceText(clearUnauthenticatedRouteEffect)}\n${sourceText(authRouteEffect)}\n${sourceText(completedRouteEffect)}\n}\nfunction shouldShowAuthLoader() { return ${sourceText(authLoader.test)}; }`, {
+    filename: "auth-navigation.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()]
+  }).code;
+
+  function authRouteHarness({ isAdmin = false, url = "/profile", authenticated = true } = {}) {
+    const origin = "https://prismatica.example.test";
+    const routeRequests = [], apiRequests = [], dependencies = [], effects = [];
+    let effectIndex = 0, completeLogout;
+    const scope = {
+      URL, URLSearchParams, isAuthenticated: authenticated, isAuthResolved: true,
+      currentUser: { isAdmin }, homeView: isAdmin ? "adminReviews" : "dashboard",
+      selectedProjectId: "previous-review", pendingRoutePath: null, pendingAuthAction: null,
+      buildPathForState, startTransition: callback => callback(),
+      getPendingRouteLabel: view => `Opening ${view}`,
+      setPendingRoutePath: value => scope.pendingRoutePath = value,
+      setPendingRouteLabel: value => scope.pendingRouteLabel = value,
+      setSelectedProjectId: value => scope.selectedProjectId = value,
+      setPendingAuthAction: value => scope.pendingAuthAction = value,
+      setIsAuthenticated: value => scope.isAuthenticated = value,
+      clearLoginPassword: noop,
+      apiRequest(target, options) {
+        apiRequests.push({ url: target, method: options.method });
+        return new Promise(resolve => { completeLogout = () => resolve({ ok: true }); });
+      },
+      router: {
+        replace: target => routeRequests.push({ method: "replace", target }),
+        push: target => routeRequests.push({ method: "push", target })
+      },
+      window: { location: { origin } },
+      useEffect(effect, nextDependencies) {
+        const index = effectIndex++, previous = dependencies[index];
+        if (!previous || nextDependencies.some((value, position) => !Object.is(value, previous[position]))) {
+          dependencies[index] = nextDependencies;
+          effects.push(effect);
+        }
+      }
+    };
+    vm.runInContext(authCode, vm.createContext(scope));
+    function render() {
+      effectIndex = 0;
+      scope.renderAuthEffects();
+      effects.splice(0).forEach(effect => effect());
+    }
+    function commitRoute(target) {
+      const location = new URL(target, origin);
+      scope.pathname = location.pathname;
+      scope.routeSearch = location.search.slice(1);
+      scope.searchParams = location.searchParams;
+      scope.requestedProjectId = scope.parseRouteState(location.pathname, location.search).projectId ?? null;
+      scope.window.location.pathname = location.pathname;
+      render();
+    }
+    commitRoute(url);
+    return { scope, render, commitRoute, routeRequests, apiRequests, completeLogout: () => completeLogout() };
+  }
+
+  for (const isAdmin of [false, true]) {
+    const destination = isAdmin ? "/admin/reviews" : "/dashboard";
+    const auth = authRouteHarness({ isAdmin });
+    const logout = auth.scope.handleLogout();
+    assert.equal(auth.scope.pendingAuthAction, "logout", "sign out shows pending feedback while the request is in flight");
+    auth.render();
+    assert.deepEqual(auth.routeRequests, [], "logout waits for its request before changing the page");
+    auth.completeLogout();
+    await logout;
+    assert.deepEqual(auth.apiRequests, [{ url: "/api/auth/logout", method: "POST" }]);
+    assert.deepEqual(auth.routeRequests, [], "logout leaves navigation to the central auth guard");
+    auth.render();
+    assert.deepEqual(auth.routeRequests, [{ method: "replace", target: "/sign-in" }], "logging out of Profile opens plain sign-in, without an intermediate dashboard or saved Profile target");
+    assert.equal(auth.scope.pathname, "/profile", "the old Profile pathname remains until the router commits");
+    auth.commitRoute("/sign-in");
+    assert.equal(auth.scope.shouldShowAuthLoader(), false, "signed-out users can see the sign-in form");
+    auth.scope.isAuthenticated = true;
+    auth.render();
+    assert.equal(auth.scope.shouldShowAuthLoader(), true, "login keeps the loading screen until its destination commits");
+    assert.equal(auth.routeRequests.at(-1).target, destination, "ordinary sign-in opens the role's Home page");
+    auth.commitRoute(destination);
+    assert.equal(auth.scope.shouldShowAuthLoader(), false, "the app shell appears after Home commits");
+    assert.equal(auth.scope.pendingRoutePath, null);
+
+    for (const target of ["/profile", "https://external.example.test/profile", "//external.example.test/projects/review", "/projects/review/unknown-view"]) {
+      const stale = authRouteHarness({ isAdmin, url: `/sign-in?redirect=${encodeURIComponent(target)}`, authenticated: true });
+      assert.deepEqual(stale.routeRequests, [{ method: "replace", target: destination }], `stale, external, or unknown target ${target} falls back to Home`);
+      assert.equal(stale.scope.selectedProjectId, "previous-review", "rejected targets do not change the selected review");
+    }
+  }
+
+  const deepLink = "/projects/review%20one/screening?queue=pending";
+  const deepAuth = authRouteHarness({ url: deepLink, authenticated: false });
+  const signInLink = `/sign-in?redirect=${encodeURIComponent(deepLink)}`;
+  assert.deepEqual(deepAuth.routeRequests, [{ method: "replace", target: signInLink }], "an explicit review deep link is retained through sign-in");
+  deepAuth.commitRoute(signInLink);
+  deepAuth.scope.isAuthenticated = true;
+  deepAuth.render();
+  assert.equal(deepAuth.routeRequests.at(-1).target, deepLink, "login returns to the known review route and keeps its query");
+  assert.equal(deepAuth.scope.selectedProjectId, "review one", "the target review becomes selected");
+  assert.equal(deepAuth.scope.shouldShowAuthLoader(), true);
+  deepAuth.commitRoute(deepLink);
+  assert.equal(deepAuth.scope.shouldShowAuthLoader(), false);
+  const unresolvedAuth = authRouteHarness({ authenticated: false });
+  unresolvedAuth.scope.isAuthResolved = false;
+  unresolvedAuth.routeRequests.length = 0;
+  unresolvedAuth.render();
+  assert.deepEqual(unresolvedAuth.routeRequests, [], "unresolved sessions do not redirect prematurely");
+  assert.equal(unresolvedAuth.scope.shouldShowAuthLoader(), true);
+
+  console.log("Navigation checks passed: auth logout/login redirects and loading with delayed router commits, safe Home fallback and review deep links, European reviewed timestamps and newest-first citations, deletion redirects with delayed router commits, missing-project access checks, link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
 } finally {
   Module._resolveFilename = originalResolve; Module._load = originalLoad;
   if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;

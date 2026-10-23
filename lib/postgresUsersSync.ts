@@ -15,6 +15,7 @@ type StoredUserRecord = {
   timezone?: string;
   avatarColor?: string;
   websiteTheme?: string;
+  websitePalette?: string;
   websiteWidth?: string;
   emailAuth?: StoredEmailAuth;
   passwordHash: string;
@@ -105,12 +106,12 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
       INSERT INTO app_users (
         id, name, email, is_admin, initials, organization, title,
         timezone, avatar_color, website_theme, password_hash, password_salt,
-        created_at, updated_at, website_width, email_auth
+        created_at, updated_at, website_width, email_auth, website_palette
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12,
-        $13, $14, $15, $16
+        $13, $14, $15, $16, COALESCE($17, 'teal')
       )
       ON CONFLICT (id)
       DO UPDATE SET
@@ -128,7 +129,8 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
         created_at = EXCLUDED.created_at,
         updated_at = EXCLUDED.updated_at,
         website_width = EXCLUDED.website_width,
-        email_auth = EXCLUDED.email_auth
+        email_auth = EXCLUDED.email_auth,
+        website_palette = COALESCE($17, app_users.website_palette)
     `,
     [
       user.id,
@@ -146,7 +148,8 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
       parseIsoOrNow(user.createdAt),
       parseIsoOrNow(user.updatedAt),
       user.websiteWidth === "limited" ? "limited" : "full",
-      JSON.stringify(user.emailAuth ?? {})
+      JSON.stringify(user.emailAuth ?? {}),
+      user.websitePalette === undefined ? null : user.websitePalette === "paper" ? "paper" : "teal"
     ]
   );
 }

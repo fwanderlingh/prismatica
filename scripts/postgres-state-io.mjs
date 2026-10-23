@@ -316,6 +316,7 @@ async function ensureSchema(client) {
     ALTER TABLE auth_settings ADD COLUMN IF NOT EXISTS transactional_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_auth JSONB NOT NULL DEFAULT '{}'::jsonb;
     ALTER TABLE app_users ADD COLUMN IF NOT EXISTS website_width TEXT NOT NULL DEFAULT 'full' CHECK (website_width IN ('full', 'limited'));
+    ALTER TABLE app_users ADD COLUMN IF NOT EXISTS website_palette TEXT NOT NULL DEFAULT 'teal' CHECK (website_palette IN ('teal', 'paper'));
 
     ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS title TEXT;
     ALTER TABLE review_reports ADD COLUMN IF NOT EXISTS citation TEXT;
@@ -543,7 +544,7 @@ async function readRelationalState(client) {
   const usersResult = await client.query(
     `
       SELECT id, name, email, is_admin, initials, organization, title, timezone,
-             avatar_color, website_theme, website_width, password_hash, password_salt, created_at, updated_at, email_auth
+             avatar_color, website_theme, website_palette, website_width, password_hash, password_salt, created_at, updated_at, email_auth
       FROM app_users
       ORDER BY created_at ASC, id ASC
     `
@@ -630,6 +631,7 @@ async function readRelationalState(client) {
       timezone: row.timezone,
       avatarColor: row.avatar_color,
       websiteTheme: row.website_theme,
+      websitePalette: row.website_palette === "paper" ? "paper" : "teal",
       websiteWidth: row.website_width === "limited" ? "limited" : "full",
       emailAuth: row.email_auth ?? {},
       passwordHash: row.password_hash,
@@ -682,9 +684,9 @@ async function writeUsers(client, state) {
         INSERT INTO app_users (
           id, name, email, is_admin, initials, organization, title,
           timezone, avatar_color, website_theme, password_hash, password_salt,
-          created_at, updated_at, website_width, email_auth
+          created_at, updated_at, website_width, email_auth, website_palette
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       `,
       [
         user.id,
@@ -702,7 +704,8 @@ async function writeUsers(client, state) {
         normalizeTimestamp(user.createdAt),
         normalizeTimestamp(user.updatedAt),
         user.websiteWidth === "limited" ? "limited" : "full",
-        JSON.stringify(user.emailAuth ?? {})
+        JSON.stringify(user.emailAuth ?? {}),
+        user.websitePalette === "paper" ? "paper" : "teal"
       ]
     );
   }

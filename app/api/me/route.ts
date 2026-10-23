@@ -13,6 +13,7 @@ export async function PATCH(request: Request) {
     const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : undefined;
     const newPassword = typeof body.newPassword === "string" ? body.newPassword : undefined;
     const websiteTheme = typeof body.websiteTheme === "string" ? body.websiteTheme : undefined;
+    const websitePalette = typeof body.websitePalette === "string" ? body.websitePalette : undefined;
     const websiteWidth = typeof body.websiteWidth === "string" ? body.websiteWidth : undefined;
     const payload = updateCurrentUserForUser(userId, {
       name,
@@ -21,6 +22,7 @@ export async function PATCH(request: Request) {
       currentPassword,
       newPassword,
       websiteTheme,
+      websitePalette,
       websiteWidth
     });
     if (newPassword?.trim()) await setSessionCookie(userId);

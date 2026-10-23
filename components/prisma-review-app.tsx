@@ -47,6 +47,7 @@ import {
   type ReviewProject,
   type Report,
   type Study,
+  type WebsitePalette,
   type WebsiteTheme,
   type WebsiteWidth,
   type ViewKey,
@@ -465,6 +466,7 @@ const guestUser: AppUser = {
   title: "Reviewer",
   timezone: "Europe/Rome",
   avatarColor: "#167d7f",
+  websitePalette: "teal",
   websiteTheme: "system"
 };
 
@@ -525,7 +527,7 @@ export function PrismaReviewApp() {
   const [websiteVisitCount, setWebsiteVisitCount] = useState<number | null>(null);
   const [websiteVisitCountLoading, setWebsiteVisitCountLoading] = useState(false);
   const websiteVisitRequestStarted = useRef(false);
-  const [pendingAuthAction, setPendingAuthAction] = useState<"login" | "register" | null>(null);
+  const [pendingAuthAction, setPendingAuthAction] = useState<"login" | "register" | "logout" | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
   const [authSettingsMessage, setAuthSettingsMessage] = useState("");
@@ -649,6 +651,7 @@ export function PrismaReviewApp() {
     title: "",
     currentPassword: "",
     newPassword: "",
+    websitePalette: "teal" as WebsitePalette,
     websiteTheme: "system" as WebsiteTheme,
     websiteWidth: "limited" as WebsiteWidth
   });
@@ -1157,14 +1160,17 @@ export function PrismaReviewApp() {
 
     const redirectUrl = new URL(target, window.location.origin);
     const routeState = parseRouteState(redirectUrl.pathname, redirectUrl.search);
+    if (!routeState.isKnownRoute || !routeState.projectId) {
+      setActiveView("dashboard", { replace: true });
+      return;
+    }
+
     const nextPath = normalizePathname(redirectUrl.pathname);
     const nextUrl = `${nextPath}${redirectUrl.search}${redirectUrl.hash}`;
 
-    if (routeState.projectId) {
-      setSelectedProjectId(routeState.projectId);
-    }
+    setSelectedProjectId(routeState.projectId);
     setPendingRoutePath(nextPath);
-    setPendingRouteLabel(getPendingRouteLabel(routeState.view, routeState.projectId ?? selectedProjectId));
+    setPendingRouteLabel(getPendingRouteLabel(routeState.view, routeState.projectId));
     startTransition(() => {
       router.replace(nextUrl);
     });
@@ -1279,7 +1285,9 @@ export function PrismaReviewApp() {
         return;
       }
 
-      const nextUrl = `/sign-in?redirect=${encodeURIComponent(currentWithSearch)}`;
+      const nextUrl = requestedProjectId
+        ? `/sign-in?redirect=${encodeURIComponent(currentWithSearch)}`
+        : "/sign-in";
       router.replace(nextUrl);
       return;
     }
@@ -1289,7 +1297,7 @@ export function PrismaReviewApp() {
     } else if (currentUser.isAdmin && (currentPath === "/" || currentPath === "/dashboard")) {
       setActiveView("adminReviews", { replace: true });
     }
-  }, [isAuthResolved, isAuthenticated, currentUser.isAdmin, pathname, routeSearch]);
+  }, [isAuthResolved, isAuthenticated, currentUser.isAdmin, pathname, requestedProjectId, routeSearch]);
 
   useEffect(() => {
     if (!pendingRoutePath) {
@@ -1458,11 +1466,12 @@ export function PrismaReviewApp() {
       title: currentUser.title,
       currentPassword: "",
       newPassword: "",
+      websitePalette: currentUser.websitePalette ?? "teal",
       websiteTheme: currentUser.websiteTheme ?? "system",
       websiteWidth: currentUser.websiteWidth ?? "full"
     }));
     setAccountMessage("");
-  }, [currentUser.id, currentUser.name, currentUser.organization, currentUser.title, currentUser.websiteTheme, currentUser.websiteWidth]);
+  }, [currentUser.id, currentUser.name, currentUser.organization, currentUser.title, currentUser.websitePalette, currentUser.websiteTheme, currentUser.websiteWidth]);
 
   useEffect(() => {
     setReviewSettingsForm({
@@ -1479,7 +1488,18 @@ export function PrismaReviewApp() {
   ]);
 
   useEffect(() => {
-    const theme = isAuthenticated && activeView === "profile"
+    if (!isAuthResolved) return;
+
+    const palette = !isAuthenticated ? "teal" : activeView === "profile"
+      ? accountForm.websitePalette
+      : currentUser.websitePalette ?? "teal";
+    document.documentElement.setAttribute("data-palette", palette);
+  }, [activeView, isAuthResolved, isAuthenticated, accountForm.websitePalette, currentUser.websitePalette]);
+
+  useEffect(() => {
+    if (!isAuthResolved) return;
+
+    const theme = !isAuthenticated ? "system" : activeView === "profile"
       ? accountForm.websiteTheme
       : currentUser.websiteTheme ?? "system";
     const root = document.documentElement;
@@ -1488,7 +1508,19 @@ export function PrismaReviewApp() {
       return;
     }
     root.setAttribute("data-theme", theme);
-  }, [activeView, isAuthenticated, accountForm.websiteTheme, currentUser.websiteTheme]);
+  }, [activeView, isAuthResolved, isAuthenticated, accountForm.websiteTheme, currentUser.websiteTheme]);
+
+  useEffect(() => {
+    if (!isAuthResolved) return;
+
+    const palette = isAuthenticated ? currentUser.websitePalette ?? "teal" : "";
+    const theme = isAuthenticated ? currentUser.websiteTheme ?? "system" : "";
+    const maxAge = isAuthenticated ? 31536000 : 0;
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    const options = `Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
+    document.cookie = `prismatica_palette=${palette}; ${options}`;
+    document.cookie = `prismatica_theme=${theme}; ${options}`;
+  }, [isAuthResolved, isAuthenticated, currentUser.websitePalette, currentUser.websiteTheme]);
 
   useEffect(() => {
     const width = isAuthenticated && activeView === "profile"
@@ -1659,7 +1691,7 @@ export function PrismaReviewApp() {
     return null;
   }
 
-  if (!isAuthResolved) {
+  if (!isAuthResolved || (isAuthenticated && normalizePathname(pathname ?? "") === "/sign-in")) {
     return (
       <main className="loginShell" aria-busy="true" aria-live="polite">
         <section className="loginPanel authLoadingPanel">
@@ -1674,7 +1706,7 @@ export function PrismaReviewApp() {
           </div>
           <div className="authLoadingBody">
             <span className="authLoadingSpinner" aria-hidden="true" />
-            <LoadProgress {...workspaceProgress} showTrack={false} />
+            <LoadProgress {...(isAuthResolved ? { label: pendingRouteLabel || "Opening your workspace" } : workspaceProgress)} showTrack={false} />
           </div>
         </section>
       </main>
@@ -1826,10 +1858,16 @@ export function PrismaReviewApp() {
   }
 
   async function handleLogout() {
-    await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-    setIsAuthenticated(false);
-    setActiveView("dashboard", { replace: true });
-    clearLoginPassword();
+    if (pendingAuthAction) return;
+
+    setPendingAuthAction("logout");
+    try {
+      await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+      setIsAuthenticated(false);
+      clearLoginPassword();
+    } finally {
+      setPendingAuthAction(null);
+    }
   }
 
   function setStudyIndex(index: number | ((previous: number) => number)) {
@@ -2639,6 +2677,7 @@ export function PrismaReviewApp() {
       const requestBody =
         action === "preferences"
           ? {
+              websitePalette: accountForm.websitePalette,
               websiteTheme: accountForm.websiteTheme,
               websiteWidth: accountForm.websiteWidth
             }
@@ -3782,6 +3821,7 @@ export function PrismaReviewApp() {
       <ProfileSection
         currentUser={currentUser}
         handleLogout={handleLogout}
+        isSigningOut={pendingAuthAction === "logout"}
         updateAccount={updateAccount}
         accountForm={accountForm}
         onAccountNameChange={(value) => setAccountForm((previous) => ({ ...previous, name: value }))}
@@ -3789,6 +3829,7 @@ export function PrismaReviewApp() {
         onAccountTitleChange={(value) => setAccountForm((previous) => ({ ...previous, title: value }))}
         onAccountCurrentPasswordChange={(value) => setAccountForm((previous) => ({ ...previous, currentPassword: value }))}
         onAccountNewPasswordChange={(value) => setAccountForm((previous) => ({ ...previous, newPassword: value }))}
+        onAccountPaletteChange={(value) => setAccountForm((previous) => ({ ...previous, websitePalette: value }))}
         onAccountThemeChange={(value) =>
           setAccountForm((previous) => ({
             ...previous,

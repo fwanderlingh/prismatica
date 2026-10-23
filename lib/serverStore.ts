@@ -29,6 +29,7 @@ import {
   type ReviewProject,
   type Study,
   type WorkflowEvent,
+  type WebsitePalette,
   reviewProjects
 } from "./prismaData";
 import { evaluateStage, type DecisionValue } from "./workflow";
@@ -287,6 +288,10 @@ function normalizeExclusionReasons(value: unknown): string[] {
 
 function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
   return theme === "light" || theme === "dark" ? theme : "system";
+}
+
+function normalizeWebsitePalette(palette: unknown): WebsitePalette {
+  return palette === "paper" ? "paper" : "teal";
 }
 
 function normalizeWebsiteWidth(width: unknown): "full" | "limited" {
@@ -653,6 +658,7 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
       ...user,
       isAdmin: Boolean(user.isAdmin),
       websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme),
+      websitePalette: normalizeWebsitePalette(user.websitePalette),
       websiteWidth: normalizeWebsiteWidth(user.websiteWidth)
     })) as StoredUser[],
     now
@@ -934,6 +940,7 @@ function publicUser(user: StoredUser): AppUser {
     timezone: user.timezone,
     avatarColor: user.avatarColor,
     websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme),
+    websitePalette: normalizeWebsitePalette(user.websitePalette),
     websiteWidth: normalizeWebsiteWidth(user.websiteWidth)
   };
 }
@@ -1678,6 +1685,7 @@ export function registerUser(input: {
     timezone: "Europe/Rome",
     avatarColor: pickAvatarColor(state.users.length),
     websiteTheme: "system",
+    websitePalette: "teal",
     websiteWidth: "limited",
     emailAuth: { verificationRequired: state.authSettings.transactionalEmailEnabled },
     ...hashPassword(password),
@@ -1699,6 +1707,7 @@ export function updateCurrentUserForUser(
     currentPassword?: string;
     newPassword?: string;
     websiteTheme?: string;
+    websitePalette?: string;
     websiteWidth?: string;
   }
 ): AppStatePayload {
@@ -1713,6 +1722,7 @@ export function updateCurrentUserForUser(
   const title = input.title?.trim() ?? user.title;
   const newPassword = input.newPassword?.trim() ?? "";
   const websiteTheme = input.websiteTheme === undefined ? normalizeWebsiteTheme(user.websiteTheme) : normalizeWebsiteTheme(input.websiteTheme);
+  const websitePalette = input.websitePalette === undefined ? normalizeWebsitePalette(user.websitePalette) : normalizeWebsitePalette(input.websitePalette);
   const websiteWidth = input.websiteWidth === undefined ? normalizeWebsiteWidth(user.websiteWidth) : normalizeWebsiteWidth(input.websiteWidth);
 
   if (!name || !organization || !title) {
@@ -1740,6 +1750,7 @@ export function updateCurrentUserForUser(
           organization,
           title,
           websiteTheme,
+          websitePalette,
           websiteWidth,
           ...(passwordUpdate ?? {}),
           ...(passwordUpdate ? { emailAuth: { ...candidate.emailAuth, sessionVersion: crypto.randomUUID(), "password-reset": undefined, verification: undefined } } : {}),
@@ -1943,6 +1954,7 @@ export function adminCreateUserForUser(
     timezone: "Europe/Rome",
     avatarColor: pickAvatarColor(state.users.length),
     websiteTheme: "system",
+    websitePalette: "teal",
     websiteWidth: "limited",
     ...hashPassword(temporaryPassword),
     createdAt: now,
@@ -5112,6 +5124,7 @@ function ensureAdminUser(users: StoredUser[], now: string) {
             timezone: user.timezone || "Europe/Rome",
             avatarColor: user.avatarColor || "#42656d",
             websiteTheme: normalizeWebsiteTheme((user as { websiteTheme?: unknown }).websiteTheme),
+            websitePalette: normalizeWebsitePalette(user.websitePalette),
             websiteWidth: normalizeWebsiteWidth(user.websiteWidth)
           }
         : user
@@ -5136,6 +5149,7 @@ function ensureAdminUser(users: StoredUser[], now: string) {
       timezone: "Europe/Rome",
       avatarColor: "#42656d",
       websiteTheme: "system",
+      websitePalette: "teal",
       websiteWidth: "limited",
       ...hashPassword(adminPassword),
       createdAt: now,

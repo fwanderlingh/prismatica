@@ -36,10 +36,12 @@ export type AppUser = {
   timezone: string;
   avatarColor: string;
   websiteTheme?: WebsiteTheme;
+  websitePalette?: WebsitePalette;
   websiteWidth?: WebsiteWidth;
 };
 
 export type WebsiteTheme = "light" | "dark" | "system";
+export type WebsitePalette = "teal" | "paper";
 export type WebsiteWidth = "full" | "limited";
 
 export type ProjectSummary = {

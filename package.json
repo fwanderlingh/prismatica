@@ -12,6 +12,7 @@
     "build": "next build",
     "check": "tsc --noEmit && npm run check:api-auth",
     "check:navigation": "node scripts/check-navigation.mjs",
+    "check:palette": "node scripts/check-palette-preference.mjs",
     "check:progress": "node scripts/check-load-progress.mjs",
     "check:audit": "node scripts/check-audit-history.mjs",
     "check:workflow": "node scripts/check-workflow-reconciliation.mjs",

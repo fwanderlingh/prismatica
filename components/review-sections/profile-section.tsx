@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, LogOut, Settings, UserCircle } from "lucide-react";
-import { type AppUser, type WebsiteTheme, type WebsiteWidth } from "@/lib/prismaData";
+import { type AppUser, type WebsitePalette, type WebsiteTheme, type WebsiteWidth } from "@/lib/prismaData";
 import { SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 
 type FormSubmitEvent = {
@@ -14,6 +14,7 @@ type AccountFormShape = {
   title: string;
   currentPassword: string;
   newPassword: string;
+  websitePalette: WebsitePalette;
   websiteTheme: WebsiteTheme;
   websiteWidth: WebsiteWidth;
 };
@@ -21,6 +22,7 @@ type AccountFormShape = {
 type ProfileSectionProps = {
   currentUser: AppUser;
   handleLogout: () => void;
+  isSigningOut: boolean;
   updateAccount: (event: FormSubmitEvent, action: ProfileSaveAction) => void;
   accountForm: AccountFormShape;
   onAccountNameChange: (value: string) => void;
@@ -28,6 +30,7 @@ type ProfileSectionProps = {
   onAccountTitleChange: (value: string) => void;
   onAccountCurrentPasswordChange: (value: string) => void;
   onAccountNewPasswordChange: (value: string) => void;
+  onAccountPaletteChange: (value: WebsitePalette) => void;
   onAccountThemeChange: (value: WebsiteTheme) => void;
   onAccountWidthChange: (value: WebsiteWidth) => void;
   accountMessage: string;
@@ -38,6 +41,7 @@ type ProfileSectionProps = {
 export function ProfileSection({
   currentUser,
   handleLogout,
+  isSigningOut,
   updateAccount,
   accountForm,
   onAccountNameChange,
@@ -45,6 +49,7 @@ export function ProfileSection({
   onAccountTitleChange,
   onAccountCurrentPasswordChange,
   onAccountNewPasswordChange,
+  onAccountPaletteChange,
   onAccountThemeChange,
   onAccountWidthChange,
   accountMessage,
@@ -53,7 +58,7 @@ export function ProfileSection({
 }: ProfileSectionProps) {
   const isSavingAccount = pendingAccountAction === "account";
   const isSavingPreferences = pendingAccountAction === "preferences";
-  const isSavingProfile = pendingAccountAction !== null;
+  const isSavingProfile = pendingAccountAction !== null || isSigningOut;
   const accountMessageIsSuccess = accountMessage === "Account details saved." || accountMessage === "Preferences saved.";
 
   return (
@@ -71,9 +76,9 @@ export function ProfileSection({
             </p>
           </div>
         </div>
-        <button className="ghostButton" type="button" onClick={handleLogout}>
-          <LogOut size={17} />
-          Sign Out
+        <button className="ghostButton" type="button" onClick={handleLogout} disabled={isSigningOut} aria-busy={isSigningOut}>
+          {isSigningOut ? <span className="inlineSpinner" aria-hidden="true" /> : <LogOut size={17} />}
+          <span aria-live="polite">{isSigningOut ? "Signing out..." : "Sign Out"}</span>
         </button>
       </section>
 
@@ -152,6 +157,17 @@ export function ProfileSection({
           <form className="accountForm" aria-busy={isSavingPreferences} onSubmit={(event) => updateAccount(event, "preferences")}>
             <label>
               <span>Website theme</span>
+              <select
+                value={accountForm.websitePalette}
+                disabled={isSavingProfile}
+                onChange={(event) => onAccountPaletteChange(event.target.value as WebsitePalette)}
+              >
+                <option value="teal">Teal</option>
+                <option value="paper">Paper</option>
+              </select>
+            </label>
+            <label>
+              <span>Appearance</span>
               <select
                 value={accountForm.websiteTheme}
                 disabled={isSavingProfile}

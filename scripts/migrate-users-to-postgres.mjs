@@ -72,6 +72,7 @@ function normalizeUser(user, index) {
     timezone: String(user.timezone ?? "").trim() || "Europe/Rome",
     avatarColor: String(user.avatarColor ?? "").trim() || "#42656d",
     websiteTheme: normalizeTheme(user.websiteTheme),
+    websitePalette: user.websitePalette === "paper" ? "paper" : "teal",
     passwordHash,
     passwordSalt,
     createdAt: parseIsoOrNow(user.createdAt),
@@ -139,12 +140,12 @@ async function migrateUsers(client, users) {
         INSERT INTO app_users (
           id, name, email, is_admin, initials, organization, title,
           timezone, avatar_color, website_theme, password_hash, password_salt,
-          created_at, updated_at, website_width, email_auth
+          created_at, updated_at, website_width, email_auth, website_palette
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12,
-          $13, $14, $15, $16
+          $13, $14, $15, $16, COALESCE($17, 'teal')
         )
         ON CONFLICT (id)
         DO UPDATE SET
@@ -162,7 +163,8 @@ async function migrateUsers(client, users) {
           created_at = EXCLUDED.created_at,
           updated_at = EXCLUDED.updated_at,
           website_width = EXCLUDED.website_width,
-          email_auth = EXCLUDED.email_auth
+          email_auth = EXCLUDED.email_auth,
+          website_palette = COALESCE($17, app_users.website_palette)
       `,
       [
         normalized.id,
@@ -180,7 +182,8 @@ async function migrateUsers(client, users) {
         normalized.createdAt,
         normalized.updatedAt,
         user.websiteWidth === "limited" ? "limited" : "full",
-        JSON.stringify(user.emailAuth ?? {})
+        JSON.stringify(user.emailAuth ?? {}),
+        user.websitePalette === undefined ? null : normalized.websitePalette
       ]
     );
     importedCount += 1;
