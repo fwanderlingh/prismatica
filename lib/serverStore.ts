@@ -3100,10 +3100,13 @@ function updateScreeningCheckoutInState(state: PersistedState, userId: Parameter
         !(
           getScreeningCheckoutStage(checkout) === "extraction" &&
           checkout.projectId === projectId &&
-          checkout.reportId === reportId &&
-          checkout.templateId === template.id &&
           checkout.userId === userId &&
-          (action !== "release" || !checkoutId || checkout.checkoutId === checkoutId)
+          // Acquiring replaces every checkout the user holds in this stage, so skipped studies never linger.
+          (action !== "release" || (
+            checkout.reportId === reportId &&
+            checkout.templateId === template.id &&
+            (!checkoutId || checkout.checkoutId === checkoutId)
+          ))
         )
     );
 
@@ -3168,9 +3171,11 @@ function updateScreeningCheckoutInState(state: PersistedState, userId: Parameter
         !(
           getScreeningCheckoutStage(checkout) === "full_text" &&
           checkout.projectId === projectId &&
-          checkout.reportId === reportId &&
           checkout.userId === userId &&
-          (action !== "release" || !checkoutId || checkout.checkoutId === checkoutId)
+          (action !== "release" || (
+            checkout.reportId === reportId &&
+            (!checkoutId || checkout.checkoutId === checkoutId)
+          ))
         )
     );
 
@@ -3244,9 +3249,11 @@ function updateScreeningCheckoutInState(state: PersistedState, userId: Parameter
       !(
           getScreeningCheckoutStage(checkout) === "title_abstract" &&
           checkout.projectId === projectId &&
-          checkout.studyId === studyId &&
           checkout.userId === userId &&
-          (action !== "release" || !checkoutId || checkout.checkoutId === checkoutId)
+          (action !== "release" || (
+            checkout.studyId === studyId &&
+            (!checkoutId || checkout.checkoutId === checkoutId)
+          ))
         )
     );
 

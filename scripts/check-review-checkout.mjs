@@ -90,7 +90,8 @@ try {
   const { useReviewCheckout } = require(hookFile);
   const baseTarget = { projectId: "project-one", studyId: "study-one", stage: "title_abstract" };
 
-  function harness(options = {}) {
+  function harness({ autoStart = true, ...options } = {}) {
+    const timeouts = new Map();
     const currentRunner = { slots: [], cursor: 0, effects: [] };
     const requests = [], releases = [], acquired = [], errors = [], starts = [], intervals = new Map();
     let timerId = 0;
@@ -110,8 +111,20 @@ try {
         intervals.set(id, { callback, delay });
         return id;
       },
-      clearInterval(id) { intervals.delete(id); }
+      clearInterval(id) { intervals.delete(id); },
+      setTimeout(callback, delay) {
+        const id = ++timerId;
+        timeouts.set(id, { callback, delay });
+        return id;
+      },
+      clearTimeout(id) { timeouts.delete(id); }
     };
+    function startPending() {
+      for (const [id, timeout] of [...timeouts]) {
+        timeouts.delete(id);
+        timeout.callback();
+      }
+    }
     globalThis.fetch = (url, init) => {
       releases.push({ url, ...init, body: JSON.parse(init.body) });
       return Promise.resolve({ ok: true });
@@ -122,6 +135,7 @@ try {
       runner.cursor = 0;
       useReviewCheckout(currentOptions);
       runner.effects.splice(0).forEach(effect => effect());
+      if (autoStart) startPending();
     }
     function dispose() {
       for (const slot of currentRunner.slots) {
@@ -134,7 +148,7 @@ try {
       intervals.values().next().value.callback();
     }
     render();
-    return { requests, releases, acquired, errors, starts, intervals, render, dispose, refresh };
+    return { requests, releases, acquired, errors, starts, intervals, timeouts, startPending, render, dispose, refresh };
   }
 
   await check("inactive reviews do not acquire checkouts", async () => {
@@ -187,6 +201,23 @@ try {
       assert.deepEqual(review.acquired, [payload], "cleanup ignores a late refresh response");
     });
   }
+
+  await check("quickly skipped studies send no checkout requests", async () => {
+    const review = harness({ autoStart: false });
+    assert.equal(review.requests.length, 0);
+    assert.equal(review.timeouts.size, 1);
+    assert.equal([...review.timeouts.values()][0].delay, 300);
+    review.render({ target: { ...baseTarget, studyId: "study-two" } });
+    review.render({ target: { ...baseTarget, studyId: "study-three" } });
+    assert.equal(review.timeouts.size, 1, "only the latest study keeps a pending start");
+    assert.equal(review.requests.length, 0);
+    assert.equal(review.releases.length, 0, "never-acquired studies send no release");
+    review.startPending();
+    assert.equal(review.requests.length, 1);
+    assert.equal(review.requests[0].body.studyId, "study-three");
+    review.dispose();
+    assert.equal(review.releases.length, 1);
+  });
 
   await check("callback and target-object changes retain the checkout", async () => {
     const review = harness();

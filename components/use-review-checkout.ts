@@ -27,6 +27,8 @@ type ReviewCheckoutOptions = {
   onError?: (error: unknown) => void;
 };
 
+const checkoutStartDelayMs = 300;
+
 export function useReviewCheckout({
   userId, target, checkoutWindowMinutes, acquire, onAcquired, onStart, onError
 }: ReviewCheckoutOptions) {
@@ -71,12 +73,20 @@ export function useReviewCheckout({
       }
     }
 
-    void acquireCheckout();
-    const intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowMinutes));
+    // Skip the request entirely when the user moves on quickly through the queue.
+    let intervalId: number | undefined;
+    let hasAcquired = false;
+    const startId = window.setTimeout(() => {
+      hasAcquired = true;
+      void acquireCheckout();
+      intervalId = window.setInterval(acquireCheckout, getCheckoutRefreshIntervalMs(checkoutWindowMinutes));
+    }, checkoutStartDelayMs);
 
     return () => {
       isCancelled = true;
+      window.clearTimeout(startId);
       window.clearInterval(intervalId);
+      if (!hasAcquired) return;
       // Keep the session token: a late cleanup must not release a newer checkout.
       void fetch("/api/screening-checkouts", {
         method: "POST",

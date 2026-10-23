@@ -352,6 +352,12 @@ try {
     assert.ok(databaseState.screeningCheckouts.some(item => item.checkoutId === 'separate-request-checkout'));
     store.updateScreeningCheckoutForUser(actor.id, { projectId, studyId, stage: 'title_abstract', action: 'release', checkoutId: 'separate-request-checkout' });
     assert.ok(!databaseState.screeningCheckouts.some(item => item.checkoutId === 'separate-request-checkout'));
+    store.updateScreeningCheckoutForUser(actor.id, { projectId, studyId, stage: 'title_abstract', action: 'acquire', checkoutId: 'first-checkout' });
+    store.updateScreeningCheckoutForUser(actor.id, { projectId, studyId: 'decision-study-2', stage: 'title_abstract', action: 'acquire', checkoutId: 'second-checkout' });
+    const held = databaseState.screeningCheckouts.filter(item => item.userId === actor.id && item.stage === 'title_abstract');
+    assert.deepEqual(held.map(item => item.checkoutId), ['second-checkout'], 'acquiring replaces the reviewer\'s earlier checkout');
+    store.updateScreeningCheckoutForUser(actor.id, { projectId, studyId, stage: 'title_abstract', action: 'release', checkoutId: 'first-checkout' });
+    assert.ok(databaseState.screeningCheckouts.some(item => item.checkoutId === 'second-checkout'), 'a late release of a replaced checkout keeps the current one');
     assert.ok(!operations.includes('write'), 'the entire screening lifecycle avoids full-state replacement');
   });
 
