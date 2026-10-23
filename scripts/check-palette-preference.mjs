@@ -198,17 +198,24 @@ try {
   const findFunction = (statements, name) => statements.map(node => node.declaration ?? node).find(node => node.type === "FunctionDeclaration" && node.id?.name === name);
   const app = findFunction(program.body, "PrismaReviewApp");
   const sourceText = node => source.slice(node.start, node.end);
-  const preferenceEffects = app.body.body.filter(node => node.type === "ExpressionStatement" && node.expression?.callee?.name === "useEffect")
+  const preferenceEffects = app.body.body.filter(node => node.type === "ExpressionStatement" && ["useEffect", "useLayoutEffect"].includes(node.expression?.callee?.name))
     .filter(node => sourceText(node).includes("setAccountForm(") || sourceText(node).includes("document.documentElement") || sourceText(node).includes("document.cookie"));
-  const effectCode = babel.core().transformSync(`${sourceText(findFunction(app.body.body, "updateAccount"))}\nfunction renderEffects() {\n${preferenceEffects.map(sourceText).join("\n")}\n}`, {
+  const effectCode = babel.core().transformSync(`${sourceText(findFunction(app.body.body, "updateAccount"))}\nfunction renderEffects({isAuthResolved, isAuthenticated, activeView, currentUser, accountForm}) {\n${preferenceEffects.map(sourceText).join("\n")}\n}`, {
     filename: "profile-preferences.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()]
   }).code;
   const attributes = new Map([["data-palette", "paper"], ["data-theme", "dark"]]);
   const cookieJar = new Map([["prismatica_palette", "paper"], ["prismatica_theme", "dark"]]);
-  const effectSlots = [], pendingEffects = [], requests = [], cookieWrites = [];
+  const effectSlots = [], pendingLayoutEffects = [], pendingEffects = [], requests = [], cookieWrites = [];
   let effectCursor = 0, changed = false;
+  const scheduleEffect = (queue, effect, dependencies) => {
+    const index = effectCursor++, previous = effectSlots[index];
+    if (!previous || dependencies.some((value, position) => !Object.is(value, previous[position]))) {
+      effectSlots[index] = dependencies;
+      queue.push(effect);
+    }
+  };
   const scope = {
-    isAuthResolved: false, isAuthenticated: false, activeView: "dashboard", currentUser: { ...reloadUser(), id: "guest", websiteTheme: "system", websiteWidth: "limited" },
+    isAuthResolved: false, isAuthenticated: false, activeView: "profile", currentUser: { ...reloadUser(), id: "guest", websiteTheme: "system", websiteWidth: "limited" },
     accountForm: { ...accountForm, websitePalette: "teal" }, pendingAccountAction: null,
     document: { documentElement: { setAttribute: (name, value) => attributes.set(name, value), removeAttribute: name => attributes.delete(name) } },
     window: { location: { protocol: "https:" } },
@@ -221,13 +228,8 @@ try {
       return await patch(body);
     },
     applyAppState: payload => { scope.currentUser = payload.currentUser; changed = true; },
-    useEffect(effect, dependencies) {
-      const index = effectCursor++, previous = effectSlots[index];
-      if (!previous || dependencies.some((value, position) => !Object.is(value, previous[position]))) {
-        effectSlots[index] = dependencies;
-        pendingEffects.push(effect);
-      }
-    }
+    useEffect: (effect, dependencies) => scheduleEffect(pendingEffects, effect, dependencies),
+    useLayoutEffect: (effect, dependencies) => scheduleEffect(pendingLayoutEffects, effect, dependencies)
   };
   Object.defineProperty(scope.document, "cookie", {
     get: () => Array.from(cookieJar, ([name, value]) => `${name}=${value}`).join("; "),
@@ -241,12 +243,22 @@ try {
   });
   vm.runInContext(effectCode, vm.createContext(scope));
   const render = () => {
-    for (let pass = 0; pass < 5; pass++) {
+    const paints = [];
+    for (let pass = 0; pass < 8; pass++) {
       changed = false;
       effectCursor = 0;
-      scope.renderEffects();
+      // Each render closes over its own state snapshot, as React does. State
+      // updates in an earlier effect cannot change a later effect's snapshot.
+      scope.renderEffects({
+        isAuthResolved: scope.isAuthResolved, isAuthenticated: scope.isAuthenticated,
+        activeView: scope.activeView, currentUser: scope.currentUser, accountForm: scope.accountForm
+      });
+      pendingLayoutEffects.splice(0).forEach(effect => effect());
+      if (!changed) paints.push({ palette: attributes.get("data-palette"), theme: attributes.get("data-theme") });
+      // Layout updates flush passive effects and synchronously render again
+      // before paint; passive-only state updates allow the current frame to paint.
       pendingEffects.splice(0).forEach(effect => effect());
-      if (!changed) return;
+      if (!changed) return paints;
     }
     assert.fail("profile preference effects did not settle");
   };
@@ -256,6 +268,19 @@ try {
   assert.equal(cookieWrites.length, 0, "unresolved auth does not overwrite saved appearance cookies");
   scope.isAuthResolved = true;
   scope.isAuthenticated = true;
+  const savedPaperUser = { ...reloadUser(), websitePalette: "paper", websiteTheme: "dark", websiteWidth: "limited" };
+  scope.currentUser = savedPaperUser;
+  assert.deepEqual(render(), [{ palette: "paper", theme: "dark" }], "refreshing Profile with a saved Paper/Dark preference never paints the guest form's Teal/System defaults");
+  scope.currentUser = reloadUser(secondUser.id);
+  assert.deepEqual(render(), [{ palette: "teal", theme: "light" }], "switching accounts on Profile paints the new account's own appearance");
+  scope.currentUser = savedPaperUser;
+  assert.deepEqual(render(), [{ palette: "paper", theme: "dark" }], "switching back to Paper/Dark does not paint the previous account's form preferences");
+  scope.accountForm = { ...scope.accountForm, websitePalette: "teal", websiteTheme: "light" };
+  render();
+  scope.currentUser = { ...scope.currentUser };
+  assert.deepEqual(render(), [{ palette: "teal", theme: "light" }], "an unchanged app-state refresh preserves an unsaved appearance preview");
+  assert.equal(scope.accountForm.websitePalette, "teal", "app-state refreshes do not discard unsaved palette drafts");
+  scope.activeView = "dashboard";
   scope.currentUser = { ...reloadUser(), websiteTheme: "dark", websiteWidth: "limited" };
   render();
   assert.equal(attributes.get("data-palette"), "teal");
@@ -366,11 +391,15 @@ try {
     ]) assert.equal(paper.get(name), teal.get(name), `${theme}, systemDark=${systemDark}: Paper preserves the neutral color ${name}`);
     for (const [name, value] of teal) {
       if (/^--(?:blue|coral|amber|green|violet|toast-(?:success|warning|error))(?:-|$)/.test(name)) {
+        if (name === "--blue-soft") {
+          assert.equal(paper.get(name), "#f2efed", `${theme}, systemDark=${systemDark}: Paper keeps the selected information background tint`);
+          continue;
+        }
         assert.equal(paper.get(name), value, `${theme}, systemDark=${systemDark}: semantic color ${name} stays unchanged`);
       }
     }
   }
-  console.log("Palette preference checks passed: saved initial appearance and auth hydration, legacy defaults, API save/reload, PostgreSQL serialization and migrations, account isolation, profile preview and save behavior, light/dark/system compatibility, and unchanged semantic colors.");
+  console.log("Palette preference checks passed: saved initial appearance and auth hydration without painted defaults, legacy defaults, API save/reload, PostgreSQL serialization and migrations, account isolation, profile preview and save behavior, light/dark/system compatibility, and preserved semantic colors with the selected Paper information background.");
 } finally {
   Module._resolveFilename = originalResolve;
   Module._load = originalLoad;

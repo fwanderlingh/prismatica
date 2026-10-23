@@ -59,6 +59,12 @@
   --sidebar-note-border: #c9dedc;
   --sidebar-note-text: #25555a;
   --shadow: 0 calc(18px * var(--ui-scale)) calc(50px * var(--ui-scale)) rgba(30, 45, 55, 0.09);
+  --shadow-rgb: 30, 45, 55;
+  --border-strong: #c8d3d8;
+  --text-disabled: #8b989f;
+  --phase-pending: #b9c5ca;
+  --flow-blue-border: #c5d8ef;
+  --highlight-neutral: #e5ecf6;
   --radius: calc(8px * var(--ui-scale));
   --overview-band-subtle-display: none;
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -164,6 +170,26 @@
   --bg: #f8f7f5;
   --bg-gradient-start: #ffffffe0;
   --bg-gradient-end: #f8f7f5f5;
+  --surface: #fffdfb;
+  --surface-strong: #f1ece6;
+  --surface-muted: #fbf9f6;
+  --surface-tint: #f3eee8;
+  --sidebar-bg: rgba(255, 253, 251, 0.84);
+  --sidebar-outer-bg: #fffdfb;
+  --text: #2a231e;
+  --heading: #211b17;
+  --muted: #7a6d63;
+  --text-soft: #5a4e45;
+  --text-strong: #453b33;
+  --border: #e3dad1;
+  --toggle-bg: #d9cfc5;
+  --shadow-rgb: 60, 40, 25;
+  --border-strong: #d3c7bb;
+  --text-disabled: #a09184;
+  --phase-pending: #cbbfb3;
+  --flow-blue-border: #d8cdc3;
+  --highlight-neutral: #ece4dc;
+  --shadow: 0 calc(18px * var(--ui-scale)) calc(50px * var(--ui-scale)) rgba(60, 40, 25, 0.09);
   --teal: #8d4d22;
   --teal-soft: #f4ece5;
   --progress-start: #eeb01d;
@@ -186,9 +212,29 @@
 }
 
 :root[data-theme="dark"][data-palette="paper"] {
-  --bg: #12191d;
-  --bg-gradient-start: rgba(17, 24, 28, 0.94);
-  --bg-gradient-end: rgba(18, 25, 29, 0.98);
+  --bg: #1a1613;
+  --bg-gradient-start: rgba(26, 22, 19, 0.94);
+  --bg-gradient-end: rgba(26, 22, 19, 0.98);
+  --surface: #241e1a;
+  --surface-strong: #2d2621;
+  --surface-muted: #29231e;
+  --surface-tint: #352d27;
+  --sidebar-bg: rgba(26, 22, 19, 0.88);
+  --sidebar-outer-bg: #1a1613;
+  --text: #efe8e1;
+  --heading: #f8f3ee;
+  --muted: #bfb1a5;
+  --text-soft: #d3c7bc;
+  --text-strong: #e1d7cd;
+  --border: #44392f;
+  --toggle-bg: #4a3f36;
+  --shadow-rgb: 0, 0, 0;
+  --border-strong: #5a4d41;
+  --text-disabled: #85776b;
+  --phase-pending: #5f5246;
+  --flow-blue-border: #5a4d41;
+  --highlight-neutral: #3a322c;
+  --shadow: 0 calc(18px * var(--ui-scale)) calc(50px * var(--ui-scale)) rgba(0, 0, 0, 0.4);
   --teal: #e1a36d;
   --teal-soft: #472f1f;
   --primary-button-bg: #99552e;
@@ -199,7 +245,8 @@
   --accent-panel-bg: #37281d;
   --accent-text-strong: #efb581;
   --toggle-focus: rgba(225, 163, 109, 0.26);
-  --secure-bg: #1a3334;
+  --secure-bg: #34291a;
+  --blue-soft:#322c29;
   --row-active-bg: #37281d;
   --row-active-border: #896343;
   --sidebar-note-bg: #38291e;
@@ -211,9 +258,30 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme])[data-palette="paper"] {
-    --bg: #12191d;
-    --bg-gradient-start: rgba(17, 24, 28, 0.94);
-    --bg-gradient-end: rgba(18, 25, 29, 0.98);
+    --bg: #1a1613;
+    --bg-gradient-start: rgba(26, 22, 19, 0.94);
+    --bg-gradient-end: rgba(26, 22, 19, 0.98);
+    --surface: #241e1a;
+    --surface-strong: #2d2621;
+    --surface-muted: #29231e;
+    --surface-tint: #352d27;
+    --sidebar-bg: rgba(26, 22, 19, 0.88);
+    --sidebar-outer-bg: #1a1613;
+    --text: #efe8e1;
+    --heading: #f8f3ee;
+    --muted: #bfb1a5;
+    --text-soft: #d3c7bc;
+    --text-strong: #e1d7cd;
+    --border: #44392f;
+    --toggle-bg: #4a3f36;
+    --shadow-rgb: 0, 0, 0;
+    --border-strong: #5a4d41;
+    --text-disabled: #85776b;
+    --phase-pending: #5f5246;
+    --flow-blue-border: #5a4d41;
+    --highlight-neutral: #3a322c;
+    --shadow: 0 calc(18px * var(--ui-scale)) calc(50px * var(--ui-scale)) rgba(0, 0, 0, 0.4);
+    --blue-soft: #322c29;
     --teal: #e1a36d;
     --teal-soft: #472f1f;
     --primary-button-bg: #99552e;
@@ -224,7 +292,7 @@
     --accent-panel-bg: #37281d;
     --accent-text-strong: #efb581;
     --toggle-focus: rgba(225, 163, 109, 0.26);
-    --secure-bg: #1a3334;
+    --secure-bg: #34291a;
     --row-active-bg: #37281d;
     --row-active-border: #896343;
     --sidebar-note-bg: #38291e;
@@ -382,7 +450,8 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: calc(22px * var(--ui-scale));
-  height: 100vh;
+  /* Allow for document scroll-height rounding at the sticky boundary. */
+  height: calc(100vh - 1px);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: calc(22px * var(--ui-scale)) calc(18px * var(--ui-scale));
@@ -684,7 +753,7 @@ h3 {
 }
 
 .navItem.phase-pending .navPhaseMarker {
-  stroke: #b9c5ca;
+  stroke: var(--phase-pending);
   fill: none;
 }
 
@@ -1304,7 +1373,7 @@ h3 {
   border-color: var(--accent-chip-border);
   background: var(--surface);
   color: var(--teal);
-  box-shadow: 0 calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale)) rgba(30, 45, 55, 0.08);
+  box-shadow: 0 calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale)) rgba(var(--shadow-rgb), 0.08);
 }
 
 .reportPreviewChip:hover {
@@ -1423,7 +1492,7 @@ h3 {
 .includeButton:focus-visible,
 .maybeButton:focus-visible,
 .excludeButton:focus-visible {
-  box-shadow: 0 calc(8px * var(--ui-scale)) calc(18px * var(--ui-scale)) rgba(23, 33, 38, 0.12);
+  box-shadow: 0 calc(8px * var(--ui-scale)) calc(18px * var(--ui-scale)) rgba(var(--shadow-rgb), 0.12);
 }
 
 .ghostButton:active:not(:disabled),
@@ -1432,7 +1501,7 @@ h3 {
 .includeButton:active:not(:disabled),
 .maybeButton:active:not(:disabled),
 .excludeButton:active:not(:disabled) {
-  box-shadow: 0 calc(3px * var(--ui-scale)) calc(8px * var(--ui-scale)) rgba(23, 33, 38, 0.12);
+  box-shadow: 0 calc(3px * var(--ui-scale)) calc(8px * var(--ui-scale)) rgba(var(--shadow-rgb), 0.12);
 }
 
 .ghostButton {
@@ -2320,7 +2389,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 
 .flowBox.blue {
   background: var(--blue-soft);
-  border-color: #c5d8ef;
+  border-color: var(--flow-blue-border);
 }
 
 .flowBox.teal {
@@ -2779,7 +2848,7 @@ td span {
 .segmented button.active {
   color: var(--accent-text-strong);
   background: var(--surface);
-  box-shadow: 0 calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale)) rgba(30, 45, 55, 0.12);
+  box-shadow: 0 calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale)) rgba(var(--shadow-rgb), 0.12);
 }
 
 .dedupGrid {
@@ -3348,7 +3417,7 @@ td span {
 }
 
 .highlight.neutral {
-  background: #e5ecf6;
+  background: var(--highlight-neutral);
 }
 
 textarea {
@@ -3512,7 +3581,7 @@ textarea {
   align-items: center;
   min-width: 0;
   padding: calc(12px * var(--ui-scale)) calc(14px * var(--ui-scale));
-  border-bottom: calc(1px * var(--ui-scale)) solid #c8d3d8;
+  border-bottom: calc(1px * var(--ui-scale)) solid var(--border-strong);
   background: var(--surface);
 }
 
@@ -3681,7 +3750,7 @@ textarea {
 .paperColumns span {
   height: calc(82px * var(--ui-scale));
   border-radius: calc(6px * var(--ui-scale));
-  background: #eef3f6;
+  background: var(--surface-tint);
 }
 
 .miniChart {
@@ -3821,7 +3890,7 @@ input[type="radio"] {
 input:disabled,
 select:disabled,
 textarea:disabled {
-  color: #8b989f;
+  color: var(--text-disabled);
   /*cursor: not-allowed;*/
   background: var(--surface-tint);
 }
@@ -4350,7 +4419,7 @@ button:disabled {
   border: calc(1px * var(--ui-scale)) solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 calc(14px * var(--ui-scale)) calc(34px * var(--ui-scale)) rgba(30, 45, 55, 0.18);
+  box-shadow: 0 calc(14px * var(--ui-scale)) calc(34px * var(--ui-scale)) rgba(var(--shadow-rgb), 0.18);
 }
 
 .teamSearchResultsList {
@@ -4594,7 +4663,7 @@ button:disabled {
   height: calc(20px * var(--ui-scale));
   border-radius: calc(999px * var(--ui-scale));
   background: #ffffff;
-  box-shadow: 0 calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale)) rgba(23, 33, 38, 0.18);
+  box-shadow: 0 calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale)) rgba(var(--shadow-rgb), 0.18);
   content: "";
   transition: transform 0.18s ease;
 }
@@ -4623,8 +4692,8 @@ button:disabled {
   place-items: center;
   padding: calc(20px * var(--ui-scale));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-tint) 82%, #ffffff), var(--background)),
-    var(--background);
+    linear-gradient(180deg, var(--bg-gradient-start), var(--bg-gradient-end)),
+    var(--bg);
 }
 
 .notFoundCard {
@@ -4916,7 +4985,7 @@ button:disabled {
   }
 
   .sidebar.open {
-    box-shadow: 0 calc(12px * var(--ui-scale)) calc(30px * var(--ui-scale)) rgba(30, 45, 55, 0.12);
+    box-shadow: 0 calc(12px * var(--ui-scale)) calc(30px * var(--ui-scale)) rgba(var(--shadow-rgb), 0.12);
   }
 
   .ghostButton.mobileNavToggle {

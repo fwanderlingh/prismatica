@@ -7,7 +7,7 @@ import { useUserPresence } from "@/components/use-user-presence";
 import { useReviewCheckout, type ReviewCheckoutTarget } from "@/components/use-review-checkout";
 import { useReviewQueueScroll, type SavedQueueDecision } from "@/components/use-review-queue-scroll";
 
-import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -1458,7 +1458,7 @@ export function PrismaReviewApp() {
     return () => window.removeEventListener("keydown", handleKeydown);
   }, [activeScreeningStudies, activeView, currentStudy.id, currentUserDecision, decisions, selectedProject.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setAccountForm((previous) => ({
       ...previous,
       name: currentUser.name,
@@ -1487,7 +1487,7 @@ export function PrismaReviewApp() {
     reviewSettings.screeningCheckoutWindowMinutes
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isAuthResolved) return;
 
     const palette = !isAuthenticated ? "teal" : activeView === "profile"
@@ -1496,7 +1496,7 @@ export function PrismaReviewApp() {
     document.documentElement.setAttribute("data-palette", palette);
   }, [activeView, isAuthResolved, isAuthenticated, accountForm.websitePalette, currentUser.websitePalette]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isAuthResolved) return;
 
     const theme = !isAuthenticated ? "system" : activeView === "profile"
