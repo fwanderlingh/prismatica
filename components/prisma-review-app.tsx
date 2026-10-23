@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import {
   dedupCandidates as seedDedupCandidates,
-  highlightRules,
   initialDecisions,
   initialWorkflowEvents,
   reportQueue,
@@ -3404,7 +3403,6 @@ export function PrismaReviewApp() {
         currentStageDecisions={currentStageDecisions}
         formatDecision={formatDecision}
         decisionTone={decisionTone}
-        highlightText={highlightText}
         pendingScreeningDecision={pendingScreeningDecision}
         isUndoingScreeningDecision={isUndoingScreeningDecision}
         reviewedCount={reviewedScreeningItems.length}
@@ -4009,28 +4007,6 @@ export function PrismaReviewApp() {
     </NavigationProvider>
     </StudyDoiEditContext.Provider>
   );
-}
-
-function highlightText(text: string) {
-  const escapedTerms = highlightRules.map((rule) => escapeRegExp(rule.term));
-  const expression = new RegExp(`(${escapedTerms.join("|")})`, "gi");
-  const chunks = text.split(expression);
-
-  return chunks.map((chunk, index) => {
-    const matchingRule = highlightRules.find((rule) => rule.term.toLowerCase() === chunk.toLowerCase());
-    if (!matchingRule) {
-      return <span key={`${chunk}-${index}`}>{chunk}</span>;
-    }
-    return (
-      <mark className={`highlight ${matchingRule.type}`} key={`${chunk}-${index}`}>
-        {chunk}
-      </mark>
-    );
-  });
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function formatNumber(value: number) {

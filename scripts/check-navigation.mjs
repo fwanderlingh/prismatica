@@ -32,13 +32,19 @@ try {
   const loadSection = name => require(path.join(temp, `components/review-sections/${name}.js`));
   const { renderAbstractText } = require(path.join(temp, "components/review-sections/abstract-text.js"));
   const renderedAbstractMath = renderToStaticMarkup(React.createElement("p", null,
-    renderAbstractText("We measure $\\boldsymbol L_2$ and $\\boldsymbol L_\\infty$.", text => text)));
+    renderAbstractText("We measure $\\boldsymbol L_2$ and $\\boldsymbol L_\\infty$.")));
   assert.ok(renderedAbstractMath.includes('class="katex"'));
   assert.ok(renderedAbstractMath.includes('mathvariant="bold-italic">L</mi><mn>2</mn>'));
   assert.ok(renderedAbstractMath.includes('mathvariant="normal">∞</mi>'));
   const malformedAbstractMath = renderToStaticMarkup(React.createElement("p", null,
-    renderAbstractText("Keep $\\unknowncommand{x}$ literal.", text => text)));
+    renderAbstractText("Keep $\\unknowncommand{x}$ literal.")));
   assert.ok(malformedAbstractMath.includes("Keep $\\unknowncommand{x}$ literal."));
+  const renderedAbstractTags = renderToStaticMarkup(React.createElement("p", null,
+    renderAbstractText("ROV<sub>LATIS</sub> and x<sup>2</sup> <i>in vivo</i> <script>x</script>")));
+  assert.ok(renderedAbstractTags.includes("ROV<sub>LATIS</sub>"));
+  assert.ok(renderedAbstractTags.includes("x<sup>2</sup>"));
+  assert.ok(renderedAbstractTags.includes("<i>in vivo</i>"));
+  assert.ok(renderedAbstractTags.includes("&lt;script&gt;x&lt;/script&gt;"));
   const { NavigationProvider, PageLink } = require(path.join(temp, "components/navigation-link.js"));
   const { getMenuItemIndex } = require(path.join(temp, "lib/keyboardNavigation.js"));
   const { buildPathForState } = require(path.join(temp, "lib/navigation.js"));
@@ -198,7 +204,7 @@ try {
 
   const screeningProps = { projectScreeningStudies: data.screeningStudies, totalScreeningStudyCount: 10, screeningProgress: 20,
     decisions: [], selectedProjectId: project.id, blindMode: project.blindMode, currentUserId: user.id, studyIndex: 0, setStudyIndex: noop, titleAbstractEvaluations: new Map(),
-    formatDecision: String, decisionTone: () => "info", currentStudy: study, stageEvaluation: { state: "open", label: "Open" }, highlightText: String,
+    formatDecision: String, decisionTone: () => "info", currentStudy: study, stageEvaluation: { state: "open", label: "Open" },
     screeningNote: "", setScreeningNote: noop, screeningMessage: "", canRecordScreeningDecision: true, checkoutError: "", currentStageDecisions: [],
     pendingScreeningDecision: null, isUndoingScreeningDecision: false, reviewedCount: 2, onOpenReviewed: noop, formatConflictResolutionHint: String,
     selectedProjectAbstractRequiredVotes: 2, addScreeningDecision: noop, undoLastDecision: noop, conflictCount: 0, onResolveConflict: noop };

@@ -75,7 +75,7 @@ try {
         decisions: [vote, peerVote], selectedProjectId: project.id, currentUserId: user.id, blindMode,
         studyIndex: 0, setStudyIndex: noop, titleAbstractEvaluations: new Map([[study.id, { state: "conflict", label: "Conflicting independent votes" }]]),
         formatDecision, decisionTone: () => "info", currentStudy: study,
-        stageEvaluation: { state: "conflict", label: "Conflicting independent votes" }, highlightText: String,
+        stageEvaluation: { state: "conflict", label: "Conflicting independent votes" },
         screeningNote: "", setScreeningNote: noop, screeningMessage: "", canRecordScreeningDecision: true, checkoutError: "",
         currentUserDecision: vote, currentStageDecisions: [vote, peerVote], pendingScreeningDecision: null,
         isUndoingScreeningDecision: false, reviewedCount: 0, onOpenReviewed: noop, conflictCount: 1, onResolveConflict: noop,

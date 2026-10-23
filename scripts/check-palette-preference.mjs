@@ -174,7 +174,7 @@ try {
   Module._load = function (name, parent, ...args) {
     if (parent?.filename === layoutFile) {
       if (name === "next/headers") return { cookies: async () => ({ get: key => layoutCookies.has(key) ? { value: layoutCookies.get(key) } : undefined }) };
-      if (name === "./globals.css") return {};
+      if (name === "./globals.css" || name === "katex/dist/katex.min.css") return {};
     }
     return originalLoad.call(this, name, parent, ...args);
   };

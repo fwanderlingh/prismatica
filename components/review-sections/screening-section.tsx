@@ -29,7 +29,6 @@ type ScreeningSectionProps = {
   decisionTone: (value: DecisionValue) => "success" | "warning" | "danger" | "info" | "neutral";
   currentStudy: Study;
   stageEvaluation: StageEvaluation;
-  highlightText: (text: string) => React.ReactNode;
   screeningNote: string;
   setScreeningNote: (value: string) => void;
   screeningMessage: string;
@@ -64,7 +63,6 @@ export function ScreeningSection({
   decisionTone,
   currentStudy,
   stageEvaluation,
-  highlightText,
   screeningNote,
   setScreeningNote,
   screeningMessage,
@@ -192,7 +190,7 @@ export function ScreeningSection({
               {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
             </span>
           </div>
-          <p className="abstractText">{renderAbstractText(currentStudy.abstract, highlightText)}</p>
+          <p className="abstractText">{renderAbstractText(currentStudy.abstract)}</p>
           <textarea
             value={screeningNote}
             onChange={(event) => setScreeningNote(event.target.value)}

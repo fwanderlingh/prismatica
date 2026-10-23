@@ -281,11 +281,6 @@ export type PrismaCounts = {
   studiesIncludedMetaAnalysis: number;
 };
 
-export type HighlightRule = {
-  term: string;
-  type: "include" | "exclude" | "neutral";
-};
-
 export type WorkflowEvent = {
   id: string;
   actor: string;
@@ -554,15 +549,6 @@ export const prismaCounts: PrismaCounts = {
 export const projectCounts: Record<string, PrismaCounts> = {
   "demo-review": prismaCounts
 };
-
-export const highlightRules: HighlightRule[] = [
-  /*{ term: "randomized", type: "include" },
-  { term: "controlled", type: "include" },
-  { term: "benchmark", type: "include" },
-  { term: "baseline", type: "neutral" },
-  { term: "protocol", type: "exclude" },
-  { term: "editorial", type: "exclude" }*/
-];
 
 export const initialWorkflowEvents: WorkflowEvent[] = [
   {
