@@ -75,7 +75,7 @@ export function StorageInfoSection({ openProject }: { openProject: (projectId: s
               <thead><tr><th scope="col">Review</th><th scope="col">Stored files</th><th scope="col">PDF storage</th>{remote ? <><th scope="col">MinIO</th><th scope="col">Local copies</th></> : null}</tr></thead>
               <tbody>
                 {snapshot.reviews.map(review => <tr key={review.id}>
-                  <td><ViewLink view="projectDashboard" projectId={review.id} onNavigate={() => openProject(review.id)}>{review.title}</ViewLink></td>
+                  <td><ViewLink view="projectDashboard" projectId={review.id} className="storageReviewLink" onNavigate={() => openProject(review.id)}>{review.title}</ViewLink></td>
                   <td>{review.files.toLocaleString()}</td><td title={`${review.bytes} bytes`}>{formatBytes(review.bytes)}</td>
                   {remote ? <><td>{formatBytes(review.objectBytes)}</td><td>{formatBytes(review.localBytes)}</td></> : null}
                 </tr>)}

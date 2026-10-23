@@ -100,7 +100,10 @@ try {
   const originalTimezone = process.env.TZ;
   try {
     process.env.TZ = "Europe/Rome";
-    const { formatReviewDateTime } = require(path.join(temp, "lib/reviewDisplay.js"));
+    const { formatAuthorList, formatReviewDateTime } = require(path.join(temp, "lib/reviewDisplay.js"));
+    assert.equal(formatAuthorList(["Surname1, Name1", "Surname2, Name2"]), "Name1 Surname1, Name2 Surname2");
+    assert.equal(formatAuthorList(["Name1 Surname1", "Surname2, Name2"]), "Name1 Surname1, Name2 Surname2");
+    assert.equal(formatAuthorList(["Surname, Name, Jr.", "", "  "]), "Surname, Name, Jr.");
     const dateFixtures = [
       ["5/6/2026, 1:02:03 PM", "06/05/2026 13:02:03"],
       ["5/26/2026, 12:04:09 AM", "26/05/2026 00:04:09"],

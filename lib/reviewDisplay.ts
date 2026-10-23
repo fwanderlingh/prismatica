@@ -3,7 +3,20 @@ import type { Report, Study } from "@/lib/prismaData";
 type ArticleDisplaySource = Pick<Study, "importItemId"> | undefined;
 
 export function formatAuthorList(authors: string[]) {
-  return authors.join("; ");
+  return authors
+    .map((author) => {
+      const name = author.trim();
+      const commaIndex = name.indexOf(",");
+      if (commaIndex < 0 || name.indexOf(",", commaIndex + 1) >= 0) {
+        return name;
+      }
+
+      const surname = name.slice(0, commaIndex).trim();
+      const givenName = name.slice(commaIndex + 1).trim();
+      return surname && givenName ? `${givenName} ${surname}` : name;
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 export function formatReviewDateTime(value: string) {

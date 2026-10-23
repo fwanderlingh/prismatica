@@ -325,7 +325,8 @@ body {
 }
 
 a[href^="http"],
-a[target="_blank"] {
+a[target="_blank"],
+.storageReviewLink {
   color: var(--link-external);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--link-external) 45%, transparent);
@@ -336,7 +337,9 @@ a[target="_blank"] {
 a[href^="http"]:hover,
 a[href^="http"]:focus-visible,
 a[target="_blank"]:hover,
-a[target="_blank"]:focus-visible {
+a[target="_blank"]:focus-visible,
+.storageReviewLink:hover,
+.storageReviewLink:focus-visible {
   color: var(--link-external-hover);
   text-decoration-color: color-mix(in srgb, var(--link-external-hover) 60%, transparent);
 }
