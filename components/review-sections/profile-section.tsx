@@ -163,7 +163,7 @@ export function ProfileSection({
                 onChange={(event) => onAccountPaletteChange(event.target.value as WebsitePalette)}
               >
                 <option value="teal">Teal</option>
-                <option value="paper">Paper</option>
+                <option value="coffee">Coffee</option>
               </select>
             </label>
             <label>

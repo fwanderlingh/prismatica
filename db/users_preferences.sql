@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS app_users (
 CREATE INDEX IF NOT EXISTS app_users_email_idx ON app_users (email);
 
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS website_width TEXT NOT NULL DEFAULT 'full' CHECK (website_width IN ('full', 'limited'));
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS website_palette TEXT NOT NULL DEFAULT 'teal' CHECK (website_palette IN ('teal', 'paper'));
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS website_palette TEXT NOT NULL DEFAULT 'teal' CHECK (website_palette IN ('teal', 'coffee'));
 
 ALTER TABLE auth_settings ADD COLUMN IF NOT EXISTS transactional_email_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_auth JSONB NOT NULL DEFAULT '{}'::jsonb;

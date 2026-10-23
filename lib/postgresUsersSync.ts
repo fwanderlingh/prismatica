@@ -149,7 +149,7 @@ async function upsertUser(client: Pool, user: StoredUserRecord) {
       parseIsoOrNow(user.updatedAt),
       user.websiteWidth === "limited" ? "limited" : "full",
       JSON.stringify(user.emailAuth ?? {}),
-      user.websitePalette === undefined ? null : user.websitePalette === "paper" ? "paper" : "teal"
+      user.websitePalette === undefined ? null : user.websitePalette === "coffee" ? "coffee" : "teal"
     ]
   );
 }

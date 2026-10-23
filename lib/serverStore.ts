@@ -291,7 +291,7 @@ function normalizeWebsiteTheme(theme: unknown): WebsiteTheme {
 }
 
 function normalizeWebsitePalette(palette: unknown): WebsitePalette {
-  return palette === "paper" ? "paper" : "teal";
+  return palette === "coffee" ? "coffee" : "teal";
 }
 
 function normalizeWebsiteWidth(width: unknown): "full" | "limited" {

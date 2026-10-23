@@ -166,7 +166,7 @@
   }
 }
 
-:root[data-palette="paper"] {
+:root[data-palette="coffee"] {
   --bg: #f8f7f5;
   --bg-gradient-start: #ffffffe0;
   --bg-gradient-end: #f8f7f5f5;
@@ -192,7 +192,7 @@
   --shadow: 0 calc(18px * var(--ui-scale)) calc(50px * var(--ui-scale)) rgba(60, 40, 25, 0.09);
   --teal: #8d4d22;
   --teal-soft: #f4ece5;
-  --progress-start: #eeb01d;
+  --progress-start: #bd7d08;
   --primary-button-hover: #78401c;
   --accent-border: #d9c8b9;
   --accent-chip-border: #d8c6b7;
@@ -211,7 +211,7 @@
   --link-external-hover: #663d21;
 }
 
-:root[data-theme="dark"][data-palette="paper"] {
+:root[data-theme="dark"][data-palette="coffee"] {
   --bg: #1a1613;
   --bg-gradient-start: rgba(26, 22, 19, 0.94);
   --bg-gradient-end: rgba(26, 22, 19, 0.98);
@@ -257,7 +257,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme])[data-palette="paper"] {
+  :root:not([data-theme])[data-palette="coffee"] {
     --bg: #1a1613;
     --bg-gradient-start: rgba(26, 22, 19, 0.94);
     --bg-gradient-end: rgba(26, 22, 19, 0.98);

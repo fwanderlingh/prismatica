@@ -72,7 +72,7 @@ function normalizeUser(user, index) {
     timezone: String(user.timezone ?? "").trim() || "Europe/Rome",
     avatarColor: String(user.avatarColor ?? "").trim() || "#42656d",
     websiteTheme: normalizeTheme(user.websiteTheme),
-    websitePalette: user.websitePalette === "paper" ? "paper" : "teal",
+    websitePalette: user.websitePalette === "coffee" ? "coffee" : "teal",
     passwordHash,
     passwordSalt,
     createdAt: parseIsoOrNow(user.createdAt),

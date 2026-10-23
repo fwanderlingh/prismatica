@@ -53,18 +53,18 @@ try {
   const persistedUser = () => JSON.parse(fs.readFileSync(process.env.PRISMATICA_DATA_FILE, "utf8")).users.find(user => user.id === legacyUser.id);
   assert.equal(reloadUser().websitePalette, "teal", "legacy accounts keep the current Teal palette");
   assert.equal(persistedUser().websitePalette, "teal", "normalizing legacy state persists its palette default");
-  assert.equal(store.updateCurrentUserForUser(legacyUser.id, { websitePalette: "paper" }).currentUser.websitePalette, "paper");
-  assert.equal(persistedUser().websitePalette, "paper", "Paper is written to storage");
-  assert.equal(reloadUser().websitePalette, "paper", "Paper survives a fresh state read");
-  assert.equal(store.loginUser(legacyUser.email, password).currentUser.websitePalette, "paper", "Paper is restored on login");
+  assert.equal(store.updateCurrentUserForUser(legacyUser.id, { websitePalette: "coffee" }).currentUser.websitePalette, "coffee");
+  assert.equal(persistedUser().websitePalette, "coffee", "Coffee is written to storage");
+  assert.equal(reloadUser().websitePalette, "coffee", "Coffee survives a fresh state read");
+  assert.equal(store.loginUser(legacyUser.email, password).currentUser.websitePalette, "coffee", "Coffee is restored on login");
   for (const changes of [{ name: "Updated Reviewer" }, { websiteTheme: "light" }, { websiteWidth: "full" }]) {
-    assert.equal(store.updateCurrentUserForUser(legacyUser.id, changes).currentUser.websitePalette, "paper", "other profile changes preserve Paper when palette is omitted");
+    assert.equal(store.updateCurrentUserForUser(legacyUser.id, changes).currentUser.websitePalette, "coffee", "other profile changes preserve Coffee when palette is omitted");
   }
   assert.equal(reloadUser().websiteTheme, "light");
   assert.equal(reloadUser().websiteWidth, "full");
   store.updateCurrentUserForUser(legacyUser.id, { websitePalette: "teal" });
   assert.equal(reloadUser().websitePalette, "teal", "switching back to Teal survives reload");
-  store.updateCurrentUserForUser(legacyUser.id, { websitePalette: "paper" });
+  store.updateCurrentUserForUser(legacyUser.id, { websitePalette: "coffee" });
   store.updateCurrentUserForUser(legacyUser.id, { websitePalette: "unknown-palette" });
   assert.equal(reloadUser().websitePalette, "teal", "unsupported stored preferences use the existing Teal palette");
   assert.equal(reloadUser(secondUser.id).websitePalette, "teal", "another account retains its own preference");
@@ -83,8 +83,10 @@ try {
   }
   const pg = scriptFunctions("scripts/postgres-state-io.mjs", ["ensureSchema", "writeUsers", "readRelationalState"]);
   await pg.ensureSchema(client);
-  assert.match(queries[0].sql, /ADD COLUMN IF NOT EXISTS website_palette TEXT NOT NULL DEFAULT 'teal' CHECK \(website_palette IN \('teal', 'paper'\)\)/, "existing PostgreSQL installations get an idempotent Teal-default migration");
-  for (const palette of ["paper", "teal", undefined]) {
+  assert.match(queries[0].sql, /ADD COLUMN IF NOT EXISTS website_palette TEXT NOT NULL DEFAULT 'teal' CHECK \(website_palette IN \('teal', 'coffee'\)\)/, "existing PostgreSQL installations get an idempotent Teal-default migration");
+  assert.doesNotMatch(queries[0].sql, /DROP CONSTRAINT.*website_palette/i, "schema setup does not replace the palette constraint on every run");
+  assert.doesNotMatch(queries[0].sql, /ADD CONSTRAINT.*website_palette/i, "schema setup does not add a duplicate palette constraint");
+  for (const palette of ["coffee", "teal", undefined]) {
     queries.length = 0;
     await pg.writeUsers(client, { users: [{ ...legacyUser, websitePalette: palette }] });
     const row = insertedUser(queries.find(query => query.sql.includes("INSERT INTO app_users")));
@@ -101,7 +103,7 @@ try {
   syncModule._compile(fs.readFileSync(syncPath, "utf8") + "\nexports.paletteTestUpsert = upsertUser;", syncPath);
   const migration = scriptFunctions("scripts/migrate-users-to-postgres.mjs", ["migrateUsers"]);
   for (const [name, save] of [["user synchronization", user => syncModule.exports.paletteTestUpsert(client, user)], ["user migration", user => migration.migrateUsers(client, [user])]]) {
-    for (const palette of ["paper", "teal", undefined]) {
+    for (const palette of ["coffee", "teal", undefined]) {
       queries.length = 0;
       await save({ ...legacyUser, websitePalette: palette });
       const query = queries.find(query => query.sql.includes("INSERT INTO app_users"));
@@ -127,9 +129,9 @@ try {
   };
   const { PATCH } = require(meFile);
   const patch = body => PATCH(new Request("http://localhost/api/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
-  assert.equal((await patch({ websitePalette: "paper" })).currentUser.websitePalette, "paper", "API forwards the saved palette");
-  assert.equal((await patch({ organization: "Updated University" })).currentUser.websitePalette, "paper", "account saves omit and preserve palette");
-  assert.equal((await patch({ websitePalette: { invalid: true } })).currentUser.websitePalette, "paper", "nonstring API values are ignored consistently with other preferences");
+  assert.equal((await patch({ websitePalette: "coffee" })).currentUser.websitePalette, "coffee", "API forwards the saved palette");
+  assert.equal((await patch({ organization: "Updated University" })).currentUser.websitePalette, "coffee", "account saves omit and preserve palette");
+  assert.equal((await patch({ websitePalette: { invalid: true } })).currentUser.websitePalette, "coffee", "nonstring API values are ignored consistently with other preferences");
   assert.equal((await patch({ websitePalette: "teal" })).currentUser.websitePalette, "teal");
   assert.equal(syncCount, 4, "preference changes use the normal user synchronization path");
   Module._load = originalLoad;
@@ -138,7 +140,7 @@ try {
   const { renderToStaticMarkup } = require("react-dom/server");
   const { ProfileSection } = require(path.join(out, "components/review-sections/profile-section.js"));
   const noop = () => {};
-  const accountForm = { ...reloadUser(), currentPassword: "", newPassword: "", websitePalette: "paper", websiteTheme: "dark", websiteWidth: "limited" };
+  const accountForm = { ...reloadUser(), currentPassword: "", newPassword: "", websitePalette: "coffee", websiteTheme: "dark", websiteWidth: "limited" };
   let selectedPalette;
   const props = {
     currentUser: reloadUser(), accountForm, accountMessage: "", accountMessageTarget: "preferences", pendingAccountAction: null,
@@ -152,13 +154,13 @@ try {
     return result;
   }
   const profileTree = ProfileSection(props);
-  const paletteSelect = nodes(profileTree).find(node => node.type === "select" && nodes(node).some(child => child.type === "option" && child.props.value === "paper"));
+  const paletteSelect = nodes(profileTree).find(node => node.type === "select" && nodes(node).some(child => child.type === "option" && child.props.value === "coffee"));
   assert.ok(paletteSelect, "profile preferences offer a palette control");
-  assert.deepEqual(nodes(paletteSelect).filter(node => node.type === "option").map(node => [node.props.value, node.props.children]), [["teal", "Teal"], ["paper", "Paper"]]);
-  assert.equal(paletteSelect.props.value, "paper");
+  assert.deepEqual(nodes(paletteSelect).filter(node => node.type === "option").map(node => [node.props.value, node.props.children]), [["teal", "Teal"], ["coffee", "Coffee"]]);
+  assert.equal(paletteSelect.props.value, "coffee");
   paletteSelect.props.onChange({ target: { value: "teal" } });
   assert.equal(selectedPalette, "teal", "the palette control updates the preview selection");
-  const savingSelect = nodes(ProfileSection({ ...props, pendingAccountAction: "preferences" })).find(node => node.type === "select" && node.props.value === "paper");
+  const savingSelect = nodes(ProfileSection({ ...props, pendingAccountAction: "preferences" })).find(node => node.type === "select" && node.props.value === "coffee");
   assert.equal(savingSelect.props.disabled, true, "preferences cannot be changed during a save");
   const markup = renderToStaticMarkup(React.createElement(ProfileSection, props));
   assert.match(markup, /Website (?:palette|theme)/);
@@ -179,9 +181,9 @@ try {
   const { default: RootLayout } = require(layoutFile);
   for (const [cookies, palette, theme] of [
     [{}, "teal", undefined],
-    [{ prismatica_palette: "paper", prismatica_theme: "dark" }, "paper", "dark"],
-    [{ prismatica_palette: "paper", prismatica_theme: "light" }, "paper", "light"],
-    [{ prismatica_palette: "paper", prismatica_theme: "system" }, "paper", undefined],
+    [{ prismatica_palette: "coffee", prismatica_theme: "dark" }, "coffee", "dark"],
+    [{ prismatica_palette: "coffee", prismatica_theme: "light" }, "coffee", "light"],
+    [{ prismatica_palette: "coffee", prismatica_theme: "system" }, "coffee", undefined],
     [{ prismatica_palette: "unknown", prismatica_theme: "unknown" }, "teal", undefined]
   ]) {
     layoutCookies = new Map(Object.entries(cookies));
@@ -203,8 +205,8 @@ try {
   const effectCode = babel.core().transformSync(`${sourceText(findFunction(app.body.body, "updateAccount"))}\nfunction renderEffects({isAuthResolved, isAuthenticated, activeView, currentUser, accountForm}) {\n${preferenceEffects.map(sourceText).join("\n")}\n}`, {
     filename: "profile-preferences.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()]
   }).code;
-  const attributes = new Map([["data-palette", "paper"], ["data-theme", "dark"]]);
-  const cookieJar = new Map([["prismatica_palette", "paper"], ["prismatica_theme", "dark"]]);
+  const attributes = new Map([["data-palette", "coffee"], ["data-theme", "dark"]]);
+  const cookieJar = new Map([["prismatica_palette", "coffee"], ["prismatica_theme", "dark"]]);
   const effectSlots = [], pendingLayoutEffects = [], pendingEffects = [], requests = [], cookieWrites = [];
   let effectCursor = 0, changed = false;
   const scheduleEffect = (queue, effect, dependencies) => {
@@ -263,18 +265,18 @@ try {
     assert.fail("profile preference effects did not settle");
   };
   render();
-  assert.equal(attributes.get("data-palette"), "paper", "unresolved auth keeps the server-rendered Paper palette during loading");
+  assert.equal(attributes.get("data-palette"), "coffee", "unresolved auth keeps the server-rendered Coffee palette during loading");
   assert.equal(attributes.get("data-theme"), "dark", "unresolved auth keeps the server-rendered dark appearance");
   assert.equal(cookieWrites.length, 0, "unresolved auth does not overwrite saved appearance cookies");
   scope.isAuthResolved = true;
   scope.isAuthenticated = true;
-  const savedPaperUser = { ...reloadUser(), websitePalette: "paper", websiteTheme: "dark", websiteWidth: "limited" };
-  scope.currentUser = savedPaperUser;
-  assert.deepEqual(render(), [{ palette: "paper", theme: "dark" }], "refreshing Profile with a saved Paper/Dark preference never paints the guest form's Teal/System defaults");
+  const savedCoffeeUser = { ...reloadUser(), websitePalette: "coffee", websiteTheme: "dark", websiteWidth: "limited" };
+  scope.currentUser = savedCoffeeUser;
+  assert.deepEqual(render(), [{ palette: "coffee", theme: "dark" }], "refreshing Profile with a saved Coffee/Dark preference never paints the guest form's Teal/System defaults");
   scope.currentUser = reloadUser(secondUser.id);
   assert.deepEqual(render(), [{ palette: "teal", theme: "light" }], "switching accounts on Profile paints the new account's own appearance");
-  scope.currentUser = savedPaperUser;
-  assert.deepEqual(render(), [{ palette: "paper", theme: "dark" }], "switching back to Paper/Dark does not paint the previous account's form preferences");
+  scope.currentUser = savedCoffeeUser;
+  assert.deepEqual(render(), [{ palette: "coffee", theme: "dark" }], "switching back to Coffee/Dark does not paint the previous account's form preferences");
   scope.accountForm = { ...scope.accountForm, websitePalette: "teal", websiteTheme: "light" };
   render();
   scope.currentUser = { ...scope.currentUser };
@@ -295,9 +297,9 @@ try {
     assert.match(write, /(?:^|;)\s*Secure(?:;|$)/i, "appearance cookies use Secure on HTTPS");
   }
   scope.activeView = "profile";
-  scope.accountForm = { ...scope.accountForm, websitePalette: "paper" };
+  scope.accountForm = { ...scope.accountForm, websitePalette: "coffee" };
   render();
-  assert.equal(attributes.get("data-palette"), "paper", "Paper previews immediately on the profile page");
+  assert.equal(attributes.get("data-palette"), "coffee", "Coffee previews immediately on the profile page");
   assert.equal(attributes.get("data-theme"), "dark", "palette preview preserves the selected light/dark mode");
   assert.equal(attributes.get("data-width"), "limited", "palette preview preserves the selected width");
   assert.equal(cookieJar.get("prismatica_palette"), "teal", "an unsaved palette preview does not replace the reload preference");
@@ -308,16 +310,16 @@ try {
   render();
   await scope.updateAccount({ preventDefault: noop }, "preferences");
   render();
-  assert.equal(requests.at(-1).body.websitePalette, "paper", "Save Preferences submits the selected palette");
-  assert.equal(reloadUser().websitePalette, "paper");
-  assert.equal(cookieJar.get("prismatica_palette"), "paper", "saving Paper updates the initial-render preference");
+  assert.equal(requests.at(-1).body.websitePalette, "coffee", "Save Preferences submits the selected palette");
+  assert.equal(reloadUser().websitePalette, "coffee");
+  assert.equal(cookieJar.get("prismatica_palette"), "coffee", "saving Coffee updates the initial-render preference");
   scope.activeView = "dashboard";
   render();
-  assert.equal(attributes.get("data-palette"), "paper", "a saved palette stays active outside the profile");
+  assert.equal(attributes.get("data-palette"), "coffee", "a saved palette stays active outside the profile");
   scope.accountForm = { ...scope.accountForm, websitePalette: "teal" };
   await scope.updateAccount({ preventDefault: noop }, "account");
   assert.equal(Object.hasOwn(requests.at(-1).body, "websitePalette"), false, "Save Account does not submit an unsaved palette preview");
-  assert.equal(reloadUser().websitePalette, "paper");
+  assert.equal(reloadUser().websitePalette, "coffee");
   scope.isAuthenticated = false;
   render();
   assert.equal(attributes.get("data-palette"), "teal", "logout clears the previous user's palette");
@@ -331,12 +333,12 @@ try {
   assert.equal(scope.accountForm.websitePalette, "teal", "switching accounts refreshes the preference form too");
   scope.currentUser = store.loginUser(legacyUser.email, password).currentUser;
   render();
-  assert.equal(attributes.get("data-palette"), "paper", "logging back in restores the account's saved palette");
+  assert.equal(attributes.get("data-palette"), "coffee", "logging back in restores the account's saved palette");
   scope.activeView = "profile";
   scope.accountForm = { ...scope.accountForm, websiteTheme: "system" };
   render();
   assert.equal(attributes.has("data-theme"), false, "System theme continues to use the OS preference");
-  assert.equal(attributes.get("data-palette"), "paper");
+  assert.equal(attributes.get("data-palette"), "coffee");
   assert.equal(cookieJar.get("prismatica_theme"), "dark", "an unsaved System preview does not replace the saved appearance cookie");
   scope.activeView = "dashboard";
   scope.currentUser = { ...scope.currentUser, websiteTheme: "system" };
@@ -347,7 +349,7 @@ try {
   for (const write of cookieWrites.slice(previousCookieWrites)) assert.doesNotMatch(write, /(?:^|;)\s*Secure(?:;|$)/i, "appearance cookies also work on HTTP deployments");
   layoutCookies = new Map(cookieJar);
   const restoredLayout = await RootLayout({ children: "Loading…" });
-  assert.equal(restoredLayout.props["data-palette"], "paper", "a reload begins in the account's saved Paper palette");
+  assert.equal(restoredLayout.props["data-palette"], "coffee", "a reload begins in the account's saved Coffee palette");
   assert.equal(restoredLayout.props["data-theme"], undefined, "a reload in System appearance follows the OS preference");
 
   const css = require("postcss").parse(fs.readFileSync(path.join(root, "app/globals.css"), "utf8"));
@@ -373,33 +375,33 @@ try {
     });
     return new Map(Array.from(values, ([name, result]) => [name, result.value]));
   }
-  const paperLightBackgrounds = new Map([
-    ["--bg", "#f8f7f5"],
-    ["--bg-gradient-start", "#ffffffe0"],
-    ["--bg-gradient-end", "#f8f7f5f5"]
+  const coffeeLightBackgrounds = new Map([
+    ["--bg", ["#f8f7f5", "#1a1613"]],
+    ["--bg-gradient-start", ["#ffffffe0", "rgba(26, 22, 19, 0.94)"]],
+    ["--bg-gradient-end", ["#f8f7f5f5", "rgba(26, 22, 19, 0.98)"]]
   ]);
   for (const [theme, systemDark] of [["light", false], ["dark", false], ["system", false], ["system", true]]) {
-    const teal = rootVariables("teal", theme, systemDark), paper = rootVariables("paper", theme, systemDark);
-    for (const name of ["--teal", "--teal-soft", "--accent-border", "--row-active-bg"]) assert.notEqual(paper.get(name), teal.get(name), `${theme}, systemDark=${systemDark}: Paper changes the teal accent ${name}`);
-    for (const [name, lightValue] of paperLightBackgrounds) {
-      const isLight = theme === "light" || (theme === "system" && !systemDark);
-      assert.equal(paper.get(name), isLight ? lightValue : teal.get(name), `${theme}, systemDark=${systemDark}: Paper ${isLight ? "uses the selected light background" : "preserves the dark background"} ${name}`);
+    const teal = rootVariables("teal", theme, systemDark), coffee = rootVariables("coffee", theme, systemDark);
+    const isLight = theme === "light" || (theme === "system" && !systemDark);
+    for (const name of ["--teal", "--teal-soft", "--accent-border", "--row-active-bg"]) assert.notEqual(coffee.get(name), teal.get(name), `${theme}, systemDark=${systemDark}: Coffee changes the teal accent ${name}`);
+    for (const [name, [lightValue, darkValue]] of coffeeLightBackgrounds) {
+      assert.equal(coffee.get(name), isLight ? lightValue : darkValue, `${theme}, systemDark=${systemDark}: Coffee uses the selected ${isLight ? "light" : "dark"} background ${name}`);
     }
     for (const name of [
       "--surface", "--surface-strong", "--surface-muted", "--surface-tint",
       "--sidebar-bg", "--sidebar-outer-bg", "--text", "--heading", "--muted", "--text-soft", "--text-strong", "--border", "--toggle-bg", "--shadow"
-    ]) assert.equal(paper.get(name), teal.get(name), `${theme}, systemDark=${systemDark}: Paper preserves the neutral color ${name}`);
+    ]) assert.notEqual(coffee.get(name), teal.get(name), `${theme}, systemDark=${systemDark}: Coffee uses its neutral color ${name}`);
     for (const [name, value] of teal) {
       if (/^--(?:blue|coral|amber|green|violet|toast-(?:success|warning|error))(?:-|$)/.test(name)) {
         if (name === "--blue-soft") {
-          assert.equal(paper.get(name), "#f2efed", `${theme}, systemDark=${systemDark}: Paper keeps the selected information background tint`);
+          assert.equal(coffee.get(name), isLight ? "#f2efed" : "#322c29", `${theme}, systemDark=${systemDark}: Coffee keeps the selected information background tint`);
           continue;
         }
-        assert.equal(paper.get(name), value, `${theme}, systemDark=${systemDark}: semantic color ${name} stays unchanged`);
+        assert.equal(coffee.get(name), value, `${theme}, systemDark=${systemDark}: semantic color ${name} stays unchanged`);
       }
     }
   }
-  console.log("Palette preference checks passed: saved initial appearance and auth hydration without painted defaults, legacy defaults, API save/reload, PostgreSQL serialization and migrations, account isolation, profile preview and save behavior, light/dark/system compatibility, and preserved semantic colors with the selected Paper information background.");
+  console.log("Palette preference checks passed: saved initial appearance and auth hydration without painted defaults, legacy defaults, API save/reload, PostgreSQL serialization and migrations, account isolation, profile preview and save behavior, light/dark/system compatibility, and preserved semantic colors with the selected Coffee information background.");
 } finally {
   Module._resolveFilename = originalResolve;
   Module._load = originalLoad;

@@ -13,7 +13,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const palette = cookieStore.get("prismatica_palette")?.value === "paper" ? "paper" : "teal";
+  const palette = cookieStore.get("prismatica_palette")?.value === "coffee" ? "coffee" : "teal";
   const savedTheme = cookieStore.get("prismatica_theme")?.value;
   const theme = savedTheme === "light" || savedTheme === "dark" ? savedTheme : undefined;
 
