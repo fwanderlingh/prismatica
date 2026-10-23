@@ -5,6 +5,7 @@ import type { Decision, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, ReviewReservationNotice, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
 import { ReviewQueueDisclosure, ReviewQueueItem } from "@/components/review-sections/review-queue";
+import { renderAbstractText } from "@/components/review-sections/abstract-text";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 import { ResolveConflictButton } from "./resolve-conflict-button";
 
@@ -191,7 +192,7 @@ export function ScreeningSection({
               {currentStudy.keywords.length > 0 ? currentStudy.keywords.join(" · ") : "no keywords"}
             </span>
           </div>
-          <p className="abstractText">{highlightText(currentStudy.abstract)}</p>
+          <p className="abstractText">{renderAbstractText(currentStudy.abstract, highlightText)}</p>
           <textarea
             value={screeningNote}
             onChange={(event) => setScreeningNote(event.target.value)}

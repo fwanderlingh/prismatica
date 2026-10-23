@@ -30,6 +30,15 @@ try {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
   const loadSection = name => require(path.join(temp, `components/review-sections/${name}.js`));
+  const { renderAbstractText } = require(path.join(temp, "components/review-sections/abstract-text.js"));
+  const renderedAbstractMath = renderToStaticMarkup(React.createElement("p", null,
+    renderAbstractText("We measure $\\boldsymbol L_2$ and $\\boldsymbol L_\\infty$.", text => text)));
+  assert.ok(renderedAbstractMath.includes('class="katex"'));
+  assert.ok(renderedAbstractMath.includes('mathvariant="bold-italic">L</mi><mn>2</mn>'));
+  assert.ok(renderedAbstractMath.includes('mathvariant="normal">∞</mi>'));
+  const malformedAbstractMath = renderToStaticMarkup(React.createElement("p", null,
+    renderAbstractText("Keep $\\unknowncommand{x}$ literal.", text => text)));
+  assert.ok(malformedAbstractMath.includes("Keep $\\unknowncommand{x}$ literal."));
   const { NavigationProvider, PageLink } = require(path.join(temp, "components/navigation-link.js"));
   const { getMenuItemIndex } = require(path.join(temp, "lib/keyboardNavigation.js"));
   const { buildPathForState } = require(path.join(temp, "lib/navigation.js"));
