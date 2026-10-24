@@ -208,6 +208,7 @@ try {
   const attributes = new Map([["data-palette", "coffee"], ["data-theme", "dark"]]);
   const cookieJar = new Map([["prismatica_palette", "coffee"], ["prismatica_theme", "dark"]]);
   const effectSlots = [], pendingLayoutEffects = [], pendingEffects = [], requests = [], cookieWrites = [];
+  const paintedWidths = [];
   let effectCursor = 0, changed = false;
   const scheduleEffect = (queue, effect, dependencies) => {
     const index = effectCursor++, previous = effectSlots[index];
@@ -256,7 +257,10 @@ try {
         activeView: scope.activeView, currentUser: scope.currentUser, accountForm: scope.accountForm
       });
       pendingLayoutEffects.splice(0).forEach(effect => effect());
-      if (!changed) paints.push({ palette: attributes.get("data-palette"), theme: attributes.get("data-theme") });
+      if (!changed) {
+        paints.push({ palette: attributes.get("data-palette"), theme: attributes.get("data-theme") });
+        paintedWidths.push(attributes.get("data-width"));
+      }
       // Layout updates flush passive effects and synchronously render again
       // before paint; passive-only state updates allow the current frame to paint.
       pendingEffects.splice(0).forEach(effect => effect());
@@ -320,8 +324,12 @@ try {
   await scope.updateAccount({ preventDefault: noop }, "account");
   assert.equal(Object.hasOwn(requests.at(-1).body, "websitePalette"), false, "Save Account does not submit an unsaved palette preview");
   assert.equal(reloadUser().websitePalette, "coffee");
+  assert.equal(scope.currentUser.websiteWidth, "limited", "logout regression retains the signed-in user's limited-width preference");
+  const beforeLogoutPaints = paintedWidths.length;
   scope.isAuthenticated = false;
   render();
+  assert.deepEqual(paintedWidths.slice(beforeLogoutPaints), ["full"], "logout paints the full-width guest background immediately");
+  assert.equal(attributes.get("data-width"), "full", "logout clears the previous user's split limited-width background");
   assert.equal(attributes.get("data-palette"), "teal", "logout clears the previous user's palette");
   assert.equal(attributes.has("data-theme"), false, "resolved guest uses the OS appearance");
   assert.equal(cookieJar.has("prismatica_palette"), false, "resolved guest expires the account's palette cookie");
@@ -334,6 +342,7 @@ try {
   scope.currentUser = store.loginUser(legacyUser.email, password).currentUser;
   render();
   assert.equal(attributes.get("data-palette"), "coffee", "logging back in restores the account's saved palette");
+  assert.equal(attributes.get("data-width"), "limited", "logging back in restores the account's saved width");
   scope.activeView = "profile";
   scope.accountForm = { ...scope.accountForm, websiteTheme: "system" };
   render();

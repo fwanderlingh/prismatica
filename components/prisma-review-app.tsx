@@ -1530,12 +1530,14 @@ export function PrismaReviewApp() {
     document.cookie = `prismatica_theme=${theme}; ${options}`;
   }, [isAuthResolved, isAuthenticated, currentUser.websitePalette, currentUser.websiteTheme]);
 
-  useEffect(() => {
-    const width = isAuthenticated && activeView === "profile"
+  useLayoutEffect(() => {
+    if (!isAuthResolved) return;
+
+    const width = !isAuthenticated ? "full" : activeView === "profile"
       ? accountForm.websiteWidth
       : currentUser.websiteWidth ?? "full";
     document.documentElement.setAttribute("data-width", width);
-  }, [activeView, isAuthenticated, accountForm.websiteWidth, currentUser.websiteWidth]);
+  }, [activeView, isAuthResolved, isAuthenticated, accountForm.websiteWidth, currentUser.websiteWidth]);
 
   useEffect(() => {
     const hasProjectChanged = previousSettingsProjectIdRef.current !== selectedProject.id;

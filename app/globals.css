@@ -1536,14 +1536,13 @@ h3 {
 }
 
 .conflictButton.ownConflictsButton {
-  color: var(--muted);
+  color: var(--text-soft);
   border-color: var(--border);
   background: var(--surface-muted);
 }
 
 .conflictButton.ownConflictsButton:hover,
 .conflictButton.ownConflictsButton:focus-visible {
-  color: var(--text-soft);
   border-color: var(--border-strong);
   background: var(--surface-strong);
 }
