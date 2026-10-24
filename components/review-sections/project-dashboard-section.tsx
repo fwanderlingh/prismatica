@@ -1,13 +1,9 @@
 import { ViewLink } from "@/components/navigation-link";
-import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from "lucide-react";
-import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
-import { Badge, EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+import { Activity, ChevronRight, History, Settings, Users } from "lucide-react";
+import type { PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
+import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 import { getProjectPhaseProgress, getScreeningRecordTotal } from "@/lib/workflowSelectors";
 import { ResolveConflictButton } from "./resolve-conflict-button";
-
-type WorkflowConflict = ProjectWorkflowConflict & {
-  studyIndex?: number;
-};
 
 type ProjectUserStatRow = {
   user: AppUser;
@@ -22,7 +18,7 @@ type ProjectUserStatRow = {
 type ProjectDashboardSectionProps = {
   selectedProject: ReviewProject;
   currentUserId: string;
-  workflowConflicts: WorkflowConflict[];
+  workflowConflicts: ProjectWorkflowConflict[];
   recordsIdentified: number;
   activeCounts: PrismaCounts;
   exportFailedCount: number;
@@ -31,10 +27,6 @@ type ProjectDashboardSectionProps = {
   projectUserStats: ProjectUserStatRow[];
   projectScreeningStudies: Study[];
   projectReportQueue: Report[];
-  openConflict: (conflict: WorkflowConflict) => void;
-  formatConflictStage: (stage: WorkflowConflict["stage"]) => string;
-  decisionTone: (decision: Decision["decisionValue"]) => "success" | "warning" | "danger" | "info" | "neutral";
-  formatDecision: (decision: Decision["decisionValue"]) => string;
   getWorkflowStepState: (step: "imports" | "screening" | "fullText" | "extraction", stage: ReviewProject["stage"]) => "complete" | "active" | "pending" | "warning";
   formatProjectPhase: (stage: ReviewProject["stage"]) => string;
   projectPhaseStatusTone: (stage: ReviewProject["stage"]) => "secure" | "info" | "warning" | "danger";
@@ -59,10 +51,6 @@ export function ProjectDashboardSection({
   projectUserStats,
   projectScreeningStudies,
   projectReportQueue,
-  openConflict,
-  formatConflictStage,
-  decisionTone,
-  formatDecision,
   getWorkflowStepState,
   formatProjectPhase,
   projectPhaseStatusTone,
@@ -74,7 +62,9 @@ export function ProjectDashboardSection({
   onOpenAudit,
   onNavigate
 }: ProjectDashboardSectionProps) {
-  const alertCount = workflowConflicts.length;
+  const conflictStage = selectedProject.stage === "screening" ? "title_abstract" : selectedProject.stage === "full_text" ? "full_text" : null;
+  const conflictView = selectedProject.stage === "screening" ? "screeningConflicts" : selectedProject.stage === "full_text" ? "fullTextConflicts" : null;
+  const alertCount = workflowConflicts.filter((conflict) => conflict.projectId === selectedProject.id && conflict.stage === conflictStage).length;
   const phaseProgress = getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber);
   const screeningTotal = getScreeningRecordTotal(selectedProject, activeCounts);
   const phaseActions: Record<ReviewProject["stage"], { label: string; view: ViewKey }> = {
@@ -99,8 +89,8 @@ export function ProjectDashboardSection({
         </div>
         <div className="overviewSideStack">
           <div className="toolbarCluster">
-            {alertCount > 0 ? (
-              <ResolveConflictButton count={alertCount} view={workflowConflicts[0].stage === "full_text" && workflowConflicts[0].reportId ? "fullText" : "screening"} onResolve={() => openConflict(workflowConflicts[0])} />
+            {conflictView && alertCount > 0 ? (
+              <ResolveConflictButton count={alertCount} view={conflictView} onResolve={() => onNavigate(conflictView)} />
             ) : null}
             <ViewLink className="primaryButton" view={phaseAction.view} onNavigate={() => onNavigate(phaseAction.view)}>
               <ChevronRight size={17} />
@@ -113,46 +103,6 @@ export function ProjectDashboardSection({
           </div>
         </div>
       </section>
-
-      {workflowConflicts.length > 0 ? (
-        <section className="panel">
-          <SectionTitle icon={AlertTriangle} title="Conflict Resolution" action={`${workflowConflicts.length} open`} />
-          <div className="conflictList">
-            {workflowConflicts.map((conflict) => {
-              const visibleDecisions = conflict.decisions.filter((decision) => !selectedProject.blindMode || decision.userId === currentUserId);
-              return (
-                <article className="conflictItem" key={conflict.id}>
-                  <div className="conflictMain">
-                    <div>
-                      <Badge label={formatConflictStage(conflict.stage)} tone={conflict.stage === "full_text" ? "info" : "warning"} />
-                      <h3>{conflict.title}</h3>
-                      <p>{conflict.subtitle}</p>
-                    </div>
-                    <div className="voteStrip" aria-label={`${conflict.title} votes`}>
-                      {visibleDecisions.length > 0 ? (
-                        visibleDecisions.map((decision) => (
-                          <span className={`votePill ${decisionTone(decision.decisionValue)}`} key={decision.id}>
-                            <strong>{decision.userName}</strong>
-                            {formatDecision(decision.decisionValue)}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="votePill neutral">
-                          {selectedProject.blindMode ? <><strong>Blind mode</strong>Vote details hidden</> : "No current votes"}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <ViewLink className="ghostButton" view={conflict.stage === "full_text" && conflict.reportId ? "fullText" : "screening"} onNavigate={() => openConflict(conflict)}>
-                    <ChevronRight size={17} />
-                    Resolve
-                  </ViewLink>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
 
       <section className="dashboardGrid">
         <div className="panel largePanel workflowPanel">

@@ -115,6 +115,11 @@ deletion uses a browser confirmation. PDF upload is optional for full-text decis
 7. Define extraction templates and collect reviewer submissions.
 8. Build extraction consensus and validate/export reporting output.
 
+**Resolve Conflicts** opens a list for the current phase: **Screening Conflicts**
+or **Full Text Conflicts**. Each review queue opens its own conflict list;
+Project Overview opens the list for the project's current phase. Choose a
+paper's **Resolve** action to review it, or return to the queue with the back link.
+
 ## Architecture Snapshot
 
 - Frontend: Next.js App Router + React UI

@@ -26,10 +26,14 @@ export function buildPathForState(view: ViewKey, projectId: string) {
       return `/projects/${encodeURIComponent(projectId)}/dedup`;
     case "screening":
       return `/projects/${encodeURIComponent(projectId)}/screening`;
+    case "screeningConflicts":
+      return `/projects/${encodeURIComponent(projectId)}/screening/conflicts`;
     case "screeningReviewed":
       return `/projects/${encodeURIComponent(projectId)}/screening/reviewed`;
     case "fullText":
       return `/projects/${encodeURIComponent(projectId)}/full-text`;
+    case "fullTextConflicts":
+      return `/projects/${encodeURIComponent(projectId)}/full-text/conflicts`;
     case "fullTextReviewed":
       return `/projects/${encodeURIComponent(projectId)}/full-text/reviewed`;
     case "pdfUpload":

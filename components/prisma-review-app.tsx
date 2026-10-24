@@ -80,6 +80,7 @@ import { ExtractionSection } from "./review-sections/extraction-section";
 import { ConsensusSection } from "./review-sections/consensus-section";
 import { DashboardSection } from "./review-sections/dashboard-section";
 import { ProjectDashboardSection } from "./review-sections/project-dashboard-section";
+import { ConflictsSection } from "./review-sections/conflicts-section";
 import { ExportsSection } from "./review-sections/exports-section";
 import { AuditTrailSection } from "./review-sections/audit-trail-section";
 import { AboutSection } from "./review-sections/about-section";
@@ -176,8 +177,10 @@ const reviewPhaseNavKeys = new Set<ViewKey>([
   "imports",
   "dedup",
   "screening",
+  "screeningConflicts",
   "screeningReviewed",
   "fullText",
+  "fullTextConflicts",
   "fullTextReviewed",
   "pdfUpload",
   "extraction",
@@ -190,8 +193,10 @@ const viewKeySet = new Set<ViewKey>([
   "imports",
   "dedup",
   "screening",
+  "screeningConflicts",
   "screeningReviewed",
   "fullText",
+  "fullTextConflicts",
   "fullTextReviewed",
   "pdfUpload",
   "extraction",
@@ -228,7 +233,9 @@ function normalizePathname(pathname: string) {
 
 function getViewLabel(view: ViewKey) {
   const subpageLabels: Partial<Record<ViewKey, string>> = {
+    screeningConflicts: "Screening Conflicts",
     screeningReviewed: "Screening Reviewed",
+    fullTextConflicts: "Full Text Conflicts",
     fullTextReviewed: "Full text reviewed",
     pdfUpload: "PDFs Upload",
     extractionReviewed: "Extraction Reviewed"
@@ -275,9 +282,11 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
       imports: "imports",
       dedup: "dedup",
       screening: "screening",
+      "screening/conflicts": "screeningConflicts",
       "screening/reviewed": "screeningReviewed",
       "screen/title-abstract": "screening",
       "full-text": "fullText",
+      "full-text/conflicts": "fullTextConflicts",
       "full-text/reviewed": "fullTextReviewed",
       "full-text/pdf-upload": "pdfUpload",
       extraction: "extraction",
@@ -3173,10 +3182,14 @@ export function PrismaReviewApp() {
         return renderDedup();
       case "screening":
         return renderScreening();
+      case "screeningConflicts":
+        return renderConflicts("title_abstract");
       case "screeningReviewed":
         return renderScreeningReviewed();
       case "fullText":
         return renderFullText();
+      case "fullTextConflicts":
+        return renderConflicts("full_text");
       case "fullTextReviewed":
         return renderFullTextReviewed();
       case "pdfUpload":
@@ -3277,12 +3290,8 @@ export function PrismaReviewApp() {
         projectPhaseStatusTone={projectPhaseStatusTone}
         formatMaybePolicy={formatMaybePolicy}
         getWorkflowStepState={getSelectedProjectWorkflowStepState}
-        formatConflictStage={formatConflictStage}
-        decisionTone={decisionTone}
-        formatDecision={formatDecision}
         formatAuditTime={formatAuditTime}
         formatAuditEntityLabel={(event, project, studies, reports) => formatAuditEntityLabel(event, project, studies, reports, projectDedupCandidates)}
-        openConflict={openConflict}
         onOpenSettings={() => navigateToProjectView("settings")}
         onOpenAudit={() => navigateToProjectView("audit")}
         onNavigate={navigateToProjectView}
@@ -3381,7 +3390,7 @@ export function PrismaReviewApp() {
     return (
       <ScreeningSection
         conflictCount={conflicts.length}
-        onResolveConflict={() => conflicts[0] && openConflict(conflicts[0])}
+        onResolveConflict={() => navigateToProjectView("screeningConflicts")}
         projectScreeningStudies={activeScreeningStudies}
         totalScreeningStudyCount={projectScreeningStudies.length}
         screeningProgress={screeningProgress}
@@ -3415,6 +3424,25 @@ export function PrismaReviewApp() {
     );
   }
 
+  function renderConflicts(stage: WorkflowConflict["stage"]) {
+    return (
+      <ConflictsSection
+        selectedProject={selectedProject}
+        currentUserId={currentUser.id}
+        stage={stage}
+        workflowConflicts={workflowConflicts}
+        openConflict={openConflict}
+        canOpenConflict={(conflict) => conflict.stage === "full_text"
+          ? activeFullTextReports.some((report) => report.id === conflict.reportId)
+          : activeScreeningStudies.some((study) => study.id === conflict.studyId)}
+        formatConflictStage={formatConflictStage}
+        decisionTone={decisionTone}
+        formatDecision={formatDecision}
+        onBackToQueue={() => navigateToProjectView(stage === "full_text" ? "fullText" : "screening")}
+      />
+    );
+  }
+
   function renderScreeningReviewed() {
     return (
       <ReviewedItemsSection
@@ -3441,7 +3469,7 @@ export function PrismaReviewApp() {
     return (
       <FullTextSection
         conflictCount={conflicts.length}
-        onResolveConflict={() => conflicts[0] && openConflict(conflicts[0])}
+        onResolveConflict={() => navigateToProjectView("fullTextConflicts")}
         hasProjectSeedData={hasProjectSeedData}
         phaseProgress={getProjectPhaseProgress({ ...selectedProject, stage: "full_text" }, activeCounts, projectReportQueue, formatNumber)}
         projectReportQueue={activeFullTextReports}
@@ -4095,10 +4123,10 @@ function getProjectPhaseIndex(stage: ReviewProject["stage"]) {
 }
 
 function getProjectPhaseAccessView(view: ViewKey): ViewKey {
-  if (view === "screeningReviewed") {
+  if (view === "screeningReviewed" || view === "screeningConflicts") {
     return "screening";
   }
-  if (view === "fullTextReviewed" || view === "pdfUpload") {
+  if (view === "fullTextReviewed" || view === "fullTextConflicts" || view === "pdfUpload") {
     return "fullText";
   }
   if (view === "extractionReviewed") {

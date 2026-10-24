@@ -223,10 +223,10 @@ export function AppSidebar({
 }
 
 function getProjectNavKey(view: ViewKey) {
-  if (view === "screeningReviewed") {
+  if (view === "screeningReviewed" || view === "screeningConflicts") {
     return "screening";
   }
-  if (view === "fullTextReviewed" || view === "pdfUpload") {
+  if (view === "fullTextReviewed" || view === "fullTextConflicts" || view === "pdfUpload") {
     return "fullText";
   }
   if (view === "extractionReviewed") {

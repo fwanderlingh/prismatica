@@ -126,7 +126,7 @@ export function ScreeningSection({
             <p className="subtle">Screening starts after imports are committed and canonical studies are created.</p>
           </div>
           <div className="buttonRow">
-            <ResolveConflictButton count={conflictCount} view="screening" onResolve={onResolveConflict} />
+            <ResolveConflictButton count={conflictCount} view="screeningConflicts" onResolve={onResolveConflict} />
             <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
@@ -163,7 +163,7 @@ export function ScreeningSection({
           </div>
         </div>
         <div className="buttonRow">
-          <ResolveConflictButton count={conflictCount} view="screening" onResolve={onResolveConflict} />
+          <ResolveConflictButton count={conflictCount} view="screeningConflicts" onResolve={onResolveConflict} />
           <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
             <History size={16} />
             Reviewed {reviewedCount}

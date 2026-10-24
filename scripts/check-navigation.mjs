@@ -15,7 +15,7 @@ const originalLoad = Module._load;
 const originalDocument = globalThis.document;
 const originalWindow = globalThis.window;
 try {
-  const sections = ["app-shell", "app-sidebar", "review-queue", "screening-section", "reviewed-items-section", "dedup-section", "full-text-section", "extraction-section", "project-dashboard-section"];
+  const sections = ["app-shell", "app-sidebar", "review-queue", "screening-section", "reviewed-items-section", "dedup-section", "full-text-section", "extraction-section", "project-dashboard-section", "conflicts-section"];
   const config = path.join(temp, "tsconfig.json");
   fs.writeFileSync(config, JSON.stringify({ compilerOptions: {
     target: "ES2020", module: "Node16", moduleResolution: "Node16", jsx: "react-jsx", esModuleInterop: true,
@@ -144,6 +144,8 @@ try {
   }
 
   assert.equal(buildPathForState("pdfUpload", "review / one"), "/projects/review%20%2F%20one/full-text/pdf-upload");
+  assert.equal(buildPathForState("screeningConflicts", "review / one"), "/projects/review%20%2F%20one/screening/conflicts");
+  assert.equal(buildPathForState("fullTextConflicts", "review / one"), "/projects/review%20%2F%20one/full-text/conflicts");
   const sidebarProps = { brandName: "Prismatica", brandTagline: "Reviews", brandLogoAlt: "Home", isSidebarCollapsed: true,
     isMobileNavOpen: false, isProjectView: true, activeView: "screening", currentUser: user, selectedProject: project,
     globalNavItems: [{ key: "dashboard", label: "Home", path: "/dashboard" }],
@@ -154,6 +156,16 @@ try {
   assert.match(sidebarHtml, /<a[^>]*aria-current="page"[^>]*aria-label="Screening"[^>]*href="[^"]+\/screening"/);
   assert.match(sidebarHtml, /<span(?=[^>]*aria-label="Extraction")(?=[^>]*role="link")(?=[^>]*aria-disabled="true")(?=[^>]*tabindex="-1")[^>]*>/);
   assert.match(sidebarHtml, /href="\/dashboard"/);
+  for (const [activeView, queueView, label, route] of [
+    ["screeningConflicts", "screening", "Screening", "screening"],
+    ["fullTextConflicts", "fullText", "Full text", "full-text"]
+  ]) {
+    const conflictsSidebar = html(loadSection("app-sidebar").AppSidebar, {
+      ...sidebarProps, activeView,
+      projectNavItems: [{ key: queueView, label, path: "" }], reviewPhaseNavKeys: new Set([queueView])
+    });
+    assert.match(conflictsSidebar, new RegExp(`<a(?=[^>]*aria-current="page")(?=[^>]*aria-label="${label}")(?=[^>]*href="[^"]+/${route}")[^>]*>`), `${activeView}: its phase stays selected in the sidebar`);
+  }
   assert.equal(buildPathForState("systemSettings", project.id), "/admin/settings");
   assert.equal(buildPathForState("storageInfo", project.id), "/admin/storage");
   const adminNavItems = [
@@ -234,38 +246,56 @@ try {
   assert.ok(extractionHtml.indexOf("extractionFormPanel") < extractionHtml.indexOf("pdfPane"));
   const overviewProps = { selectedProject: { ...project, stage: "full_text" }, currentUserId: user.id, workflowConflicts: [], recordsIdentified: 10, activeCounts: data.prismaCounts,
     exportFailedCount: 0, projectEvents: [], latestProjectEvents: [], projectUserStats: [], projectScreeningStudies: [], projectReportQueue: [],
-    openConflict: noop, formatConflictStage: String, decisionTone: () => "info", formatDecision: String, getWorkflowStepState: () => "pending",
+    getWorkflowStepState: () => "pending",
     formatProjectPhase: String, projectPhaseStatusTone: () => "info", formatMaybePolicy: String, formatAuditEntityLabel: String,
     formatAuditTime: String, formatNumber: String, onOpenSettings: noop, onOpenAudit: noop, onNavigate: noop };
   const overviewHtml = html(loadSection("project-dashboard-section").ProjectDashboardSection, overviewProps);
   assert.doesNotMatch(overviewHtml, /conflictButton/);
-  const conflict = { id: "conflict", stage: "title_abstract", studyId: study.id, title: study.title, subtitle: "Resolve conflict", decisions: [] };
+  const conflict = { id: "conflict", projectId: project.id, stage: "title_abstract", studyId: study.id, title: study.title, subtitle: "Resolve conflict", decisions: [] };
+  const fullTextConflict = { ...conflict, id: "full-text-conflict", stage: "full_text", reportId: report.id };
   const overviewWithConflict = html(loadSection("project-dashboard-section").ProjectDashboardSection, {
     ...overviewProps, selectedProject: { ...project, stage: "screening" }, workflowConflicts: [conflict]
   });
-  assert.match(overviewWithConflict, /class="ghostButton conflictButton"[^>]*href="[^"]+\/screening"/);
+  assert.match(overviewWithConflict, /class="ghostButton conflictButton"[^>]*href="[^"]+\/screening\/conflicts"/);
   assert.match(overviewWithConflict, /Continue screening/);
   assert.ok(overviewWithConflict.indexOf("conflictButton") < overviewWithConflict.indexOf("Continue screening"), "resolve action appears before the continue action");
+  assert.doesNotMatch(overviewWithConflict, /class="conflictList"|class="conflictItem"/, "overview no longer lists conflicts");
+  for (const [stage, route] of [["screening", "screening"], ["full_text", "full-text"]]) {
+    const mixedOverview = html(loadSection("project-dashboard-section").ProjectDashboardSection, {
+      ...overviewProps, selectedProject: { ...project, stage },
+      workflowConflicts: [fullTextConflict, conflict, { ...conflict, id: "screening-second" }, { ...conflict, id: "other-project-conflict", projectId: "another-project" }]
+    });
+    assert.match(mixedOverview, new RegExp(`class="ghostButton conflictButton"[^>]*href="[^"]+/${route}/conflicts"`), `${stage}: current phase determines the destination rather than the first conflict`);
+    assert.match(mixedOverview, stage === "screening" ? /Resolve 2 conflicts/ : /Resolve 1 conflict/, `${stage}: button count belongs to the current phase`);
+  }
+  for (const stage of ["setup", "import", "extraction", "complete"]) {
+    assert.doesNotMatch(html(loadSection("project-dashboard-section").ProjectDashboardSection, {
+      ...overviewProps, selectedProject: { ...project, stage }, workflowConflicts: [conflict, fullTextConflict]
+    }), /conflictButton/, `${stage}: no unrelated phase conflict shortcut appears`);
+  }
+  assert.doesNotMatch(html(loadSection("project-dashboard-section").ProjectDashboardSection, {
+    ...overviewProps, selectedProject: { ...project, stage: "full_text" }, workflowConflicts: [conflict]
+  }), /conflictButton/, "a phase without conflicts does not link to another phase's conflicts");
   assert.doesNotMatch(screeningHtml, /conflictButton/);
   assert.doesNotMatch(fullTextHtml, /conflictButton/);
   for (const empty of [false, true]) {
     const screeningConflictHtml = html(loadSection("screening-section").ScreeningSection, {
       ...screeningProps, conflictCount: 2, projectScreeningStudies: empty ? [] : screeningProps.projectScreeningStudies
     });
-    assert.match(screeningConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/screening"/);
+    assert.match(screeningConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/screening\/conflicts"/);
     assert.match(screeningConflictHtml, /Resolve 2 conflicts/);
     const fullTextConflictHtml = html(loadSection("full-text-section").FullTextSection, {
       ...fullTextProps, conflictCount: 1, projectReportQueue: empty ? [] : [report]
     });
-    assert.match(fullTextConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/full-text"/);
+    assert.match(fullTextConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/full-text\/conflicts"/);
     assert.match(fullTextConflictHtml, /Resolve 1 conflict/);
   }
   const { ResolveConflictButton } = loadSection("resolve-conflict-button");
   let resolved = false;
-  const conflictButton = ResolveConflictButton({ count: 1, view: "screening", onResolve: () => resolved = true });
+  const conflictButton = ResolveConflictButton({ count: 1, view: "screeningConflicts", onResolve: () => resolved = true });
   conflictButton.props.onNavigate();
-  assert.equal(resolved, true, "resolve action calls the existing conflict navigation handler");
-  assert.equal(ResolveConflictButton({ count: 0, view: "screening", onResolve: noop }), null);
+  assert.equal(resolved, true, "resolve action calls the conflicts page navigation handler");
+  assert.equal(ResolveConflictButton({ count: 0, view: "screeningConflicts", onResolve: noop }), null);
   assert.match(overviewHtml, /<ol class="workflowMap" aria-label="Review workflow">/);
   assert.equal((overviewHtml.match(/<li class="workflowNode /g) ?? []).length, 6);
   assert.match(overviewHtml, /<a class="primaryButton" href="[^"]+\/full-text">/);
@@ -467,6 +497,55 @@ try {
     return dependencies.length === 2 && dependencies.includes("pathname") && dependencies.includes("pendingRoutePath");
   });
   const sourceText = node => appSource.slice(node.start, node.end);
+  const reviewPhaseKeys = appProgram.body.find(node => node.type === "VariableDeclaration" && node.declarations.some(declaration => declaration.id.name === "reviewPhaseNavKeys"));
+  const phaseNavigationCode = babel.core().transformSync([
+    reviewPhaseKeys,
+    ...["getProjectPhaseAccessView", "getViewLabel"].map(name => findFunction(appProgram.body, name)),
+    findFunction(appFunction.body.body, "canNavigateToProjectView")
+  ].map(sourceText).join("\n"), {
+    filename: "conflict-phase-navigation.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()]
+  }).code;
+  const phaseNavigation = {
+    selectedProject: { requireSequentialPhases: true }, sequentialPhaseAccess: { screening: true, fullText: false },
+    globalNavItems: [], projectNavItems: []
+  };
+  vm.runInContext(phaseNavigationCode, vm.createContext(phaseNavigation));
+  for (const [view, queue, label] of [
+    ["screeningConflicts", "screening", "Screening Conflicts"], ["fullTextConflicts", "fullText", "Full Text Conflicts"]
+  ]) {
+    assert.equal(phaseNavigation.getProjectPhaseAccessView(view), queue);
+    assert.equal(phaseNavigation.getViewLabel(view), label);
+    assert.equal(phaseNavigation.canNavigateToProjectView(view), phaseNavigation.sequentialPhaseAccess[queue], `${view}: conflict page follows its phase access`);
+  }
+  phaseNavigation.sequentialPhaseAccess = { screening: false, fullText: true };
+  assert.equal(phaseNavigation.canNavigateToProjectView("screeningConflicts"), false);
+  assert.equal(phaseNavigation.canNavigateToProjectView("fullTextConflicts"), true);
+  phaseNavigation.selectedProject.requireSequentialPhases = false;
+  assert.equal(phaseNavigation.canNavigateToProjectView("screeningConflicts"), true, "parallel reviews retain access to screening conflicts");
+
+  for (const [renderer, destination] of [["renderScreening", "screeningConflicts"], ["renderFullText", "fullTextConflicts"]]) {
+    const renderFunction = findFunction(appFunction.body.body, renderer);
+    const returnedSection = renderFunction.body.body.find(node => node.type === "ReturnStatement").argument;
+    const handler = returnedSection.openingElement.attributes.find(node => node.name?.name === "onResolveConflict").value.expression;
+    const handlerCode = babel.core().transformSync(`(${sourceText(handler)})`, {
+      filename: "conflict-header-handler.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()]
+    }).code;
+    const destinations = [];
+    vm.runInNewContext(handlerCode, { navigateToProjectView: view => destinations.push(view) })();
+    assert.deepEqual(destinations, [destination], `${renderer}: Resolve opens the list rather than selecting its first item`);
+  }
+
+  const checkoutDeclarationIndex = appFunction.body.body.findIndex(node => node.type === "VariableDeclaration" && node.declarations.some(declaration => declaration.id.name === "checkoutTarget"));
+  const checkoutSelectionCode = babel.core().transformSync([
+    sourceText(appFunction.body.body[checkoutDeclarationIndex]), sourceText(appFunction.body.body[checkoutDeclarationIndex + 1]), "checkoutTarget;"
+  ].join("\n"), { filename: "conflict-checkout-target.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()] }).code;
+  for (const activeView of ["screeningConflicts", "fullTextConflicts", "screening", "fullText"]) {
+    const target = vm.runInNewContext(checkoutSelectionCode, {
+      activeView, isAuthenticated: true, isAuthResolved: true, selectedProject: project, currentStudy: study,
+      isCurrentStudyInActiveScreeningQueue: true, isActiveReportInActiveFullTextQueue: true, activeReport: report
+    });
+    assert.equal(target === null, activeView.endsWith("Conflicts"), `${activeView}: browsing a conflict list does not reserve a paper`);
+  }
   const reviewedSelector = appFunction.body.body
     .filter(node => node.type === "VariableDeclaration")
     .flatMap(node => node.declarations)
@@ -723,6 +802,22 @@ try {
   assert.equal(deepAuth.scope.shouldShowAuthLoader(), true);
   deepAuth.commitRoute(deepLink);
   assert.equal(deepAuth.scope.shouldShowAuthLoader(), false);
+  for (const view of ["screeningConflicts", "fullTextConflicts"]) {
+    const conflictDeepLink = `${buildPathForState(view, "review / one")}?status=open`;
+    const conflictAuth = authRouteHarness({ url: conflictDeepLink, authenticated: false });
+    const parsedConflictRoute = conflictAuth.scope.parseRouteState(conflictDeepLink.split("?")[0], "?status=open");
+    assert.equal(parsedConflictRoute.view, view);
+    assert.equal(parsedConflictRoute.projectId, "review / one");
+    assert.equal(parsedConflictRoute.isKnownRoute, true, `${view}: direct visits are known review routes`);
+    const conflictSignIn = `/sign-in?redirect=${encodeURIComponent(conflictDeepLink)}`;
+    assert.equal(conflictAuth.routeRequests.at(-1).target, conflictSignIn, `${view}: signed-out deep links retain their destination`);
+    conflictAuth.commitRoute(conflictSignIn);
+    conflictAuth.scope.isAuthenticated = true;
+    conflictAuth.render();
+    assert.equal(conflictAuth.routeRequests.at(-1).target, conflictDeepLink, `${view}: sign-in returns to the requested conflict page`);
+    conflictAuth.commitRoute(conflictDeepLink);
+    assert.equal(conflictAuth.scope.shouldShowAuthLoader(), false);
+  }
   const unresolvedAuth = authRouteHarness({ authenticated: false });
   unresolvedAuth.scope.isAuthResolved = false;
   unresolvedAuth.routeRequests.length = 0;
@@ -730,7 +825,7 @@ try {
   assert.deepEqual(unresolvedAuth.routeRequests, [], "unresolved sessions do not redirect prematurely");
   assert.equal(unresolvedAuth.scope.shouldShowAuthLoader(), true);
 
-  console.log("Navigation checks passed: auth logout/login redirects and loading with delayed router commits, safe Home fallback and review deep links, European reviewed timestamps and newest-first citations, deletion redirects with delayed router commits, missing-project access checks, link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
+  console.log("Navigation checks passed: dedicated phase conflict pages, overview and queue links, conflict deep links through sign-in, phase access and sidebar selection, no checkout while listing conflicts, auth logout/login redirects and loading with delayed router commits, safe Home fallback and review deep links, European reviewed timestamps and newest-first citations, deletion redirects with delayed router commits, missing-project access checks, link URLs, locked phases, skip link, keyboard menus, navigation scroll reset and history/anchor preservation, mobile queue advancement scroll and reduced motion, viewport loading overlay, mobile navigation focus, queue disclosure and content order, and responsive CSS at 320–1440px.");
 } finally {
   Module._resolveFilename = originalResolve; Module._load = originalLoad;
   if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;

@@ -131,7 +131,7 @@ export function FullTextSection({
             <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
           </div>
           <div className="buttonRow">
-            <ResolveConflictButton count={conflictCount} view="fullText" onResolve={onResolveConflict} />
+            <ResolveConflictButton count={conflictCount} view="fullTextConflicts" onResolve={onResolveConflict} />
             <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
@@ -246,7 +246,7 @@ export function FullTextSection({
         <ReportPicker
           action={
             <div className="buttonRow">
-              <ResolveConflictButton count={conflictCount} view="fullText" onResolve={onResolveConflict} />
+              <ResolveConflictButton count={conflictCount} view="fullTextConflicts" onResolve={onResolveConflict} />
               <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
                 <History size={16} />
                 Reviewed {reviewedCount}
