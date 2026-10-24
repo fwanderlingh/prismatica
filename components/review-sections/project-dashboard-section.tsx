@@ -64,7 +64,7 @@ export function ProjectDashboardSection({
 }: ProjectDashboardSectionProps) {
   const conflictStage = selectedProject.stage === "screening" ? "title_abstract" : selectedProject.stage === "full_text" ? "full_text" : null;
   const conflictView = selectedProject.stage === "screening" ? "screeningConflicts" : selectedProject.stage === "full_text" ? "fullTextConflicts" : null;
-  const alertCount = workflowConflicts.filter((conflict) => conflict.projectId === selectedProject.id && conflict.stage === conflictStage).length;
+  const phaseConflicts = workflowConflicts.filter((conflict) => conflict.projectId === selectedProject.id && conflict.stage === conflictStage);
   const phaseProgress = getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber);
   const screeningTotal = getScreeningRecordTotal(selectedProject, activeCounts);
   const phaseActions: Record<ReviewProject["stage"], { label: string; view: ViewKey }> = {
@@ -89,8 +89,8 @@ export function ProjectDashboardSection({
         </div>
         <div className="overviewSideStack">
           <div className="toolbarCluster">
-            {conflictView && alertCount > 0 ? (
-              <ResolveConflictButton count={alertCount} view={conflictView} onResolve={() => onNavigate(conflictView)} />
+            {conflictView && phaseConflicts.length > 0 ? (
+              <ResolveConflictButton conflicts={phaseConflicts} currentUserId={currentUserId} view={conflictView} onResolve={() => onNavigate(conflictView)} />
             ) : null}
             <ViewLink className="primaryButton" view={phaseAction.view} onNavigate={() => onNavigate(phaseAction.view)}>
               <ChevronRight size={17} />

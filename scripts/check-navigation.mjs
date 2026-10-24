@@ -219,7 +219,7 @@ try {
     formatDecision: String, decisionTone: () => "info", currentStudy: study, stageEvaluation: { state: "open", label: "Open" },
     screeningNote: "", setScreeningNote: noop, screeningMessage: "", canRecordScreeningDecision: true, checkoutError: "", currentStageDecisions: [],
     pendingScreeningDecision: null, isUndoingScreeningDecision: false, reviewedCount: 2, onOpenReviewed: noop, formatConflictResolutionHint: String,
-    selectedProjectAbstractRequiredVotes: 2, addScreeningDecision: noop, undoLastDecision: noop, conflictCount: 0, onResolveConflict: noop };
+    selectedProjectAbstractRequiredVotes: 2, addScreeningDecision: noop, undoLastDecision: noop, conflicts: [], onResolveConflict: noop };
   const dedupProps = { projectImportBatches: [], projectScreeningStudies: data.screeningStudies, recordsIdentified: 10,
     projectDedupCandidates: data.dedupCandidates, pendingDedupAction: null, dedupMessage: "", isRejectingAllDedupCandidates: false,
     updateDedupCandidate: noop, updateDedupStudy: noop, rejectAllPendingDedupCandidates: noop };
@@ -228,7 +228,7 @@ try {
     setActiveReportId: noop, setFullTextMessage: noop, pdfInputRef: { current: null }, pendingFullTextAction: null, uploadReportPdf: noop,
     updateFullTextReport: noop, formatDecision: String, formatConflictResolutionHint: String, decisionTone: () => "info", fullTextReason: "",
     setFullTextReason: noop, exclusionReasons: [], studies: data.screeningStudies, reviewedCount: 0, onOpenReviewed: noop, onOpenPdfUpload: noop,
-    conflictCount: 0, onResolveConflict: noop };
+    conflicts: [], onResolveConflict: noop };
   const extractionProps = { activeCounts: data.prismaCounts, projectReportQueue: [report], projectExtractionStudyIds: new Set([study.id]), selectedProject: project,
     currentUser: user, extractionMessage: "", activeExtractionTemplate: { id: "template", title: "Review template", fields: [] }, isEditingExtractionTemplate: false,
     projectExtractionReports: [report], totalExtractionReportCount: 1, setActiveView: noop, setActiveExtractionReportId: noop, setActiveReportId: noop,
@@ -280,22 +280,31 @@ try {
   assert.doesNotMatch(fullTextHtml, /conflictButton/);
   for (const empty of [false, true]) {
     const screeningConflictHtml = html(loadSection("screening-section").ScreeningSection, {
-      ...screeningProps, conflictCount: 2, projectScreeningStudies: empty ? [] : screeningProps.projectScreeningStudies
+      ...screeningProps, conflicts: [conflict, { ...conflict, id: "second-screening-conflict" }], projectScreeningStudies: empty ? [] : screeningProps.projectScreeningStudies
     });
     assert.match(screeningConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/screening\/conflicts"/);
     assert.match(screeningConflictHtml, /Resolve 2 conflicts/);
     const fullTextConflictHtml = html(loadSection("full-text-section").FullTextSection, {
-      ...fullTextProps, conflictCount: 1, projectReportQueue: empty ? [] : [report]
+      ...fullTextProps, conflicts: [fullTextConflict], projectReportQueue: empty ? [] : [report]
     });
     assert.match(fullTextConflictHtml, /class="ghostButton conflictButton"[^>]*href="[^"]+\/full-text\/conflicts"/);
     assert.match(fullTextConflictHtml, /Resolve 1 conflict/);
   }
   const { ResolveConflictButton } = loadSection("resolve-conflict-button");
   let resolved = false;
-  const conflictButton = ResolveConflictButton({ count: 1, view: "screeningConflicts", onResolve: () => resolved = true });
+  const conflictButton = ResolveConflictButton({ conflicts: [conflict], currentUserId: user.id, view: "screeningConflicts", onResolve: () => resolved = true });
   conflictButton.props.onNavigate();
   assert.equal(resolved, true, "resolve action calls the conflicts page navigation handler");
-  assert.equal(ResolveConflictButton({ count: 0, view: "screeningConflicts", onResolve: noop }), null);
+  resolved = false;
+  const ownConflictButton = ResolveConflictButton({
+    conflicts: [{ ...conflict, decisions: [{ userId: user.id, isCurrent: true }] }], currentUserId: user.id,
+    view: "screeningConflicts", onResolve: () => resolved = true
+  });
+  assert.match(ownConflictButton.props.className, /\bownConflictsButton\b/);
+  assert.equal(ownConflictButton.props.children.at(-1), "Conflicts", "own-only shortcut uses the plain label");
+  ownConflictButton.props.onNavigate();
+  assert.equal(resolved, true, "the neutral shortcut still opens the conflicts page");
+  assert.equal(ResolveConflictButton({ conflicts: [], currentUserId: user.id, view: "screeningConflicts", onResolve: noop }), null);
   assert.match(overviewHtml, /<ol class="workflowMap" aria-label="Review workflow">/);
   assert.equal((overviewHtml.match(/<li class="workflowNode /g) ?? []).length, 6);
   assert.match(overviewHtml, /<a class="primaryButton" href="[^"]+\/full-text">/);

@@ -11,7 +11,7 @@ import {
   Upload,
   XCircle
 } from "lucide-react";
-import { type AppUser, type Decision, type Report, type ReviewProject, screeningStudies, type Study } from "@/lib/prismaData";
+import { type AppUser, type Decision, type ProjectWorkflowConflict, type Report, type ReviewProject, screeningStudies, type Study } from "@/lib/prismaData";
 import { type DecisionValue, evaluateStage } from "@/lib/workflow";
 import type { ProjectPhaseProgress } from "@/lib/workflowSelectors";
 import { EmptyState, ReviewReservationNotice, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
@@ -50,7 +50,7 @@ type FullTextSectionProps = {
   studies: Study[];
   reviewedCount: number;
   onOpenReviewed: () => void;
-  conflictCount: number;
+  conflicts: ProjectWorkflowConflict[];
   onResolveConflict: () => void;
   onOpenPdfUpload: () => void;
 };
@@ -85,7 +85,7 @@ export function FullTextSection({
   studies,
   reviewedCount,
   onOpenReviewed,
-  conflictCount,
+  conflicts,
   onResolveConflict,
   onOpenPdfUpload
 }: FullTextSectionProps) {
@@ -131,7 +131,7 @@ export function FullTextSection({
             <p className="subtle">Reports appear here after title/abstract decisions advance studies to full text.</p>
           </div>
           <div className="buttonRow">
-            <ResolveConflictButton count={conflictCount} view="fullTextConflicts" onResolve={onResolveConflict} />
+            <ResolveConflictButton conflicts={conflicts} currentUserId={currentUser.id} view="fullTextConflicts" onResolve={onResolveConflict} />
             <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
@@ -246,7 +246,7 @@ export function FullTextSection({
         <ReportPicker
           action={
             <div className="buttonRow">
-              <ResolveConflictButton count={conflictCount} view="fullTextConflicts" onResolve={onResolveConflict} />
+              <ResolveConflictButton conflicts={conflicts} currentUserId={currentUser.id} view="fullTextConflicts" onResolve={onResolveConflict} />
               <ViewLink view="fullTextReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
                 <History size={16} />
                 Reviewed {reviewedCount}

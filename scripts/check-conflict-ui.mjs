@@ -71,6 +71,11 @@ try {
 
     for (const blindMode of [true, false]) {
       const selectedProject = { ...project, blindMode };
+      const workflowConflicts = [
+        { id: "screening-conflict", projectId: project.id, stage: "title_abstract", studyId: study.id, title: "Screening conflict paper", subtitle: "Conflicting independent votes", decisions: [vote, peerVote] },
+        { id: "full-text-conflict", projectId: project.id, stage: "full_text", studyId: study.id, reportId: report.id, title: "Full text conflict paper", subtitle: "Conflicting independent votes", decisions: [vote, peerVote].map(decision => ({ ...decision, stage: "full_text" })) },
+        { id: "other-project-conflict", projectId: "another-project", stage: "title_abstract", studyId: "other-study", title: "Private other project paper", subtitle: "Another project", decisions: [peerVote] }
+      ];
       const screeningProps = {
         projectScreeningStudies: [study], totalScreeningStudyCount: 1, screeningProgress: 0,
         decisions: [vote, peerVote], selectedProjectId: project.id, currentUserId: user.id, blindMode,
@@ -79,7 +84,7 @@ try {
         stageEvaluation: { state: "conflict", label: "Conflicting independent votes" },
         screeningNote: "", setScreeningNote: noop, screeningMessage: "", canRecordScreeningDecision: true, checkoutError: "",
         currentUserDecision: vote, currentStageDecisions: [vote, peerVote], pendingScreeningDecision: null,
-        isUndoingScreeningDecision: false, reviewedCount: 0, onOpenReviewed: noop, conflictCount: 1, onResolveConflict: noop,
+        isUndoingScreeningDecision: false, reviewedCount: 0, onOpenReviewed: noop, conflicts: workflowConflicts.filter(conflict => conflict.projectId === project.id && conflict.stage === "title_abstract"), onResolveConflict: noop,
         formatConflictResolutionHint: () => "Another independent review is needed.", selectedProjectAbstractRequiredVotes: 2,
         addScreeningDecision: noop, undoLastDecision: noop
       };
@@ -90,13 +95,8 @@ try {
         pdfInputRef: { current: null }, pendingFullTextAction: null, uploadReportPdf: noop, updateFullTextReport: noop,
         formatDecision, formatConflictResolutionHint: () => "Another independent review is needed.", decisionTone: () => "info",
         fullTextReason: "Out of scope", setFullTextReason: noop, exclusionReasons: ["Out of scope"], studies: [study],
-        reviewedCount: 0, onOpenReviewed: noop, conflictCount: 1, onResolveConflict: noop, onOpenPdfUpload: noop
+        reviewedCount: 0, onOpenReviewed: noop, conflicts: workflowConflicts.filter(conflict => conflict.projectId === project.id && conflict.stage === "full_text"), onResolveConflict: noop, onOpenPdfUpload: noop
       };
-      const workflowConflicts = [
-        { id: "screening-conflict", projectId: project.id, stage: "title_abstract", studyId: study.id, title: "Screening conflict paper", subtitle: "Conflicting independent votes", decisions: [vote, peerVote] },
-        { id: "full-text-conflict", projectId: project.id, stage: "full_text", studyId: study.id, reportId: report.id, title: "Full text conflict paper", subtitle: "Conflicting independent votes", decisions: [vote, peerVote].map(decision => ({ ...decision, stage: "full_text" })) },
-        { id: "other-project-conflict", projectId: "another-project", stage: "title_abstract", studyId: "other-study", title: "Private other project paper", subtitle: "Another project", decisions: [peerVote] }
-      ];
       const conflictsProps = {
         selectedProject, currentUserId: user.id, stage: "title_abstract", workflowConflicts,
         openConflict: noop, formatConflictStage: stage => stage === "full_text" ? "Full text" : "Screening",
@@ -152,6 +152,50 @@ try {
       assert.doesNotMatch(dashboardMarkup, /conflictList|conflictItem|Own inclusion choice|Peer exclusion choice|Screening conflict paper|Full text conflict paper|Private other project paper/,
         `${role}, blind=${blindMode}: overview links to conflicts without listing them`);
       passed++;
+
+      for (const stage of ["title_abstract", "full_text"]) {
+        const baseConflict = workflowConflicts.find(conflict => conflict.projectId === project.id && conflict.stage === stage);
+        const ownConflict = { ...baseConflict, decisions: baseConflict.decisions.filter(decision => decision.userId === user.id) };
+        const peerConflict = { ...baseConflict, id: "peer-only-conflict", decisions: blindMode ? [] : baseConflict.decisions.filter(decision => decision.userId !== user.id) };
+        const historicalConflict = { ...ownConflict, id: "historical-conflict", decisions: ownConflict.decisions.map(decision => ({ ...decision, isCurrent: false })) };
+        for (const [caseName, conflicts, ownOnly] of [
+          ["all own votes", [ownConflict, { ...ownConflict, id: "second-own-conflict" }], true],
+          ["mixed votes", [ownConflict, peerConflict], false],
+          ["peer-only votes", [peerConflict], false],
+          ["historical own vote", [historicalConflict], false],
+          ["no conflicts", [], false]
+        ]) {
+          const queueComponent = stage === "title_abstract" ? ScreeningSection : FullTextSection;
+          const queueProps = stage === "title_abstract" ? screeningProps : fullTextProps;
+          const destinations = stage === "title_abstract" ? "screening" : "full-text";
+          const surfaces = [
+            ["overview", ProjectDashboardSection, {
+              ...dashboardProps, selectedProject: { ...selectedProject, stage: stage === "title_abstract" ? "screening" : "full_text" },
+              workflowConflicts: [...conflicts, { ...baseConflict, id: "other-phase", stage: stage === "title_abstract" ? "full_text" : "title_abstract", decisions: [] },
+                { ...baseConflict, id: "other-project", projectId: "another-project", decisions: [] }]
+            }],
+            ["queue", queueComponent, { ...queueProps, conflicts }],
+            ["empty queue", queueComponent, stage === "title_abstract"
+              ? { ...queueProps, conflicts, projectScreeningStudies: [] }
+              : { ...queueProps, conflicts, projectReportQueue: [] }]
+          ];
+          for (const [surface, Component, props] of surfaces) {
+            const markup = render(Component, props);
+            const context = `${role}, blind=${blindMode}, ${stage}, ${caseName}, ${surface}`;
+            const buttons = markup.match(/<a\b[^>]*class="[^"]*\bconflictButton\b[^"]*"[^>]*>[\s\S]*?<\/a>/g) ?? [];
+            assert.equal(buttons.length, conflicts.length > 0 ? 1 : 0, `${context}: shortcut remains hidden for an empty phase`);
+            if (buttons.length > 0) {
+              const button = buttons[0];
+              assert.equal(button.replace(/<[^>]*>/g, "").trim(), ownOnly ? "Conflicts" : `Resolve ${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"}`,
+                `${context}: only current own votes select the plain label`);
+              assert.equal(/\bownConflictsButton\b/.test(button), ownOnly, `${context}: own-only conflicts select the neutral appearance`);
+              assert.match(button, new RegExp(`href="[^"]+/${destinations}/conflicts"`), `${context}: both appearances open the same phase list`);
+              assert.doesNotMatch(button, /aria-disabled="true"|\bdisabled=/, `${context}: the neutral shortcut stays enabled`);
+            }
+            passed++;
+          }
+        }
+      }
 
       for (const stage of ["title_abstract", "full_text"]) {
         const emptyMarkup = render(ConflictsSection, { ...conflictsProps, stage, workflowConflicts: [] });

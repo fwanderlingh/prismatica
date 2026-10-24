@@ -1535,6 +1535,19 @@ h3 {
   background: var(--amber-soft);
 }
 
+.conflictButton.ownConflictsButton {
+  color: var(--muted);
+  border-color: var(--border);
+  background: var(--surface-muted);
+}
+
+.conflictButton.ownConflictsButton:hover,
+.conflictButton.ownConflictsButton:focus-visible {
+  color: var(--text-soft);
+  border-color: var(--border-strong);
+  background: var(--surface-strong);
+}
+
 .primaryButton:hover {
   color: #ffffff;
   background: var(--primary-button-hover);

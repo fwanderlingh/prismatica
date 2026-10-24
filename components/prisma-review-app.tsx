@@ -3389,7 +3389,7 @@ export function PrismaReviewApp() {
     const hasConflict = currentEvaluation.state === "conflict" || currentEvaluation.state === "needs_third_vote";
     return (
       <ScreeningSection
-        conflictCount={conflicts.length}
+        conflicts={conflicts}
         onResolveConflict={() => navigateToProjectView("screeningConflicts")}
         projectScreeningStudies={activeScreeningStudies}
         totalScreeningStudyCount={projectScreeningStudies.length}
@@ -3468,7 +3468,7 @@ export function PrismaReviewApp() {
     const conflicts = workflowConflicts.filter((conflict) => conflict.stage === "full_text");
     return (
       <FullTextSection
-        conflictCount={conflicts.length}
+        conflicts={conflicts}
         onResolveConflict={() => navigateToProjectView("fullTextConflicts")}
         hasProjectSeedData={hasProjectSeedData}
         phaseProgress={getProjectPhaseProgress({ ...selectedProject, stage: "full_text" }, activeCounts, projectReportQueue, formatNumber)}

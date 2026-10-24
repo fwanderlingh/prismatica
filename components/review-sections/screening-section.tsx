@@ -1,7 +1,7 @@
 import { ViewLink } from "@/components/navigation-link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
-import type { Decision, Study } from "@/lib/prismaData";
+import type { Decision, ProjectWorkflowConflict, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, ReviewReservationNotice, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
 import { ReviewQueueDisclosure, ReviewQueueItem } from "@/components/review-sections/review-queue";
@@ -40,7 +40,7 @@ type ScreeningSectionProps = {
   isUndoingScreeningDecision: boolean;
   reviewedCount: number;
   onOpenReviewed: () => void;
-  conflictCount: number;
+  conflicts: ProjectWorkflowConflict[];
   onResolveConflict: () => void;
   formatConflictResolutionHint: (requiredVotes: number) => string;
   selectedProjectAbstractRequiredVotes: number;
@@ -74,7 +74,7 @@ export function ScreeningSection({
   isUndoingScreeningDecision,
   reviewedCount,
   onOpenReviewed,
-  conflictCount,
+  conflicts,
   onResolveConflict,
   formatConflictResolutionHint,
   selectedProjectAbstractRequiredVotes,
@@ -126,7 +126,7 @@ export function ScreeningSection({
             <p className="subtle">Screening starts after imports are committed and canonical studies are created.</p>
           </div>
           <div className="buttonRow">
-            <ResolveConflictButton count={conflictCount} view="screeningConflicts" onResolve={onResolveConflict} />
+            <ResolveConflictButton conflicts={conflicts} currentUserId={currentUserId} view="screeningConflicts" onResolve={onResolveConflict} />
             <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
               <History size={16} />
               Reviewed {reviewedCount}
@@ -163,7 +163,7 @@ export function ScreeningSection({
           </div>
         </div>
         <div className="buttonRow">
-          <ResolveConflictButton count={conflictCount} view="screeningConflicts" onResolve={onResolveConflict} />
+          <ResolveConflictButton conflicts={conflicts} currentUserId={currentUserId} view="screeningConflicts" onResolve={onResolveConflict} />
           <ViewLink view="screeningReviewed" className="ghostButton" onNavigate={onOpenReviewed}>
             <History size={16} />
             Reviewed {reviewedCount}

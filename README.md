@@ -119,6 +119,8 @@ deletion uses a browser confirmation. PDF upload is optional for full-text decis
 or **Full Text Conflicts**. Each review queue opens its own conflict list;
 Project Overview opens the list for the project's current phase. Choose a
 paper's **Resolve** action to review it, or return to the queue with the back link.
+When you have voted on every remaining conflict, the shortcut is gray and labeled
+**Conflicts**.
 
 ## Architecture Snapshot
 
