@@ -324,7 +324,9 @@ body {
 
 a[href^="http"],
 a[target="_blank"],
-.storageReviewLink {
+.storageReviewLink,
+.consensusPendingLink,
+.projectAttentionLink {
   color: var(--link-external);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--link-external) 45%, transparent);
@@ -337,7 +339,11 @@ a[href^="http"]:focus-visible,
 a[target="_blank"]:hover,
 a[target="_blank"]:focus-visible,
 .storageReviewLink:hover,
-.storageReviewLink:focus-visible {
+.storageReviewLink:focus-visible,
+.consensusPendingLink:hover,
+.consensusPendingLink:focus-visible,
+.projectAttentionLink:hover,
+.projectAttentionLink:focus-visible {
   color: var(--link-external-hover);
   text-decoration-color: color-mix(in srgb, var(--link-external-hover) 60%, transparent);
 }
@@ -842,6 +848,25 @@ h3 {
   background: var(--teal-soft);
 }
 
+.navItem.navItemAttention {
+  border-left-color: var(--amber);
+}
+
+.navItem.navItemAttention:not(.active) {
+  background: color-mix(in srgb, var(--amber-soft) 55%, var(--surface-muted));
+}
+
+.navItem.navItemAttention:hover:not(.active) {
+  border-color: var(--amber-border);
+  background: var(--amber-soft);
+}
+
+.navItem.navItemAttention > .navAttentionIcon {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--amber-text);
+}
+
 .sidebarFooter {
   display: flex;
   gap: calc(9px * var(--ui-scale));
@@ -1052,6 +1077,25 @@ h3 {
 
   .appFrame.sidebar-collapsed .navItemPhase > svg {
     margin-left: calc(1px * var(--ui-scale));
+  }
+
+  .appFrame.sidebar-collapsed .navItem > .navAttentionIcon {
+    position: absolute;
+    top: calc(3px * var(--ui-scale));
+    right: calc(2px * var(--ui-scale));
+    width: calc(17px * var(--ui-scale));
+    height: calc(17px * var(--ui-scale));
+    margin: 0;
+    padding: calc(1px * var(--ui-scale));
+    border-radius: calc(3px * var(--ui-scale));
+    background: var(--surface);
+  }
+
+  .appFrame.sidebar-collapsed .navItemAttention[data-tooltip]::after {
+    width: max-content;
+    max-width: min(calc(340px * var(--ui-scale)), 70vw);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -1431,6 +1475,51 @@ h3 {
   margin-top: calc(10px * var(--ui-scale));
 }
 
+.projectAttention {
+  display: grid;
+  gap: calc(8px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale));
+  border: calc(1px * var(--ui-scale)) solid var(--amber-border);
+  border-left: calc(3px * var(--ui-scale)) solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber-soft);
+}
+
+.projectAttention h2 {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale));
+  margin: 0;
+  color: var(--amber-text);
+  font-size: 0.95rem;
+}
+
+.projectAttentionList {
+  display: grid;
+  gap: calc(6px * var(--ui-scale));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.projectAttentionList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: calc(3px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.projectAttentionLink {
+  font-weight: 700;
+}
+
+.projectAttentionList li > span {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}
+
 .exportReviewItems {
   margin-top: calc(20px * var(--ui-scale));
 }
@@ -1454,6 +1543,16 @@ h3 {
 
 .exportReviewItems small {
   color: var(--text-soft);
+}
+
+.consensusPendingItems li[aria-current="true"] {
+  border-left: 3px solid var(--teal);
+  padding-left: calc(12px * var(--ui-scale));
+}
+
+.reportPicker > .primaryButton {
+  grid-column: 1 / -1;
+  justify-self: start;
 }
 
 .ghostButton,

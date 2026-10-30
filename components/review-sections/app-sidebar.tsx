@@ -1,7 +1,8 @@
 import { ViewLink } from "@/components/navigation-link";
 import type { LucideIcon } from "lucide-react";
-import { Info, PanelRight } from "lucide-react";
+import { AlertTriangle, Info, PanelRight } from "lucide-react";
 import type { AppUser, ReviewProject, ViewKey } from "@/lib/prismaData";
+import type { ProjectAttentionItem } from "@/lib/projectAttention";
 
 type NavItem = {
   key: ViewKey;
@@ -32,6 +33,7 @@ type AppSidebarProps = {
   projectNavItems: NavItem[];
   reviewPhaseNavKeys: Set<ViewKey>;
   exportFailedCount: number;
+  attentionItems?: ProjectAttentionItem[];
   getPhaseNavState: (key: ViewKey, stage: ReviewProject["stage"]) => "done" | "current" | "pending" | null;
   canNavigateToProjectView: (key: ViewKey) => boolean;
   onGoDashboard: () => void;
@@ -54,6 +56,7 @@ export function AppSidebar({
   projectNavItems,
   reviewPhaseNavKeys,
   exportFailedCount,
+  attentionItems = [],
   getPhaseNavState,
   canNavigateToProjectView,
   onGoDashboard,
@@ -64,6 +67,13 @@ export function AppSidebar({
   const homeView = currentUser.isAdmin ? "adminReviews" : "dashboard";
   const homeItem = globalNavItems.find((item) => item.key === homeView);
   const activeProjectNavKey = getProjectNavKey(activeView);
+  const attentionByPhase = new Map<ViewKey, string[]>();
+  for (const item of attentionItems) {
+    if (item.count <= 0) continue;
+    const descriptions = attentionByPhase.get(item.phase) ?? [];
+    descriptions.push(item.detail ? `${item.label} ${item.detail}` : item.label);
+    attentionByPhase.set(item.phase, descriptions);
+  }
 
   return (
     <aside id="project-navigation" className={["sidebar", isMobileNavOpen ? "open" : "", isSidebarCollapsed ? "collapsed" : ""].filter(Boolean).join(" ")} aria-label="Project navigation">
@@ -126,25 +136,27 @@ export function AppSidebar({
                   const phaseState = getPhaseNavState(key, selectedProject.stage);
                   const isLocked = !canNavigateToProjectView(key);
                   const effectivePhaseState = isLocked ? "pending" : phaseState;
-                  const navClassName = ["navItem", "navItemPhase", activeProjectNavKey === key ? "active" : "", effectivePhaseState ? `phase-${effectivePhaseState}` : "", isLocked ? "phase-locked" : ""]
+                  const attentionDescription = attentionByPhase.get(key)?.join("; ");
+                  const accessibleLabel = attentionDescription ? `${label} — Needs attention: ${attentionDescription}` : label;
+                  const navClassName = ["navItem", "navItemPhase", activeProjectNavKey === key ? "active" : "", effectivePhaseState ? `phase-${effectivePhaseState}` : "", isLocked ? "phase-locked" : "", attentionDescription ? "navItemAttention" : ""]
                     .filter(Boolean)
                     .join(" ");
                   return (
                     <ViewLink
                       className={navClassName}
                       key={key}
-                      data-tooltip={label}
+                      data-tooltip={accessibleLabel}
                       aria-current={activeProjectNavKey === key ? "page" : undefined}
                       aria-disabled={isLocked || undefined}
                       disabled={isLocked}
                       view={key}
-                      aria-label={label}
+                      aria-label={accessibleLabel}
                       onNavigate={() => onNavigate(key)}
-                      title={isLocked ? `Previous phase incomplete` : phaseState ? `${phaseState === "current" ? "Current phase" : phaseState}` : path}
+                      title={attentionDescription ? `${accessibleLabel}${isLocked ? ". Previous phase incomplete" : ""}` : isLocked ? `Previous phase incomplete` : phaseState ? `${phaseState === "current" ? "Current phase" : phaseState}` : path}
                     >
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>
-                      {effectivePhaseState ? <NavPhaseMarker /> : null}
+                      {attentionDescription ? <AlertTriangle className="navAttentionIcon" size={16} aria-hidden="true" /> : effectivePhaseState ? <NavPhaseMarker /> : null}
                     </ViewLink>
                   );
                 })}
@@ -156,24 +168,26 @@ export function AppSidebar({
                 .filter((item) => !reviewPhaseNavKeys.has(item.key))
                 .map(({ key, label, path, Icon }) => {
                   const phaseState = getPhaseNavState(key, selectedProject.stage);
-                  const navClassName = ["navItem", "navItemUtility", activeProjectNavKey === key ? "active" : "", phaseState ? `phase-${phaseState}` : ""]
+                  const attentionDescription = attentionByPhase.get(key)?.join("; ");
+                  const accessibleLabel = attentionDescription ? `${label} — Needs attention: ${attentionDescription}` : label;
+                  const navClassName = ["navItem", "navItemUtility", activeProjectNavKey === key ? "active" : "", phaseState ? `phase-${phaseState}` : "", attentionDescription ? "navItemAttention" : ""]
                     .filter(Boolean)
                     .join(" ");
                   return (
                     <ViewLink
                       className={navClassName}
                       key={key}
-                      data-tooltip={label}
+                      data-tooltip={accessibleLabel}
                       aria-current={activeProjectNavKey === key ? "page" : undefined}
                       view={key}
-                      aria-label={label}
+                      aria-label={accessibleLabel}
                       onNavigate={() => onNavigate(key)}
-                      title={phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
+                      title={attentionDescription ? accessibleLabel : phaseState ? `${path} · ${phaseState === "current" ? "current phase" : phaseState}` : path}
                     >
                       {Icon ? <Icon size={18} /> : <span className="navAvatar" style={{ background: currentUser.avatarColor }}>{currentUser.initials}</span>}
                       <span className="navLabel">{label}</span>
                       {key === "exports" && exportFailedCount > 0 ? <span className="navWarnBadge">{exportFailedCount}</span> : null}
-                      {phaseState ? <NavPhaseMarker /> : null}
+                      {attentionDescription ? <AlertTriangle className="navAttentionIcon" size={16} aria-hidden="true" /> : phaseState ? <NavPhaseMarker /> : null}
                     </ViewLink>
                   );
                 })}

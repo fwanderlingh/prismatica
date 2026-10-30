@@ -107,6 +107,9 @@ try {
     assert.equal(state.studies.find(item => item.id === studyId).stage, 'full_text');
     assert.equal(state.reports.length, 1);
     assert.equal(state.projects[0].recordsScreened, 1);
+    assert.deepEqual(state.events.map(event => event.action), [
+      'Voted Include', 'Undid latest screening vote', 'Voted Exclude', 'Voted Include'
+    ], 'reaching the threshold persists only the vote while creating the full-text report');
     const reportId = state.reports[0].id;
     for (const reviewerId of [actor.id, peer.id]) {
       store.updateReportForUser(reviewerId, projectId, reportId, { retrievalStatus: 'retrieved', decisionValue: 'include' });
@@ -115,7 +118,40 @@ try {
     assert.equal(state.studies.find(item => item.id === studyId).stage, 'extraction');
     assert.equal(current(state, 'full_text', actor.id).length, 1);
     assert.equal(current(state, 'full_text', peer.id).length, 1);
-    assert.ok(state.events.length >= 6, 'decision and undo audit events persist');
+    assert.equal(state.events.length, 6, 'each decision or undo persists one audit event');
+  });
+
+  await check('screening advancement, undo, and reopening preserve one user audit action even with minimal retention', () => {
+    for (const auditHistoryLimit of [1, 100]) {
+      const initial = fixture();
+      initial.projects[0].abstractRequiredVotes = 1;
+      initial.reviewSettings.auditHistoryLimit = auditHistoryLimit;
+      write(initial);
+      const expectedActions = [];
+      function expectAction(action) {
+        expectedActions.unshift(action);
+        const state = read();
+        assert.deepEqual(state.events.map(event => event.action), expectedActions.slice(0, auditHistoryLimit));
+        assert.ok(state.events.every(event => event.actorId === actor.id));
+        return state;
+      }
+      vote();
+      let state = expectAction('Voted Include');
+      assert.equal(state.studies[0].stage, 'full_text');
+      assert.equal(state.reports.length, 1);
+      store.undoScreeningDecisionForUser(actor.id, { projectId, studyId });
+      state = expectAction('Undid latest screening vote');
+      assert.equal(state.studies[0].stage, 'title_abstract');
+      assert.equal(state.reports.length, 0);
+      vote();
+      state = expectAction('Voted Include');
+      assert.equal(state.studies[0].stage, 'full_text');
+      assert.equal(state.reports.length, 1);
+      store.reopenTitleAbstractDecisionForUser(actor.id, projectId, studyId);
+      state = expectAction('Returned citation to title/abstract queue');
+      assert.equal(state.studies[0].stage, 'title_abstract');
+      assert.equal(state.reports.length, 0);
+    }
   });
 
   await check('undo rejects unrelated, current, missing, and superseded prior decisions without changing history', () => {
@@ -266,6 +302,8 @@ try {
     assert.ok(databaseState.events.some(item => item.id === 'concurrent-event'));
     assert.equal(databaseState.reports.length, 1, 'aggregate workflow includes the other reviewer vote');
     assert.equal(databaseState.studies.find(item => item.id === studyId).stage, 'full_text');
+    assert.deepEqual(savedMutation.events.map(event => event.action), ['Voted Include'],
+      'the PostgreSQL patch persists one user action alongside report creation and advancement');
     assert.ok(savedMutation.changes.studies.upserts.every(item => item.id === studyId), 'unchanged citations are omitted from the patch');
     assert.equal(savedMutation.changes.decisions.upserts.length, 2, 'only the superseded and new decisions are persisted');
     assert.ok(savedMutation.screeningCheckouts.some(item => item.studyId === 'decision-study-2' && item.userId === actor.id));
@@ -319,6 +357,26 @@ try {
     assert.throws(() => vote(), error => error.status === 409);
     assert.equal(attempts, 5);
     assert.equal(databaseState.decisions.length, 0);
+  });
+
+  await check('PostgreSQL reversal persists its explicit audit action and removes the unused full-text report', () => {
+    for (const [action, reverse] of [
+      ['Undid latest screening vote', () => store.undoScreeningDecisionForUser(actor.id, { projectId, studyId })],
+      ['Returned citation to title/abstract queue', () => store.reopenTitleAbstractDecisionForUser(actor.id, projectId, studyId)]
+    ]) {
+      const initial = fixture();
+      initial.projects[0].abstractRequiredVotes = 1;
+      resetDatabase(initial);
+      vote();
+      assert.deepEqual(savedMutation.events.map(event => event.action), ['Voted Include']);
+      assert.equal(databaseState.studies[0].stage, 'full_text');
+      assert.equal(databaseState.reports.length, 1);
+      reverse();
+      assert.deepEqual(savedMutation.events.map(event => event.action), [action]);
+      assert.deepEqual(databaseState.events.map(event => event.action), [action, 'Voted Include']);
+      assert.equal(databaseState.studies[0].stage, 'title_abstract');
+      assert.equal(databaseState.reports.length, 0);
+    }
   });
 
   await check('PostgreSQL screening, undo, reopen, report updates, and checkouts use incremental persistence', () => {

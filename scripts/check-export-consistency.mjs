@@ -17,7 +17,7 @@ try {
     target: "ES2020", module: "Node16", moduleResolution: "Node16", jsx: "react-jsx", esModuleInterop: true,
     noEmitOnError: true, skipLibCheck: true, types: ["node", "react"], typeRoots: [path.join(root, "node_modules/@types")],
     rootDir: root, outDir: temp, paths: { "@/*": [path.join(root, "*")] }
-  }, files: ["lib/workflowSelectors.ts", "lib/exportConsistency.ts", "components/review-sections/exports-section.tsx"].map(name => path.join(root, name)) }));
+  }, files: ["lib/workflowSelectors.ts", "lib/exportConsistency.ts", "components/review-sections/exports-section.tsx", "components/review-sections/full-text-section.tsx"].map(name => path.join(root, name)) }));
   execFileSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), "-p", config], { stdio: "inherit" });
   Module._resolveFilename = function(name, parent, ...args) {
     if (name.startsWith("@/")) name = path.join(temp, name.slice(2));
@@ -29,6 +29,8 @@ try {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
   const { ExportsSection } = require(path.join(temp, "components/review-sections/exports-section.js"));
+  const { ExclusionReasonCorrections } = require(path.join(temp, "components/review-sections/exclusion-reason-corrections.js"));
+  const { FullTextSection } = require(path.join(temp, "components/review-sections/full-text-section.js"));
   const { NavigationProvider, ViewLink } = require(path.join(temp, "components/navigation-link.js"));
   const seeds = require(path.join(temp, "lib/prismaData.js"));
   const project = {
@@ -152,6 +154,69 @@ try {
   ] });
   assert.equal(majority.counts.reportsExcludedWithReasons['Wrong population'], 1, 'legacy majority resolution selects an exclusion reason, not the first include vote');
 
+  // Historical labels can differ from today's options, even when a peer used
+  // the corrected label. Expose the actual reports instead of an unfixable count.
+  const reasonProject = { ...project, recordsTotal: 2, recordsScreened: 2, exclusionReasons: ['Full text not available', 'Not in English'] };
+  const reasonStudies = [study('reason-case', 'advance_full_text', { importItemId: 91 }), study('reason-typo', 'advance_full_text', { importItemId: 92 })];
+  const reasonReports = reasonStudies.map(item => report(item, 'retrieved'));
+  const reasonVotes = reasonStudies.flatMap((item, index) => [
+    vote(item, 'exclude', { stage: 'full_text', reportId: reasonReports[index].id, exclusionReasonId: index === 0 ? 'full text not available' : 'Not in Eglish' }),
+    vote(item, 'exclude', { stage: 'full_text', reportId: reasonReports[index].id, exclusionReasonId: reasonProject.exclusionReasons[index] })
+  ]);
+  const reasonInput = { project: reasonProject, studies: reasonStudies, reports: reasonReports, decisions: reasonVotes };
+  const reasonProblems = calculate(reasonInput);
+  assert.equal(reasonProblems.counts.reportsAssessed, 2);
+  assert.equal(reasonProblems.consistency.assessedBalanceTotal, 0);
+  assert.equal(reasonProblems.consistency.excludedWithoutReasonCount, 2);
+  assert.deepEqual(reasonProblems.consistency.exclusionReasonIssues.map(issue => [issue.reportId, issue.title, issue.importItemId, issue.invalidReasons, issue.suggestedReason]), [
+    [reasonReports[0].id, reasonReports[0].title, 91, ['full text not available'], 'Full text not available'],
+    [reasonReports[1].id, reasonReports[1].title, 92, ['Not in Eglish'], 'Not in English']
+  ]);
+  const invalidSecondVote = calculate({ ...reasonInput, studies: [reasonStudies[0]], reports: [reasonReports[0]], decisions: [reasonVotes[1], reasonVotes[0]] });
+  assert.equal(invalidSecondVote.counts.reportsExcludedWithReasons['Full text not available'], 1);
+  assert.equal(invalidSecondVote.consistency.excludedWithoutReasonCount, 1, 'an invalid second vote remains repairable when the first reason is already valid');
+  const unknownTypo = calculate({ ...reasonInput, studies: [reasonStudies[1]], reports: [reasonReports[1]], decisions: [
+    reasonVotes[2], { ...reasonVotes[3], exclusionReasonId: 'Not in Eglish' }
+  ] });
+  assert.equal(unknownTypo.consistency.exclusionReasonIssues[0].suggestedReason, undefined, 'a typo without a configured peer reason must not guess a replacement');
+  const blindOutdatedReason = calculate({ ...aggregateInput, reports: [
+    { ...aggregateReports[0], fullTextExclusionReasonId: 'wrong population' }, aggregateReports[1]
+  ] });
+  assert.equal(blindOutdatedReason.consistency.exclusionReasonIssues[0].suggestedReason, 'Wrong population');
+  assert.deepEqual(missingAggregateReason.consistency.exclusionReasonIssues[0].invalidReasons, [null]);
+  const blindPeerReasonRepairInput = { ...aggregateInput, reports: [
+    { ...aggregateReports[0], fullTextExclusionReasonNeedsCorrection: true }, aggregateReports[1]
+  ], decisions: [] };
+  const blindPeerReasonRepair = calculate(blindPeerReasonRepairInput);
+  assert.equal(blindPeerReasonRepair.consistency.assessedCheckOk, true, 'the visible final reason can be valid while a hidden peer reason needs repair');
+  assert.equal(blindPeerReasonRepair.consistency.excludedWithoutReasonCount, 1);
+  assert.equal(blindPeerReasonRepair.consistency.exclusionReasonCheckOk, false);
+  assert.equal(blindPeerReasonRepair.consistency.exclusionReasonIssues.length, 1);
+  assert.deepEqual(blindPeerReasonRepair.consistency.exclusionReasonIssues[0], {
+    reportId: aggregateReports[0].id,
+    title: aggregateReports[0].title,
+    importItemId: fullTextExcludedStudy.importItemId,
+    invalidReasons: [null],
+    suggestedReason: 'Wrong population'
+  }, 'blind repair guidance uses only the aggregate flag and configured final reason');
+  assert.deepEqual(blindPeerReasonRepair.consistency.exclusionReasonIssues.flatMap(issue => issue.invalidReasons).filter(reason => typeof reason === 'string'), [], 'hidden peer reason labels are not exposed by repair guidance');
+  const blindPeerReasonRepaired = calculate({ ...blindPeerReasonRepairInput, reports: [
+    { ...blindPeerReasonRepairInput.reports[0], fullTextExclusionReasonNeedsCorrection: false }, aggregateReports[1]
+  ] });
+  assert.equal(blindPeerReasonRepaired.consistency.excludedWithoutReasonCount, 0);
+  assert.equal(blindPeerReasonRepaired.consistency.exclusionReasonCheckOk, true);
+  assert.deepEqual(blindPeerReasonRepaired.consistency.exclusionReasonIssues, []);
+  const includedWithMinorityExclusion = calculate({ studies: [fullTextIncludedStudy], reports: [aggregateReports[1]], decisions: [
+    vote(fullTextIncludedStudy, 'exclude', { stage: 'full_text', reportId: aggregateReports[1].id })
+  ] });
+  assert.equal(includedWithMinorityExclusion.consistency.excludedWithoutReasonCount, 0, 'a minority exclusion is not a completed report exclusion');
+  assert.deepEqual(includedWithMinorityExclusion.consistency.exclusionReasonIssues, []);
+  const orphanedExclusion = calculate({ studies: [], reports: [], decisions: [
+    vote(fullTextExcludedStudy, 'exclude', { stage: 'full_text', reportId: 'deleted-report' }),
+    vote(fullTextExcludedStudy, 'exclude', { stage: 'full_text', reportId: 'deleted-report' })
+  ] });
+  assert.deepEqual(orphanedExclusion.consistency.exclusionReasonIssues, [], 'repair actions only target reports that still exist');
+
   // Historical decisions and other projects cannot settle a current citation.
   const currentIncluded = study("current-included", undefined);
   const reopened = study("reopened", undefined);
@@ -244,7 +309,77 @@ try {
   assert.ok(unavailableReportHtml.includes(pendingReport.title));
   assert.doesNotMatch(unavailableReportHtml, /<a[^>]*href="[^\"]+\/full-text"/);
 
-  console.log("Export consistency checks passed: counts, retrieval boundaries, conflict resolution, blind summaries, history, duplicates, targeted guidance, and CSV readiness.");
+  let correctedReason;
+  const correctionProps = {
+    issues: reasonProblems.consistency.exclusionReasonIssues,
+    exclusionReasons: reasonProject.exclusionReasons, canCorrect: true,
+    onCorrect: (reportId, reasonId) => correctedReason = [reportId, reasonId]
+  };
+  const correctionsTree = ExclusionReasonCorrections(correctionProps);
+  const correctionForms = nodes(correctionsTree).filter(node => node.type === 'form');
+  assert.equal(correctionForms.length, 2, 'completed exclusions have direct correction forms');
+  const correctionHtml = renderToStaticMarkup(React.createElement(ExclusionReasonCorrections, correctionProps));
+  assert.match(correctionHtml, /# 91/);
+  assert.ok(correctionHtml.includes(reasonReports[1].title));
+  assert.match(correctionHtml, /Not in Eglish/);
+  assert.match(correctionHtml, /Save reason/);
+  let prevented = false;
+  const submitReason = value => ({ preventDefault: () => prevented = true, currentTarget: { elements: { namedItem: () => ({ value }) } } });
+  correctionForms[1].props.onSubmit(submitReason('Not in English'));
+  assert.equal(prevented, true);
+  assert.deepEqual(correctedReason, [reasonReports[1].id, 'Not in English']);
+  correctedReason = undefined;
+  correctionForms[0].props.onSubmit(submitReason('unconfigured value'));
+  assert.equal(correctedReason, undefined);
+  const pendingCorrections = ExclusionReasonCorrections({ ...correctionProps, pendingReportId: reasonReports[0].id });
+  assert.ok(nodes(pendingCorrections).filter(node => node.type === 'button').every(node => node.props.disabled));
+  nodes(pendingCorrections).find(node => node.type === 'form').props.onSubmit(submitReason('Full text not available'));
+  assert.equal(correctedReason, undefined, 'in-flight correction cannot submit another request');
+  const readonlyCorrections = ExclusionReasonCorrections({ ...correctionProps, canCorrect: false });
+  assert.equal(nodes(readonlyCorrections).filter(node => node.type === 'form').length, 0);
+  assert.match(renderToStaticMarkup(React.createElement(ExclusionReasonCorrections, { ...correctionProps, canCorrect: false })), /project owner or administrator/);
+  assert.equal(ExclusionReasonCorrections({ ...correctionProps, issues: [] }), null);
+  const correctionStatus = message => nodes(ExclusionReasonCorrections({ ...correctionProps, message })).find(node => node.props?.role === 'status');
+  assert.equal(correctionStatus('Exclusion reason corrected. The report remains excluded and its review history is preserved.').props.className, 'validationItem ok');
+  assert.equal(correctionStatus('This report already has valid exclusion reasons.').props.className, 'validationItem ok');
+  assert.equal(correctionStatus('Exclusion reasons can only be corrected for a report excluded at full text.').props.className, 'validationItem blocked', 'an error containing corrected must not be styled as success');
+  assert.equal(correctionStatus('The review changed while saving. Please try again.').props.className, 'validationItem blocked');
+  const emptyFullTextHtml = renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id }, React.createElement(FullTextSection, {
+    hasProjectSeedData: false, phaseProgress: { percent: 100, label: '100% full-text completed' },
+    projectReportQueue: [], totalFullTextReportCount: reasonReports.length, activeReport: reasonReports[0],
+    decisions: reasonVotes, selectedProject: reasonProject, currentUser: { id: reasonProject.ownerId },
+    fullTextMessage: '', checkoutError: '', setActiveReportId: noop, setFullTextMessage: noop,
+    pdfInputRef: { current: null }, pendingFullTextAction: null, uploadReportPdf: noop,
+    updateFullTextReport: noop, formatDecision: String, formatConflictResolutionHint: String,
+    decisionTone: () => 'neutral', fullTextReason: '', setFullTextReason: noop,
+    exclusionReasons: reasonProject.exclusionReasons,
+    exclusionReasonCorrections: React.createElement(ExclusionReasonCorrections, correctionProps),
+    studies: reasonStudies, reviewedCount: reasonReports.length, onOpenReviewed: noop,
+    conflicts: [], onResolveConflict: noop, onOpenPdfUpload: noop
+  })));
+  assert.match(emptyFullTextHtml, /No active full-text reports/);
+  assert.ok(emptyFullTextHtml.includes(reasonReports[0].title));
+  assert.ok(emptyFullTextHtml.includes(reasonReports[1].title));
+  assert.equal((emptyFullTextHtml.match(/<form\b/g) ?? []).length, 2, 'reason correction forms remain reachable with an empty full-text queue');
+  assert.match(emptyFullTextHtml, /Save reason/);
+  const correctionExportHtml = render(sectionProps(reasonProblems, {
+    exclusionReasons: reasonProject.exclusionReasons, canCorrectExclusionReasons: true, onCorrectExclusionReason: noop
+  }));
+  assert.match(correctionExportHtml, /missing or outdated reason/);
+  assert.match(correctionExportHtml, /Save reason/);
+
+  const pendingConsensusProps = sectionProps(aggregate, {
+    canExportExtractionCsv: false, pendingConsensusReports: [{ id: 'pending-consensus', title: 'Consensus that needs arbitration', importItemId: 282 }],
+    onOpenConsensusReport: id => openedReportId = id
+  });
+  const pendingConsensusTree = ExportsSection(pendingConsensusProps);
+  const consensusLink = itemLink(pendingConsensusTree, 'consensus', 'Consensus that needs arbitration');
+  assert.ok(consensusLink, 'the actual CSV blocker links to its pending consensus record');
+  consensusLink.props.onNavigate();
+  assert.equal(openedReportId, 'pending-consensus');
+  assert.match(render(pendingConsensusProps), /# 282/);
+
+  console.log("Export consistency checks passed: counts, retrieval, blind summaries, historical reason corrections, pending consensus links, targeted guidance, and CSV readiness.");
 } finally {
   Module._resolveFilename = originalResolve;
   fs.rmSync(temp, { recursive: true, force: true });

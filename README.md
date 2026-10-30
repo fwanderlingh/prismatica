@@ -533,6 +533,11 @@ it cannot recover events already removed. This applies to file and PostgreSQL st
 Existing settings without a history limit use 100; PostgreSQL adds the preference
 column automatically when its schema is initialized.
 
+The audit records user actions. Automatic report creation and screening stage
+transitions do not create extra entries; older entries for those internal steps
+are hidden from the audit display while their stored records are preserved.
+Workflow progression uses decisions and study/report state, independently of audit history.
+
 Dedup exclusions, keeping both entries, reopening pairs, and bulk inclusion appear
 in the project audit. Previously missing events cannot be recreated by this fix.
 

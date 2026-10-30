@@ -3,6 +3,7 @@ import type { PrismaCounts } from "@/lib/prismaData";
 import type { ExportConsistency } from "@/lib/exportConsistency";
 import { PrismaFlow, SectionTitle } from "@/components/prisma-review-ui";
 import { ViewLink } from "@/components/navigation-link";
+import { ExclusionReasonCorrections } from "./exclusion-reason-corrections";
 
 type ExportsSectionProps = {
   recordsIdentified: number;
@@ -19,6 +20,13 @@ type ExportsSectionProps = {
   onOpenReport: (reportId: string) => void;
   downloadConsensusExtractionCsv: () => void;
   formatNumber: (value: number) => string;
+  exclusionReasons?: string[];
+  canCorrectExclusionReasons?: boolean;
+  pendingReasonCorrectionReportId?: string;
+  reasonCorrectionMessage?: string;
+  onCorrectExclusionReason?: (reportId: string, exclusionReasonId: string) => void;
+  pendingConsensusReports?: { id: string; title: string; importItemId?: number }[];
+  onOpenConsensusReport?: (reportId: string) => void;
 };
 
 export function ExportsSection({
@@ -35,7 +43,14 @@ export function ExportsSection({
   onOpenScreeningStudy,
   onOpenReport,
   downloadConsensusExtractionCsv,
-  formatNumber
+  formatNumber,
+  exclusionReasons = [],
+  canCorrectExclusionReasons = false,
+  pendingReasonCorrectionReportId = "",
+  reasonCorrectionMessage = "",
+  onCorrectExclusionReason,
+  pendingConsensusReports = [],
+  onOpenConsensusReport
 }: ExportsSectionProps) {
   const exportMessageIsSuccess = /downloaded|generated|exported/i.test(exportMessage);
   const exportReadinessCopy = canExportExtractionCsv
@@ -86,10 +101,10 @@ export function ExportsSection({
     {
       label: exportConsistency.exclusionReasonCheckOk
         ? "Every current full-text exclusion has a reason"
-        : "Some current full-text exclusions are missing a reason",
+        : "Some current full-text exclusions have a missing or outdated reason",
       status:
         isZeroDataProject || !exportConsistency.exclusionReasonCheckActive ? "muted" : exportConsistency.exclusionReasonCheckOk ? "ok" : "warning",
-      detail: `Current full-text exclusions missing reason: ${formatNumber(exportConsistency.excludedWithoutReasonCount)}.`
+      detail: `Current full-text exclusions with a missing or outdated reason: ${formatNumber(exportConsistency.excludedWithoutReasonCount)}.`
     }
   ];
 
@@ -143,7 +158,34 @@ export function ExportsSection({
                 {isExportingConsensusCsv ? "Exporting..." : "Export Extraction CSV"}
               </button>
             </div>
+            {pendingConsensusReports.length > 0 ? (
+              <div className="exportReviewItems">
+                <h3>Consensus to finalize ({formatNumber(pendingConsensusReports.length)})</h3>
+                <p className="subtle">Open these reports to resolve extraction disagreements and finalize the dataset.</p>
+                <ul>
+                  {pendingConsensusReports.map((report) => (
+                    <li key={report.id}>
+                      <strong>{report.importItemId !== undefined ? `# ${report.importItemId} · ` : ""}{report.title}</strong>
+                      {onOpenConsensusReport ? (
+                        <ViewLink className="ghostButton" view="consensus" aria-label={`Resolve consensus: ${report.title}`} onNavigate={() => onOpenConsensusReport(report.id)}>
+                          Resolve consensus
+                        </ViewLink>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
+
+          <ExclusionReasonCorrections
+            issues={exportConsistency.exclusionReasonIssues}
+            exclusionReasons={exclusionReasons}
+            canCorrect={canCorrectExclusionReasons && Boolean(onCorrectExclusionReason)}
+            pendingReportId={pendingReasonCorrectionReportId}
+            message={reasonCorrectionMessage}
+            onCorrect={(reportId, reasonId) => onCorrectExclusionReason?.(reportId, reasonId)}
+          />
 
           <div className="panel">
             <SectionTitle icon={BarChart3} title="PRISMA Flow Diagram Preview" action="Auto-calculated" />

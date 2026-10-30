@@ -1,5 +1,5 @@
 import { ViewLink } from "@/components/navigation-link";
-import { useEffect, useState, type ChangeEvent, type RefObject } from "react";
+import { useEffect, useState, type ChangeEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -47,6 +47,7 @@ type FullTextSectionProps = {
   fullTextReason: string;
   setFullTextReason: (reason: string) => void;
   exclusionReasons: string[];
+  exclusionReasonCorrections?: ReactNode;
   studies: Study[];
   reviewedCount: number;
   onOpenReviewed: () => void;
@@ -82,6 +83,7 @@ export function FullTextSection({
   fullTextReason,
   setFullTextReason,
   exclusionReasons,
+  exclusionReasonCorrections,
   studies,
   reviewedCount,
   onOpenReviewed,
@@ -142,6 +144,7 @@ export function FullTextSection({
             </ViewLink>
           </div>
         </section>
+        {exclusionReasonCorrections}
         <section className="panel">
           <EmptyState
             icon={BookOpen}
@@ -289,6 +292,7 @@ export function FullTextSection({
         />
       </section>
 
+      {exclusionReasonCorrections}
       <section className="fullTextLayout">
         <aside className="panel fullTextPanel">
           <SectionTitle icon={BookOpen} title="Report Metadata" action={reportActionLabel} />

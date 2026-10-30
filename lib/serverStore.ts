@@ -986,6 +986,10 @@ function withReportWorkflowState(
     fullTextExclusionReasonId: evaluation.state === "excluded_full_text"
       ? currentDecisions.find((decision) => decision.decisionValue === "exclude")?.exclusionReasonId ?? null
       : undefined,
+    fullTextExclusionReasonNeedsCorrection: evaluation.state === "excluded_full_text" && currentDecisions.some(
+      (decision) => decision.decisionValue === "exclude" &&
+        (!decision.exclusionReasonId || !project.exclusionReasons.includes(decision.exclusionReasonId))
+    ),
     fullTextVoteCount: currentDecisions.length,
     fullTextRequiredVotes: requiredVotes,
     fullTextActiveViewerCount: activeReportCheckouts.length,
@@ -1327,6 +1331,13 @@ function buildPayload(state: PersistedState, userId: string): AppStatePayload {
 function buildVisibleWorkflowEvents(state: PersistedState, projectById: Map<string, ReviewProject>, currentUser: StoredUser) {
   const projectIdByEntity = getWorkflowEventProjectIds(state);
   return state.events.filter((event) => {
+    // Older builds logged these automatic consequences of votes. Keep the stored
+    // records, but show only the user actions that triggered them in the audit.
+    if (
+      event.action === "Advanced study to full-text review" ||
+      event.action === "Created full-text report" ||
+      event.action === "Returned study to title/abstract screening"
+    ) return false;
     const projectId = projectIdByEntity.get(event.entity) ?? (projectById.has("demo-review") ? "demo-review" : "");
     const project = projectById.get(projectId);
     if (!project) return false;
@@ -2960,7 +2971,7 @@ function addScreeningDecisionInState(state: PersistedState, userId: Parameters<t
   );
   appendEvent(state, currentUser.name, `Voted ${formatDecision(nextDecision.decisionValue)}`, studyId, currentUser.id);
   const context = createProjectWorkflowContext(state, project);
-  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
   acquireNextTitleAbstractCheckoutForUser(state, project, userId, studyId);
 
@@ -3746,7 +3757,7 @@ function undoScreeningDecisionInState(state: PersistedState, userId: Parameters<
   appendEvent(state, currentUser.name, "Undid latest screening vote", studyId, currentUser.id);
   const project = requireProjectMember(state, projectId, userId);
   const context = createProjectWorkflowContext(state, project);
-  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
   return buildPayload(state, userId);
 }
@@ -3794,12 +3805,78 @@ function reopenTitleAbstractDecisionInState(state: PersistedState, userId: Param
 
   appendEvent(state, currentUser.name, "Returned citation to title/abstract queue", studyId, currentUser.id);
   const context = createProjectWorkflowContext(state, project);
-  syncStudyAfterTitleAbstractDecision(state, project, studyId, currentUser.name, context);
+  syncStudyAfterTitleAbstractDecision(state, project, studyId, context);
   refreshWorkflowAfterStudyDecision(state, project, studyId, context);
   return {
     ...buildPayload(state, userId),
     message: "Citation returned to the title/abstract queue."
   };
+}
+
+export function correctFullTextExclusionReasonForUser(
+  userId: string,
+  projectId: string,
+  reportId: string,
+  exclusionReasonId: string
+): AppMutationPayload {
+  return withReviewMutation(userId, projectId, (state) => {
+    const currentUser = getUser(state, userId);
+    if (!currentUser) {
+      throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+    }
+    const project = requireProjectMember(state, projectId, userId);
+    if (!currentUser.isAdmin && !isProjectOwner(project, userId)) {
+      throw new ApiError("Only project owners or administrators can correct exclusion reasons.", 403);
+    }
+    const report = state.reports.find((candidate) => candidate.id === reportId && candidate.projectId === projectId);
+    if (!report) {
+      throw new ApiError("Report not found.", 404);
+    }
+    const reason = exclusionReasonId.trim();
+    if (!reason || !project.exclusionReasons.includes(reason)) {
+      throw new ApiError("Choose a valid project exclusion reason.");
+    }
+
+    const currentDecisions = getCurrentFullTextDecisions(state.decisions, projectId, reportId);
+    const evaluation = evaluateStage(
+      "full_text", currentDecisions.map((decision) => decision.decisionValue),
+      report.fullTextRequiredVotes ?? project.fullTextRequiredVotes, project.maybePolicy
+    );
+    if (evaluation.state !== "excluded_full_text") {
+      throw new ApiError("Exclusion reasons can only be corrected for a report excluded at full text.");
+    }
+
+    const invalidExclusions = currentDecisions.filter((decision) => decision.decisionValue === "exclude" &&
+      (!decision.exclusionReasonId || !project.exclusionReasons.includes(decision.exclusionReasonId)));
+    if (invalidExclusions.length === 0) {
+      return { ...buildPayload(state, userId), message: "This report already has valid exclusion reasons." };
+    }
+
+    // Amend the reason metadata without reopening the report or adding a vote.
+    // Preserve each original reviewer's identity and retain the prior reason in
+    // its superseded decision; the audit event identifies the correcting owner.
+    const replacedIds = new Set(invalidExclusions.map((decision) => decision.id));
+    const now = new Date().toISOString();
+    state.decisions = [
+      ...state.decisions.map((decision) => replacedIds.has(decision.id) ? { ...decision, isCurrent: false } : decision),
+      ...invalidExclusions.map((decision): Decision => ({
+        ...decision,
+        id: createId("dec"),
+        exclusionReasonId: reason,
+        supersedesDecisionId: decision.id,
+        createdAt: now
+      }))
+    ];
+    appendEvent(
+      state, currentUser.name,
+      `Corrected full-text exclusion reason to "${reason}" (superseded ${invalidExclusions.map((decision) => decision.id).join(", ")})`,
+      reportId, currentUser.id
+    );
+    return {
+      ...buildPayload(state, userId),
+      message: "Exclusion reason corrected. The report remains excluded and its review history is preserved."
+    };
+  });
 }
 
 export function reopenFullTextDecisionForUser(userId: string, projectId: string, reportId: string): AppMutationPayload {
@@ -4111,7 +4188,7 @@ function applyExtractionConsensusUpdates(state: PersistedState, context: Project
 }
 
 function syncStudyAfterTitleAbstractDecision(
-  state: PersistedState, project: ReviewProject, studyId: string, actor: string,
+  state: PersistedState, project: ReviewProject, studyId: string,
   context = createProjectWorkflowContext(state, project)
 ) {
   const currentDecisions = context.titleDecisionsByStudyId.get(studyId) ?? [];
@@ -4128,10 +4205,7 @@ function syncStudyAfterTitleAbstractDecision(
     const transitionedToFullText = advancedStudy?.stage === "title_abstract";
     if (advancedStudy) {
       if (transitionedToFullText) advancedStudy.stage = "full_text";
-      upsertReportForStudy(state, project.id, advancedStudy, actor, context);
-      if (transitionedToFullText) {
-        appendEvent(state, actor, "Advanced study to full-text review", studyId);
-      }
+      upsertReportForStudy(state, project.id, advancedStudy, context);
     }
   } else {
     const existingReport = context.reportsByStudyId.get(studyId)?.[0];
@@ -4146,7 +4220,6 @@ function syncStudyAfterTitleAbstractDecision(
       const study = context.studiesById.get(studyId);
       if (study?.stage === "full_text") {
         study.stage = "title_abstract";
-        appendEvent(state, actor, "Returned study to title/abstract screening", studyId);
       }
     }
   }
@@ -4423,7 +4496,7 @@ function createReportForStudy(projectId: string, study: Study, sourcePdfUrl?: st
 }
 
 function upsertReportForStudy(
-  state: PersistedState, projectId: string, study: Study, actor: string,
+  state: PersistedState, projectId: string, study: Study,
   context?: ProjectWorkflowContext
 ) {
   const existing = context
@@ -4440,7 +4513,6 @@ function upsertReportForStudy(
   state.reports.unshift(report);
   context?.reportsById.set(report.id, report);
   context?.reportsByStudyId.set(study.id, [report]);
-  appendEvent(state, actor, "Created full-text report", report.id);
   return report;
 }
 
@@ -4703,7 +4775,7 @@ function refreshWorkflowAfterStudyDecision(
 function resyncProjectWorkflowState(state: PersistedState, project: ReviewProject) {
   const context = createProjectWorkflowContext(state, project);
   for (const study of context.studiesById.values()) {
-    syncStudyAfterTitleAbstractDecision(state, project, study.id, "System", context);
+    syncStudyAfterTitleAbstractDecision(state, project, study.id, context);
   }
   for (const report of context.reportsById.values()) {
     syncStudyAfterFullTextDecision(state, project, report.id, context);

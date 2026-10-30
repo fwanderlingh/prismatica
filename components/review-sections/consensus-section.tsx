@@ -14,6 +14,7 @@ import {
 } from "@/lib/prismaData";
 import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
 import { formatReportQueueOption } from "@/lib/reviewDisplay";
+import { getExtractionConflictFieldIds, getExtractionConsensusQueue } from "@/lib/consensusQueue";
 
 type FormSubmitEvent = {
   preventDefault: () => void;
@@ -65,12 +66,13 @@ export function ConsensusSection({
   toggleConsensusChoice
 }: ConsensusSectionProps) {
   const canArbitrate =
+    currentUser.isAdmin ||
     selectedProject.memberIds.includes(currentUser.id) ||
     selectedProject.ownerIds.includes(currentUser.id) ||
     selectedProject.ownerId === currentUser.id;
   const consensusMessageIsSuccess = /finalized|saved|resolved/i.test(consensusMessage);
 
-  if (activeCounts.studiesIncluded === 0) {
+  if (activeCounts.studiesIncluded === 0 || projectExtractionReports.length === 0) {
     return (
       <div className="viewStack">
         <section className="overviewBand">
@@ -113,47 +115,26 @@ export function ConsensusSection({
   }
 
   const requiredVotes = selectedProject.extractionRequiredVotes;
-  const consensusQueue = projectExtractionReports.map((report) => {
-    const submittedVotes = extractionResponses.filter(
-      (response) =>
-        response.projectId === selectedProject.id &&
-        response.reportId === report.id &&
-        response.templateId === activeExtractionTemplate.id &&
-        response.isSubmitted
-    ).length;
-    const record = extractionConsensus.find(
-      (consensus) =>
-        consensus.projectId === selectedProject.id &&
-        consensus.reportId === report.id &&
-        consensus.templateId === activeExtractionTemplate.id
-    );
-
-    return {
-      report,
-      submittedVotes,
-      record
-    };
-  });
-
-  const pendingConsensusCount = consensusQueue.filter(
-    (item) => item.submittedVotes >= requiredVotes && item.record?.status !== "finalized"
-  ).length;
-  const finalizedConsensusCount = consensusQueue.filter((item) => item.record?.status === "finalized").length;
-  const activeReportForConsensus = activeExtractionReport ?? projectExtractionReports[0];
+  const consensusQueue = getExtractionConsensusQueue(
+    selectedProject, projectExtractionReports, extractionResponses, extractionConsensus, activeExtractionTemplate.id
+  );
+  const pendingItems = consensusQueue.filter((item) => item.status === "pending");
+  const collectingItems = consensusQueue.filter((item) => item.status === "collecting");
+  const finalizedItems = consensusQueue.filter((item) => item.status === "finalized");
+  const activeReportForConsensus = activeExtractionReport ?? pendingItems[0]?.report ?? projectExtractionReports[0];
+  const activeQueueItem = consensusQueue.find((item) => item.report.id === activeReportForConsensus?.id);
+  const activeRecord = activeQueueItem?.record ?? (
+    activeExtractionConsensus?.reportId === activeReportForConsensus?.id && activeExtractionConsensus?.templateId === activeExtractionTemplate.id
+      ? activeExtractionConsensus : undefined
+  );
+  const activePendingIndex = pendingItems.findIndex((item) => item.report.id === activeReportForConsensus?.id);
+  const nextPendingItem = pendingItems.length > 0 ? pendingItems[(activePendingIndex + 1) % pendingItems.length] : undefined;
   const activeStudyForConsensus = activeReportForConsensus
     ? projectScreeningStudies.find((study) => study.id === activeReportForConsensus.studyId)
     : undefined;
-  const submittedResponsesForActiveReport = activeReportForConsensus
-    ? extractionResponses.filter(
-        (response) =>
-          response.projectId === selectedProject.id &&
-          response.reportId === activeReportForConsensus.id &&
-          response.templateId === activeExtractionTemplate.id &&
-          response.isSubmitted
-      )
-    : [];
+  const submittedResponsesForActiveReport = activeQueueItem?.submittedResponses ?? [];
   const hasRequiredVotes = submittedResponsesForActiveReport.length >= requiredVotes;
-  const flaggedFieldIdSet = new Set(activeExtractionConsensus?.flaggedFieldIds ?? []);
+  const flaggedFieldIdSet = new Set(activeRecord?.flaggedFieldIds ?? getExtractionConflictFieldIds(activeExtractionTemplate.fields, submittedResponsesForActiveReport));
   const conflictedFields = activeExtractionTemplate.fields.filter((field) => flaggedFieldIdSet.has(field.id));
 
   return (
@@ -167,35 +148,46 @@ export function ConsensusSection({
         <div className="reportPicker">
           <div>
             <p className="eyebrow">Queue status</p>
-            <strong>{pendingConsensusCount} pending</strong>
-            <p className="subtle">{finalizedConsensusCount} finalized records</p>
+            <strong>{pendingItems.length > 0 ? <a className="consensusPendingLink" href="#pending-consensus-title">{pendingItems.length} pending</a> : "0 pending"}</strong>
+            <p className="subtle">{finalizedItems.length} finalized records</p>
           </div>
           <ViewLink className="ghostButton" view="extraction" onNavigate={() => setActiveView("extraction")}>
             <ClipboardCheck size={16} />
             Back To Extraction
           </ViewLink>
+          {nextPendingItem ? (
+            <button
+              className="primaryButton"
+              type="button"
+              disabled={isFinalizingExtractionConsensus || nextPendingItem.report.id === activeReportForConsensus?.id}
+              onClick={() => setActiveExtractionReportId(nextPendingItem.report.id)}
+            >
+              <GitMerge size={16} />
+              {activePendingIndex < 0 ? "Review pending consensus" : "Next pending consensus"}
+            </button>
+          ) : null}
           <label className="fieldLabel" htmlFor="consensus-report-picker">
             Study/report
           </label>
           <select
             id="consensus-report-picker"
             value={activeReportForConsensus?.id ?? ""}
+            disabled={isFinalizingExtractionConsensus}
             onChange={(event) => setActiveExtractionReportId(event.target.value)}
           >
-            {projectExtractionReports.map((report, index) => {
-              const item = consensusQueue.find((candidate) => candidate.report.id === report.id);
-              const statusLabel =
-                item && item.submittedVotes >= requiredVotes
-                  ? item.record?.status === "finalized"
-                    ? "finalized"
-                    : "pending"
-                  : "collecting votes";
-              return (
-                <option key={report.id} value={report.id}>
-                  {formatReportQueueOption(report, projectScreeningStudies, index + 1)} ({statusLabel})
-                </option>
-              );
-            })}
+            {[
+              { label: `Pending consensus (${pendingItems.length})`, items: pendingItems },
+              { label: `Collecting extraction votes (${collectingItems.length})`, items: collectingItems },
+              { label: `Finalized consensus (${finalizedItems.length})`, items: finalizedItems }
+            ].filter((group) => group.items.length > 0).map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.items.map(({ report, index }) => (
+                  <option key={report.id} value={report.id}>
+                    {formatReportQueueOption(report, projectScreeningStudies, index + 1)}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </div>
       </section>
@@ -207,8 +199,40 @@ export function ConsensusSection({
         </div>
       ) : null}
 
+      {pendingItems.length > 0 ? (
+        <section className="panel" aria-labelledby="pending-consensus-title">
+          <h2 id="pending-consensus-title">Pending consensus ({pendingItems.length})</h2>
+          <p className="subtle">Resolve these records to finish consensus and enable CSV export.</p>
+          <div className="exportReviewItems consensusPendingItems">
+            <ul>
+              {pendingItems.map(({ report, index, record, submittedResponses }) => {
+                const isSelected = report.id === activeReportForConsensus?.id;
+                const conflictCount = (record?.flaggedFieldIds ?? getExtractionConflictFieldIds(activeExtractionTemplate.fields, submittedResponses)).length;
+                return (
+                  <li key={report.id} aria-current={isSelected ? "true" : undefined}>
+                    <strong>{formatReportQueueOption(report, projectScreeningStudies, index + 1)}</strong>
+                    <small>{conflictCount > 0 ? `${conflictCount} field conflict${conflictCount === 1 ? "" : "s"} to resolve` : "Ready for finalization"}</small>
+                    <button
+                      className={isSelected ? "primaryButton" : "ghostButton"}
+                      type="button"
+                      disabled={isFinalizingExtractionConsensus}
+                      aria-controls="consensus-report-details"
+                      aria-label={`Review consensus: ${formatReportQueueOption(report, projectScreeningStudies, index + 1)}`}
+                      onClick={() => setActiveExtractionReportId(report.id)}
+                    >
+                      <GitMerge size={16} />
+                      {isSelected ? "Reviewing this report" : "Review consensus"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </section>
+      ) : null}
+
       {!hasRequiredVotes ? (
-        <section className="panel">
+        <section className="panel" id="consensus-report-details">
           <SectionTitle icon={AlertTriangle} title="Waiting For Independent Extractions" action="Automated gate" />
           <div className="validationItem blocked">
             <AlertTriangle size={17} />
@@ -218,11 +242,11 @@ export function ConsensusSection({
           </div>
         </section>
       ) : (
-        <section className="panel">
+        <section className="panel" id="consensus-report-details">
           <SectionTitle icon={GitMerge} title="Automated Conflict Flagging" action={`${activeExtractionTemplate.fields.length} fields compared`} />
           <p className="subtle">
             {activeStudyForConsensus
-              ? `${activeStudyForConsensus.title} · ${activeExtractionConsensus?.status === "finalized" ? "finalized" : "pending arbitration"}`
+              ? `${activeStudyForConsensus.title} · ${activeQueueItem?.status === "finalized" ? "finalized" : "pending arbitration"}`
               : "Select a report to review extraction discrepancies."}
           </p>
           <div className="tableWrap">
@@ -255,24 +279,29 @@ export function ConsensusSection({
             </table>
           </div>
 
-          {activeExtractionConsensus?.status === "finalized" ? (
+          {activeQueueItem?.status === "finalized" && activeRecord ? (
             <div className="validationItem ok">
               <Check size={17} />
               <span>
-                Finalized by {activeExtractionConsensus.finalizedByUserName || "System"} at {formatAuditTime(activeExtractionConsensus.finalizedAt || activeExtractionConsensus.updatedAt)}.
+                Finalized by {activeRecord.finalizedByUserName || "System"} at {formatAuditTime(activeRecord.finalizedAt || activeRecord.updatedAt)}.
               </span>
             </div>
           ) : null}
         </section>
       )}
 
-      {hasRequiredVotes && activeExtractionConsensus ? (
+      {hasRequiredVotes ? (
         <section className="panel">
           <SectionTitle icon={ClipboardCheck} title="Arbitration And Finalization" action={`${conflictedFields.length} conflicts`} />
           {conflictedFields.length === 0 ? (
             <div className="validationItem ok">
               <Check size={17} />
-              <span>No conflicting extraction fields detected. This consensus record can be exported as finalized.</span>
+              <span>{activeQueueItem?.status === "finalized" ? "No conflicting extraction fields detected. This consensus record is finalized." : "No conflicting extraction fields detected. Finalize this consensus record to include it in the export."}</span>
+              {activeQueueItem?.status !== "finalized" ? (
+                <button className="primaryButton" type="button" disabled={!canArbitrate || isFinalizingExtractionConsensus} onClick={finalizeExtractionConsensus}>
+                  {isFinalizingExtractionConsensus ? "Finalizing..." : "Finalize Consensus"}
+                </button>
+              ) : null}
             </div>
           ) : (
             <form className="extractionForm" onSubmit={finalizeExtractionConsensus}>

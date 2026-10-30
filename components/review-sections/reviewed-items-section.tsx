@@ -1,4 +1,5 @@
 import { ViewLink } from "@/components/navigation-link";
+import type { ReactNode } from "react";
 import type { ViewKey } from "@/lib/prismaData";
 import { formatReviewDateTime } from "@/lib/reviewDisplay";
 import type { LucideIcon } from "lucide-react";
@@ -30,6 +31,7 @@ type ReviewedItemsSectionProps = {
   actionLabel: string;
   onOpenQueue: () => void;
   onReturnToQueue: (itemId: string) => void;
+  children?: ReactNode;
 };
 
 export function ReviewedItemsSection({
@@ -46,7 +48,8 @@ export function ReviewedItemsSection({
   pendingItemId,
   actionLabel,
   onOpenQueue,
-  onReturnToQueue
+  onReturnToQueue,
+  children
 }: ReviewedItemsSectionProps) {
   const messageIsSuccess = /returned|queue|saved|updated/i.test(message);
   const messageIsError = /already|cannot|denied|duplicate|error|failed|forbidden|invalid|no longer|not found|required|unauthorized/i.test(message);
@@ -75,6 +78,7 @@ export function ReviewedItemsSection({
         </div>
       ) : null}
 
+      {children}
       <section className="panel">
         <SectionTitle icon={Icon} title="Reviewed Items" action={`${items.length} completed`} />
         {items.length > 0 ? (

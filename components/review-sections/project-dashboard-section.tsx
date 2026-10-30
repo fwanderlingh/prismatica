@@ -1,6 +1,7 @@
 import { ViewLink } from "@/components/navigation-link";
-import { Activity, ChevronRight, History, Settings, Users } from "lucide-react";
+import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from "lucide-react";
 import type { PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
+import type { ProjectAttentionItem } from "@/lib/projectAttention";
 import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 import { getProjectPhaseProgress, getScreeningRecordTotal } from "@/lib/workflowSelectors";
 import { ResolveConflictButton } from "./resolve-conflict-button";
@@ -22,6 +23,9 @@ type ProjectDashboardSectionProps = {
   recordsIdentified: number;
   activeCounts: PrismaCounts;
   exportFailedCount: number;
+  pendingConsensusCount?: number;
+  finalizedConsensusCount?: number;
+  attentionItems?: ProjectAttentionItem[];
   projectEvents: WorkflowEvent[];
   latestProjectEvents: WorkflowEvent[];
   projectUserStats: ProjectUserStatRow[];
@@ -46,6 +50,9 @@ export function ProjectDashboardSection({
   recordsIdentified,
   activeCounts,
   exportFailedCount,
+  pendingConsensusCount = 0,
+  finalizedConsensusCount = 0,
+  attentionItems = [],
   projectEvents,
   latestProjectEvents,
   projectUserStats,
@@ -75,7 +82,9 @@ export function ProjectDashboardSection({
     extraction: { label: "Continue extraction", view: "extraction" },
     complete: { label: "Review exports", view: "exports" }
   };
-  const phaseAction = phaseActions[selectedProject.stage];
+  const phaseAction = selectedProject.stage === "extraction" && pendingConsensusCount > 0 && activeCounts.studiesExtracted >= activeCounts.studiesIncluded
+    ? { label: "Resolve consensus", view: "consensus" as ViewKey }
+    : phaseActions[selectedProject.stage];
 
   return (
     <div className="viewStack">
@@ -104,6 +113,22 @@ export function ProjectDashboardSection({
         </div>
       </section>
 
+      {attentionItems.length > 0 ? (
+        <section className="projectAttention" aria-labelledby="project-attention-title">
+          <h2 id="project-attention-title"><AlertTriangle size={18} aria-hidden="true" />Needs attention</h2>
+          <ul className="projectAttentionList">
+            {attentionItems.map((item) => (
+              <li key={item.id}>
+                <ViewLink className="projectAttentionLink" view={item.view} onNavigate={() => onNavigate(item.view)}>
+                  {item.label}
+                </ViewLink>
+                {item.detail ? <span>{item.detail}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="dashboardGrid">
         <div className="panel largePanel workflowPanel">
           <SectionTitle
@@ -124,12 +149,16 @@ export function ProjectDashboardSection({
               ],
               [
                 "Export",
-                exportFailedCount > 0 ? `${exportFailedCount} checks need review` : "PRISMA 2020 ready",
+                pendingConsensusCount > 0
+                  ? `${pendingConsensusCount} consensus pending`
+                  : exportFailedCount > 0
+                    ? `${exportFailedCount} checks need review`
+                    : selectedProject.stage === "complete" ? "Ready to export" : "Review in progress",
                 activeCounts.studiesIncluded === 0
                   ? "pending"
                   : exportFailedCount > 0
                     ? "warning"
-                    : "complete"
+                    : selectedProject.stage === "complete" ? "complete" : "pending"
               ]
             ].map(([label, value, status]) => (
               <li className={`workflowNode ${status}`} key={label}>
@@ -156,6 +185,13 @@ export function ProjectDashboardSection({
                     : "warning"
               }
             />
+            {activeCounts.studiesIncluded > 0 ? (
+              <StatusRow
+                label="Consensus progress"
+                value={`${finalizedConsensusCount}/${activeCounts.studiesIncluded} finalized${pendingConsensusCount > 0 ? ` · ${pendingConsensusCount} pending` : ""}`}
+                tone={finalizedConsensusCount >= activeCounts.studiesIncluded ? "secure" : "warning"}
+              />
+            ) : null}
             <StatusRow label="Blind mode" value={selectedProject.blindMode ? "Enabled" : "Disabled"} tone="info" />
             <StatusRow label="Maybe policy" value={formatMaybePolicy(selectedProject.maybePolicy)} tone="info" />
             <StatusRow label="Unresolved conflicts" value={`${selectedProject.conflicts} open conflicts`} tone="warning" />

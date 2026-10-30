@@ -9,6 +9,14 @@ type ExportConsistencyInput = {
   decisions: Decision[];
 };
 
+export type ExclusionReasonIssue = {
+  reportId: string;
+  title: string;
+  importItemId?: number;
+  invalidReasons: (string | null)[];
+  suggestedReason?: string;
+};
+
 export function getExportConsistency({ project, counts, studies, reports, decisions }: ExportConsistencyInput) {
   const pendingRetrievalReports = reports.filter(
     (report) => report.projectId === project.id && report.retrievalStatus === "not_sought"
@@ -32,10 +40,38 @@ export function getExportConsistency({ project, counts, studies, reports, decisi
     (decision) => decision.projectId === project.id && decision.stage === "full_text" && decision.isCurrent && decision.decisionValue === "exclude"
   );
   const finalExclusions = getFullTextExclusionReasons(project, reports, decisions);
-  const missingReasonReportIds = new Set(excludedFullTextDecisions.filter((decision) => !decision.exclusionReasonId)
-    .map((decision) => decision.reportId ?? decision.studyId));
+  const reportsById = new Map(reports.filter((report) => report.projectId === project.id).map((report) => [report.id, report]));
+  const studiesById = new Map(studies.filter((study) => study.projectId === project.id).map((study) => [study.id, study]));
+  const isConfiguredReason = (reason: string | null | undefined): reason is string => Boolean(reason && project.exclusionReasons.includes(reason));
+  const missingReasonReportIds = new Set<string>();
+  const exclusionReasonIssues: ExclusionReasonIssue[] = [];
   for (const exclusion of finalExclusions) {
-    if (!exclusion.reasonId || !project.exclusionReasons.includes(exclusion.reasonId)) missingReasonReportIds.add(exclusion.reportId);
+    const report = reportsById.get(exclusion.reportId);
+    const reportDecisions = excludedFullTextDecisions.filter((decision) => (decision.reportId ?? decision.studyId) === exclusion.reportId);
+    const invalidReasons = new Set(reportDecisions.filter((decision) => !isConfiguredReason(decision.exclusionReasonId))
+      .map((decision) => decision.exclusionReasonId || null));
+    if (!isConfiguredReason(exclusion.reasonId)) invalidReasons.add(exclusion.reasonId || null);
+    // Blind review exposes an aggregate repair flag without revealing peer votes.
+    if (report?.fullTextExclusionReasonNeedsCorrection && invalidReasons.size === 0) invalidReasons.add(null);
+    if (invalidReasons.size === 0) continue;
+    missingReasonReportIds.add(exclusion.reportId);
+    // A correction endpoint needs a real report; orphaned historical votes cannot
+    // offer a repair action for an unrelated item.
+    if (!report) continue;
+    const candidates = new Set(reportDecisions.map((decision) => decision.exclusionReasonId).filter(isConfiguredReason));
+    if (isConfiguredReason(exclusion.reasonId)) candidates.add(exclusion.reasonId);
+    for (const reason of invalidReasons) {
+      if (!reason) continue;
+      const matchingReasons = project.exclusionReasons.filter((configured) => configured.trim().toLowerCase() === reason.trim().toLowerCase());
+      if (matchingReasons.length === 1) candidates.add(matchingReasons[0]);
+    }
+    exclusionReasonIssues.push({
+      reportId: report.id,
+      title: report.title,
+      importItemId: studiesById.get(report.studyId)?.importItemId,
+      invalidReasons: [...invalidReasons],
+      ...(candidates.size === 1 ? { suggestedReason: [...candidates][0] } : {})
+    });
   }
   const excludedWithoutReasonCount = missingReasonReportIds.size;
 
@@ -75,7 +111,8 @@ export function getExportConsistency({ project, counts, studies, reports, decisi
     failedCount: activeCount - passedCount,
     reportsAdvancedToFullText,
     pendingRetrievalReports,
-    unresolvedScreeningStudies
+    unresolvedScreeningStudies,
+    exclusionReasonIssues
   };
 }
 

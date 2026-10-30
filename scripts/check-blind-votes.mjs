@@ -70,6 +70,7 @@ exports.__blindVoteTest = {
     id, actor: users.find(user => user.id === actorId)?.name ?? 'Legacy reviewer', actorId,
     action, entity, time: stamp
   });
+  const automaticEventIds = new Set(['peer-advance', 'peer-return', 'peer-created-report']);
   function fixture() {
     const records = [study('screening-paper'), study('full-text-paper', 'full_text')];
     return {
@@ -143,7 +144,8 @@ exports.__blindVoteTest = {
       assert.equal(payload.reports[0].fullTextStatus, 'conflict');
       const visibleEventIds = payload.events.map(entry => entry.id);
       const expectedEventIds = storedEvents.filter(entry =>
-        entry.actorId === user.id || ['peer-upload', 'peer-settings'].includes(entry.id)
+        !automaticEventIds.has(entry.id) &&
+        (entry.actorId === user.id || ['peer-upload', 'peer-settings'].includes(entry.id))
       ).map(entry => entry.id);
       assert.deepEqual(visibleEventIds, expectedEventIds);
       assert.deepEqual(state.decisions, storedDecisions);
@@ -174,14 +176,44 @@ exports.__blindVoteTest = {
     assert.equal(pending.fullTextExclusionReasonId, undefined, 'an independent reviewer cannot see a pending vote reason');
   });
 
-  test('nonblind payload retains full decision history, conflict votes, and audit for every role', () => {
+  test('nonblind payload retains decision history, conflict votes, and user audit actions for every role', () => {
     for (const user of users) {
       const state = fixture();
       state.projects[0].blindMode = false;
       const payload = internal.buildPayload(state, user.id);
       assert.deepEqual(payload.decisions, state.decisions);
-      assert.deepEqual(payload.events, state.events);
+      assert.deepEqual(payload.events, state.events.filter(entry => !automaticEventIds.has(entry.id)));
       assert.ok(payload.workflowConflicts.every(conflict => conflict.decisions.length === 2));
+    }
+  });
+
+  test('legacy automatic audit entries stay stored but hidden regardless of role, author, or blind mode', () => {
+    const automaticActions = [
+      'Advanced study to full-text review',
+      'Created full-text report',
+      'Returned study to title/abstract screening'
+    ];
+    for (const blindMode of [false, true]) {
+      for (const user of users) {
+        const state = fixture();
+        state.projects[0].blindMode = blindMode;
+        const userActions = [
+          event('explicit-vote', user.id, 'Voted Include'),
+          event('explicit-undo', user.id, 'Undid latest screening vote'),
+          event('explicit-reopen', user.id, 'Returned citation to title/abstract queue')
+        ];
+        state.events = [
+          ...automaticActions.flatMap((action, index) => [
+            event(`own-automatic-${index}`, user.id, action),
+            event(`peer-automatic-${index}`, 'peer', action),
+            { ...event(`system-automatic-${index}`, undefined, action), actor: 'System' }
+          ]),
+          ...userActions
+        ];
+        const storedEvents = structuredClone(state.events);
+        assert.deepEqual(internal.buildPayload(state, user.id).events, userActions);
+        assert.deepEqual(state.events, storedEvents, 'hiding old automatic entries must not rewrite history');
+      }
     }
   });
 

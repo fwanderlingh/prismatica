@@ -142,6 +142,7 @@ export type Report = {
   fullTextStatus?: string;
   fullTextStatusLabel?: string;
   fullTextExclusionReasonId?: string | null;
+  fullTextExclusionReasonNeedsCorrection?: boolean;
   fullTextVoteCount?: number;
   fullTextRequiredVotes?: number;
   fullTextActiveViewerCount?: number;

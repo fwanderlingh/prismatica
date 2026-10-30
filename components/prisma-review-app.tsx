@@ -55,6 +55,8 @@ import {
 import { groupByKey } from "@/lib/collectionIndexes";
 import { getProjectAuditEvents } from "@/lib/auditHistory";
 import { getExportConsistency } from "@/lib/exportConsistency";
+import { getExtractionConsensusQueue } from "@/lib/consensusQueue";
+import { getProjectAttention } from "@/lib/projectAttention";
 import { readFileWithProgress, readImportProgress, type LoadProgress as LoadingProgress } from "@/lib/loadProgress";
 import { LoadProgress } from "./review-sections/load-progress";
 import type { ApiErrorPayload, AppAuthSettings, AppMutationPayload, AppStatePayload, PublicAuthConfigPayload } from "@/lib/apiTypes";
@@ -78,6 +80,7 @@ import { FullTextSection } from "./review-sections/full-text-section";
 import { PdfUploadSection } from "./review-sections/pdf-upload-section";
 import { ExtractionSection } from "./review-sections/extraction-section";
 import { ConsensusSection } from "./review-sections/consensus-section";
+import { ExclusionReasonCorrections } from "./review-sections/exclusion-reason-corrections";
 import { DashboardSection } from "./review-sections/dashboard-section";
 import { ProjectDashboardSection } from "./review-sections/project-dashboard-section";
 import { ConflictsSection } from "./review-sections/conflicts-section";
@@ -612,6 +615,7 @@ export function PrismaReviewApp() {
   const [activeReportId, setActiveReportId] = useState("");
   const [auditPage, setAuditPage] = useState(1);
   const [activeExtractionReportId, setActiveExtractionReportId] = useState("");
+  const [activeConsensusReportId, setActiveConsensusReportId] = useState("");
   const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
   const [isEditingExtractionTemplate, setIsEditingExtractionTemplate] = useState(false);
   const [extractionFormValues, setExtractionFormValues] = useState<Record<string, ExtractionResponseValue>>({});
@@ -623,6 +627,9 @@ export function PrismaReviewApp() {
   const [isFinalizingExtractionConsensus, setIsFinalizingExtractionConsensus] = useState(false);
   const [exportMessage, setExportMessage] = useState("");
   const [isExportingConsensusCsv, setIsExportingConsensusCsv] = useState(false);
+  const [pendingReasonCorrectionReportId, setPendingReasonCorrectionReportId] = useState("");
+  const [reasonCorrectionMessage, setReasonCorrectionMessage] = useState("");
+  const [reasonCorrectionMessageProjectId, setReasonCorrectionMessageProjectId] = useState("");
   const [fullTextReason, setFullTextReason] = useState("");
   const [screeningCheckoutIssue, setScreeningCheckoutIssue] = useState<{ key: string; error: string } | null>(null);
   const [fullTextCheckoutIssue, setFullTextCheckoutIssue] = useState<{ key: string; error: string } | null>(null);
@@ -783,10 +790,19 @@ export function PrismaReviewApp() {
         : projectExtractionReports,
     [activeExtractionTemplate, currentUser.id, extractionResponses, projectExtractionReports, selectedProject]
   );
+  const consensusQueue = useMemo(
+    () => activeExtractionTemplate
+      ? getExtractionConsensusQueue(selectedProject, projectExtractionReports, extractionResponses, extractionConsensus, activeExtractionTemplate.id)
+      : [],
+    [activeExtractionTemplate, selectedProject, projectExtractionReports, extractionResponses, extractionConsensus]
+  );
+  const pendingConsensusItems = useMemo(() => consensusQueue.filter((item) => item.status === "pending"), [consensusQueue]);
   const activeExtractionReport =
     activeView === "extraction"
       ? activeExtractionReports.find((report) => report.id === activeExtractionReportId) ?? activeExtractionReports[0]
-      : projectExtractionReports.find((report) => report.id === activeExtractionReportId) ?? projectExtractionReports[0];
+      : activeView === "consensus"
+        ? projectExtractionReports.find((report) => report.id === activeConsensusReportId) ?? pendingConsensusItems[0]?.report ?? projectExtractionReports[0]
+        : projectExtractionReports.find((report) => report.id === activeExtractionReportId) ?? projectExtractionReports[0];
   const isActiveExtractionReportInActiveQueue = Boolean(
     activeExtractionTemplate && activeExtractionReport && activeExtractionReports.some((report) => report.id === activeExtractionReport.id)
   );
@@ -1046,6 +1062,7 @@ export function PrismaReviewApp() {
     reports: projectReportQueue,
     decisions
   }), [activeCounts, decisions, projectScreeningStudies, projectReportQueue, selectedProject]);
+  const canCorrectExclusionReasons = Boolean(currentUser.isAdmin || selectedProject.ownerId === currentUser.id || selectedProject.ownerIds.includes(currentUser.id));
   const screeningProgress =
     projectScreeningStudies.length > 0 ? Math.round((screenedByMe / projectScreeningStudies.length) * 100) : 0;
   const sequentialPhaseAccess = useMemo<PhaseAccessMap>(() => getSequentialPhaseAccess({
@@ -1065,6 +1082,24 @@ export function PrismaReviewApp() {
     recordsIdentified,
     selectedProject
   ]);
+  const projectAttention = getProjectAttention({
+    counts: activeCounts,
+    consistency: exportConsistency,
+    pendingDedupCount: projectDedupCandidates.filter((candidate) => candidate.status === "pending").length,
+    screeningConflictCount: workflowConflicts.filter((conflict) => conflict.stage === "title_abstract").length,
+    fullTextConflictCount: workflowConflicts.filter((conflict) => conflict.stage === "full_text").length,
+    pendingFullTextCount: projectReportQueue.filter((report) => {
+      if (report.retrievalStatus !== "retrieved" && report.retrievalStatus !== "sought") return false;
+      const status = report.fullTextStatus ?? evaluateStage("full_text", decisions.filter((decision) =>
+        decision.projectId === selectedProject.id && decision.reportId === report.id && decision.stage === "full_text" && decision.isCurrent
+      ).map((decision) => decision.decisionValue), report.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes, selectedProject.maybePolicy).state;
+      return status === "awaiting_votes" || status === "manual_review";
+    }).length,
+    pendingExtractionCount: consensusQueue.filter((item) => item.status === "collecting").length,
+    pendingConsensusCount: pendingConsensusItems.length,
+    needsExtractionTemplate: !activeExtractionTemplate?.isActive,
+    phaseAccess: selectedProject.requireSequentialPhases ? sequentialPhaseAccess : undefined
+  });
 
   function canNavigateToProjectView(view: ViewKey) {
     if (!selectedProject.requireSequentialPhases || !reviewPhaseNavKeys.has(view)) {
@@ -1646,6 +1681,15 @@ export function PrismaReviewApp() {
     setConsensusFormValues(activeExtractionConsensus?.resolvedValues ?? {});
     setConsensusMessage("");
   }, [activeExtractionConsensus?.id, activeExtractionReport?.id, activeExtractionTemplate?.id]);
+
+  useEffect(() => {
+    if (activeView !== "consensus" || projectExtractionReports.some((report) => report.id === activeConsensusReportId)) return;
+    setActiveConsensusReportId(pendingConsensusItems[0]?.report.id ?? projectExtractionReports[0]?.id ?? "");
+  }, [activeView, activeConsensusReportId, pendingConsensusItems, projectExtractionReports]);
+
+  useEffect(() => {
+    setReasonCorrectionMessage("");
+  }, [selectedProject.id]);
 
   useEffect(() => {
     const decision = decisions.find(
@@ -2933,6 +2977,25 @@ export function PrismaReviewApp() {
     }
   }
 
+  async function correctExclusionReason(reportId: string, exclusionReasonId: string) {
+    if (pendingReasonCorrectionReportId || !canCorrectExclusionReasons) return;
+    setPendingReasonCorrectionReportId(reportId);
+    setReasonCorrectionMessageProjectId(selectedProject.id);
+    setReasonCorrectionMessage("");
+    try {
+      const payload = await apiRequest<AppMutationPayload>(
+        `/api/projects/${encodeURIComponent(selectedProject.id)}/reports/${encodeURIComponent(reportId)}/exclusion-reason`,
+        { method: "PATCH", body: JSON.stringify({ exclusionReasonId }) }
+      );
+      applyAppState(payload);
+      setReasonCorrectionMessage(payload.message ?? "Exclusion reason corrected.");
+    } catch (error) {
+      setReasonCorrectionMessage(getErrorMessage(error));
+    } finally {
+      setPendingReasonCorrectionReportId("");
+    }
+  }
+
   async function returnFullTextReportToQueue(reportId: string) {
     if (pendingReopenItem) {
       return;
@@ -3282,6 +3345,9 @@ export function PrismaReviewApp() {
         activeCounts={activeCounts}
         workflowConflicts={workflowConflicts}
         exportFailedCount={exportConsistency.failedCount}
+        pendingConsensusCount={pendingConsensusItems.length}
+        finalizedConsensusCount={consensusQueue.filter((item) => item.status === "finalized").length}
+        attentionItems={projectAttention}
         projectEvents={projectEvents}
         latestProjectEvents={latestProjectEvents}
         projectScreeningStudies={projectScreeningStudies}
@@ -3466,6 +3532,20 @@ export function PrismaReviewApp() {
     );
   }
 
+  function renderExclusionReasonCorrections() {
+    return (
+      <ExclusionReasonCorrections
+        key={selectedProject.id}
+        issues={exportConsistency.exclusionReasonIssues}
+        exclusionReasons={selectedProject.exclusionReasons}
+        canCorrect={canCorrectExclusionReasons}
+        pendingReportId={pendingReasonCorrectionReportId}
+        message={reasonCorrectionMessageProjectId === selectedProject.id ? reasonCorrectionMessage : ""}
+        onCorrect={correctExclusionReason}
+      />
+    );
+  }
+
   function renderFullText() {
     const conflicts = workflowConflicts.filter((conflict) => conflict.stage === "full_text");
     return (
@@ -3494,6 +3574,7 @@ export function PrismaReviewApp() {
         fullTextReason={fullTextReason}
         setFullTextReason={setFullTextReason}
         exclusionReasons={selectedProject.exclusionReasons}
+        exclusionReasonCorrections={renderExclusionReasonCorrections()}
         studies={studies}
         reviewedCount={reviewedFullTextItems.length}
         onOpenReviewed={() => navigateToProjectView("fullTextReviewed")}
@@ -3519,7 +3600,9 @@ export function PrismaReviewApp() {
         queueView="fullText"
         onOpenQueue={() => navigateToProjectView("fullText")}
         onReturnToQueue={returnFullTextReportToQueue}
-      />
+      >
+        {renderExclusionReasonCorrections()}
+      </ReviewedItemsSection>
     );
   }
 
@@ -3602,7 +3685,7 @@ export function PrismaReviewApp() {
         projectScreeningStudies={projectScreeningStudies}
         activeExtractionConsensus={activeExtractionConsensus}
         setActiveView={navigateToProjectView}
-        setActiveExtractionReportId={setActiveExtractionReportId}
+        setActiveExtractionReportId={setActiveConsensusReportId}
         formatExtractionResponseValue={formatExtractionResponseValue}
         formatAuditTime={formatAuditTime}
         finalizeExtractionConsensus={finalizeExtractionConsensus}
@@ -3640,6 +3723,20 @@ export function PrismaReviewApp() {
         isExportingConsensusCsv={isExportingConsensusCsv}
         canExportExtractionCsv={canExportExtractionCsv}
         exportUnavailableReasons={exportUnavailableReasons}
+        exclusionReasons={selectedProject.exclusionReasons}
+        canCorrectExclusionReasons={canCorrectExclusionReasons}
+        pendingReasonCorrectionReportId={pendingReasonCorrectionReportId}
+        reasonCorrectionMessage={reasonCorrectionMessageProjectId === selectedProject.id ? reasonCorrectionMessage : ""}
+        onCorrectExclusionReason={correctExclusionReason}
+        pendingConsensusReports={pendingConsensusItems.map(({ report }) => ({
+          id: report.id,
+          title: report.title,
+          importItemId: projectScreeningStudies.find((study) => study.id === report.studyId)?.importItemId
+        }))}
+        onOpenConsensusReport={(reportId) => {
+          setActiveConsensusReportId(reportId);
+          navigateToProjectView("consensus");
+        }}
         canOpenScreeningStudy={(studyId) => canOpenScreening && availableScreeningStudyIds.has(studyId)}
         canOpenReport={(reportId) => canOpenFullText && availableReportIds.has(reportId)}
         onOpenScreeningStudy={(studyId) => {
@@ -4007,6 +4104,7 @@ export function PrismaReviewApp() {
             projectNavItems={projectNavItems}
             reviewPhaseNavKeys={reviewPhaseNavKeys}
             exportFailedCount={exportConsistency.failedCount}
+            attentionItems={projectAttention}
             getPhaseNavState={getSelectedProjectPhaseNavState}
             canNavigateToProjectView={canNavigateToProjectView}
             onGoDashboard={() => {
