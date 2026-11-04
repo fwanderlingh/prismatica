@@ -1,9 +1,9 @@
 import { ViewLink } from "@/components/navigation-link";
 import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from "lucide-react";
-import type { PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
+import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
 import type { ProjectAttentionItem } from "@/lib/projectAttention";
 import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
-import { getProjectPhaseProgress, getScreeningRecordTotal } from "@/lib/workflowSelectors";
+import { getProjectPhaseProgress, getScreeningCompletion } from "@/lib/workflowSelectors";
 import { ResolveConflictButton } from "./resolve-conflict-button";
 
 type ProjectUserStatRow = {
@@ -30,6 +30,7 @@ type ProjectDashboardSectionProps = {
   latestProjectEvents: WorkflowEvent[];
   projectUserStats: ProjectUserStatRow[];
   projectScreeningStudies: Study[];
+  decisions?: Decision[];
   projectReportQueue: Report[];
   getWorkflowStepState: (step: "imports" | "screening" | "fullText" | "extraction", stage: ReviewProject["stage"]) => "complete" | "active" | "pending" | "warning";
   formatProjectPhase: (stage: ReviewProject["stage"]) => string;
@@ -57,6 +58,7 @@ export function ProjectDashboardSection({
   latestProjectEvents,
   projectUserStats,
   projectScreeningStudies,
+  decisions = [],
   projectReportQueue,
   getWorkflowStepState,
   formatProjectPhase,
@@ -72,8 +74,8 @@ export function ProjectDashboardSection({
   const conflictStage = selectedProject.stage === "screening" ? "title_abstract" : selectedProject.stage === "full_text" ? "full_text" : null;
   const conflictView = selectedProject.stage === "screening" ? "screeningConflicts" : selectedProject.stage === "full_text" ? "fullTextConflicts" : null;
   const phaseConflicts = workflowConflicts.filter((conflict) => conflict.projectId === selectedProject.id && conflict.stage === conflictStage);
-  const phaseProgress = getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber);
-  const screeningTotal = getScreeningRecordTotal(selectedProject, activeCounts);
+  const phaseProgress = getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber, projectScreeningStudies, decisions);
+  const screeningCompletion = getScreeningCompletion(selectedProject, activeCounts, projectScreeningStudies, decisions);
   const phaseActions: Record<ReviewProject["stage"], { label: string; view: ViewKey }> = {
     setup: { label: "Import records", view: "imports" },
     import: { label: "Import records", view: "imports" },
@@ -140,7 +142,7 @@ export function ProjectDashboardSection({
             {[
               ["Import", `${formatNumber(recordsIdentified)} records`, getWorkflowStepState("imports", selectedProject.stage)],
               ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
-              ["Screen", `${formatNumber(activeCounts.recordsScreened)}/${formatNumber(screeningTotal)} screened`, getWorkflowStepState("screening", selectedProject.stage)],
+              ["Screen", `${formatNumber(screeningCompletion.completed)}/${formatNumber(screeningCompletion.total)} screened`, getWorkflowStepState("screening", selectedProject.stage)],
               ["Full text", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
               [
                 "Extract",

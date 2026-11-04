@@ -13,7 +13,7 @@ import {
   type Study,
   type ViewKey
 } from "@/lib/prismaData";
-import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+import { EmptyState, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
 import { ReportPicker } from "@/components/review-sections/review-queue";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 
@@ -550,6 +550,7 @@ export function ExtractionSection({
                 }`
               : "Select an included report to extract data."}
           </p>
+          {activeStudyForExtraction ? renderDoiLink(activeStudyForExtraction.doi, `DOI ${activeStudyForExtraction.doi || "Missing"}`, activeStudyForExtraction) : null}
           <div className="stateRows">
             <StatusRow label="Template" value={`${activeExtractionTemplate.fields.length} fields`} tone="info" />
             <StatusRow

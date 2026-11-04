@@ -214,11 +214,41 @@ export function getScreeningRecordTotal(project: ReviewProject, counts: PrismaCo
   return Math.max(0, project.recordsTotal - counts.duplicateRecordsRemoved - counts.automationRemoved - counts.removedOtherReasons);
 }
 
+export function getScreeningCompletion(
+  project: ReviewProject,
+  counts: PrismaCounts,
+  projectStudies: Study[],
+  decisions: Decision[] = []
+) {
+  const votersByStudy = new Map<string, Set<string>>();
+  for (const decision of decisions) {
+    if (decision.projectId !== project.id || decision.stage !== "title_abstract" || !decision.isCurrent) continue;
+    const voters = votersByStudy.get(decision.studyId) ?? new Set<string>();
+    voters.add(decision.userId);
+    votersByStudy.set(decision.studyId, voters);
+  }
+
+  const completedStudyIds = new Set<string>();
+  for (const study of projectStudies) {
+    if (study.projectId && study.projectId !== project.id) continue;
+    // Aggregates include the peer votes hidden by blind review; zero is also authoritative.
+    const voteCount = study.titleAbstractVoteCount ?? votersByStudy.get(study.id)?.size ?? 0;
+    const requiredVotes = study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes;
+    if (voteCount >= requiredVotes) completedStudyIds.add(study.id);
+  }
+
+  const total = getScreeningRecordTotal(project, counts);
+  const completed = Math.min(completedStudyIds.size, total);
+  return { completed, total, percent: getProgressPercent(completed, total) };
+}
+
 export function getProjectPhaseProgress(
   project: ReviewProject,
   counts: PrismaCounts,
   projectReports: Report[],
-  formatValue: (value: number) => string
+  formatValue: (value: number) => string,
+  projectStudies: Study[] = [],
+  decisions: Decision[] = []
 ): ProjectPhaseProgress {
   if (project.stage === "complete") {
     return {
@@ -251,12 +281,10 @@ export function getProjectPhaseProgress(
   }
 
   if (project.stage === "screening") {
-    const total = getScreeningRecordTotal(project, counts);
-    const value = Math.max(0, Math.min(counts.recordsScreened, total));
-    const percent = getProgressPercent(value, total);
+    const { completed, total, percent } = getScreeningCompletion(project, counts, projectStudies, decisions);
     return {
       percent,
-      label: `${percent}% screened · ${formatValue(value)} of ${formatValue(total)} records`
+      label: `${percent}% screened · ${formatValue(completed)} of ${formatValue(total)} records reached minimum votes`
     };
   }
 
@@ -364,6 +392,58 @@ export function getConfirmedDuplicateStudyIds(candidates: DedupCandidate[]) {
       .filter((candidate) => candidate.status === "confirmed" || candidate.status === "auto_confirmed")
       .map((candidate) => candidate.excludedStudyId ?? candidate.recordB.id)
   );
+}
+
+export function getPendingReviewWorkCounts(
+  project: ReviewProject,
+  studies: Study[],
+  reports: Report[],
+  decisions: Decision[],
+  currentUserId: string
+): { screening: number; fullText: number } {
+  const currentDecisions = decisions.filter((decision) => decision.projectId === project.id && decision.isCurrent);
+  const screeningDecisions = groupByKey(
+    currentDecisions.filter((decision) => decision.stage === "title_abstract"),
+    (decision) => decision.studyId
+  );
+  const fullTextDecisions = groupByKey(
+    currentDecisions.filter((decision) => decision.stage === "full_text"),
+    (decision) => decision.reportId
+  );
+  const pendingScreeningIds = new Set<string>();
+  const pendingFullTextIds = new Set<string>();
+
+  // Count unfinished votes for this reviewer even while peers hold the available
+  // checkouts. Temporary reservations do not mean ordinary review work is done.
+  for (const study of studies) {
+    if (study.projectId && study.projectId !== project.id) continue;
+    const itemDecisions = screeningDecisions.get(study.id) ?? [];
+    const requiredVotes = study.titleAbstractRequiredVotes ?? project.abstractRequiredVotes;
+    const voteCount = study.titleAbstractVoteCount ?? itemDecisions.length;
+    const status = study.titleAbstractStatus ?? evaluateStage(
+      "title_abstract", itemDecisions.map((decision) => decision.decisionValue), requiredVotes, project.maybePolicy
+    ).state;
+    if (status === "awaiting_votes" && voteCount < requiredVotes &&
+      !itemDecisions.some((decision) => decision.userId === currentUserId)) {
+      pendingScreeningIds.add(study.id);
+    }
+  }
+
+  for (const report of reports) {
+    if (report.projectId !== project.id || report.retrievalStatus === "not_retrieved") continue;
+    const itemDecisions = fullTextDecisions.get(report.id) ?? [];
+    const requiredVotes = report.fullTextRequiredVotes ?? project.fullTextRequiredVotes;
+    const voteCount = report.fullTextVoteCount ?? itemDecisions.length;
+    const status = report.fullTextStatus ?? evaluateStage(
+      "full_text", itemDecisions.map((decision) => decision.decisionValue), requiredVotes, project.maybePolicy
+    ).state;
+    if (status === "awaiting_votes" && voteCount < requiredVotes &&
+      !itemDecisions.some((decision) => decision.userId === currentUserId)) {
+      pendingFullTextIds.add(report.id);
+    }
+  }
+
+  return { screening: pendingScreeningIds.size, fullText: pendingFullTextIds.size };
 }
 
 export function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {

@@ -103,6 +103,24 @@ Files upload individually in sequence, with the configured size limit applied
 to each PDF. Existing PDFs can also be replaced or deleted from the table;
 deletion uses a browser confirmation. PDF upload is optional for full-text decisions.
 
+### Reviewed Reports and Extraction Progress
+
+Screening completion counts papers that have reached the required number of
+independent votes, divided by the papers eligible for screening after removals.
+One vote does not count as completed when more are required. This project-wide
+percentage is shared by the dashboard, project overview, and reviewer queue;
+conflicts remain listed separately for resolution.
+
+**Full text → Reviewed** shows DOI pills beside reviewed reports and filters for
+included and excluded papers. The status follows your saved full-text decision.
+
+**Extraction → Reviewed** shows DOI pills for your submitted extractions, with
+filters for reports collecting extraction votes, pending consensus, or finalized.
+DOI pills also appear beside the active extraction report.
+
+**Consensus** provides report browsing by the same workflow statuses, with DOI
+pills and direct access to reports that need arbitration or finalization.
+
 
 ## Workflow Overview
 
@@ -121,6 +139,11 @@ Project Overview opens the list for the project's current phase. Choose a
 paper's **Resolve** action to review it, or return to the queue with the back link.
 When you have voted on every remaining conflict, the shortcut is gray and labeled
 **Conflicts**.
+
+The Screening and Full text navigation warnings appear once you have no regular
+papers left to review in that phase and unresolved conflicts remain. Each
+reviewer's warning follows their own remaining work, including papers temporarily
+reserved by other reviewers. The project overview continues to list conflicts.
 
 ## Architecture Snapshot
 
@@ -182,6 +205,7 @@ npm run start        # Production server (defaults)
 npm run start:prod   # Production server bound to 127.0.0.1:3000
 npm run check        # TypeScript and API authentication checks
 npm run check:navigation # Navigation, keyboard, and responsive layout checks
+npm run check:screening-progress # Minimum-vote screening completion checks
 ```
 
 ## Accounts and Access

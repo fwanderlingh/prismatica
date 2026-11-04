@@ -4001,6 +4001,25 @@ textarea:disabled {
   background: var(--surface-tint);
 }
 
+.reviewedItemsFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: calc(16px * var(--ui-scale));
+  margin-bottom: calc(16px * var(--ui-scale));
+}
+
+.reviewedItemsFilters > label {
+  display: grid;
+  gap: calc(6px * var(--ui-scale));
+  flex: 0 1 280px;
+  max-width: 100%;
+}
+
+.reviewedItemDoi {
+  margin-top: calc(8px * var(--ui-scale));
+}
+
 .pdfUploadFilters {
   display: flex;
   flex-wrap: wrap;

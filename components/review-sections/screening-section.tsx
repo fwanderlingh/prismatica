@@ -157,7 +157,7 @@ export function ScreeningSection({
           <p className="subtle">{blindMode ? "Blind mode shows only your decision and aggregate state." : "Review titles and abstracts and record your decision."}</p>
         </div>
         <div className="progressBlock">
-          <span>{screeningProgress}% of project queue</span>
+          <span>{screeningProgress}% of papers reached minimum votes</span>
           <div className="progressTrack">
             <i style={{ width: `${screeningProgress}%` }} />
           </div>

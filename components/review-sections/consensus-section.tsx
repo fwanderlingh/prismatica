@@ -1,4 +1,5 @@
 import { ViewLink } from "@/components/navigation-link";
+import { useState, type ReactNode } from "react";
 import { AlertTriangle, Check, ClipboardCheck, GitMerge } from "lucide-react";
 import {
   type AppUser,
@@ -12,13 +13,64 @@ import {
   type Study,
   type ViewKey
 } from "@/lib/prismaData";
-import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
+import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import { formatReportQueueOption } from "@/lib/reviewDisplay";
 import { getExtractionConflictFieldIds, getExtractionConsensusQueue } from "@/lib/consensusQueue";
 
 type FormSubmitEvent = {
   preventDefault: () => void;
 };
+
+type ConsensusQueueItem = ReturnType<typeof getExtractionConsensusQueue>[number];
+type ConsensusReportFilter = "all" | ConsensusQueueItem["status"];
+
+function ConsensusReportOverview({
+  items,
+  renderItems,
+  children
+}: {
+  items: ConsensusQueueItem[];
+  renderItems: (items: ConsensusQueueItem[]) => ReactNode;
+  children?: ReactNode;
+}) {
+  const [statusFilter, setStatusFilter] = useState<ConsensusReportFilter>(() =>
+    items.some((item) => item.status === "pending") ? "pending" : "all"
+  );
+  const visibleItems = statusFilter === "all" ? items : items.filter((item) => item.status === statusFilter);
+
+  return (
+    <section className="panel" aria-labelledby="consensus-reports-title">
+      <h2 id="consensus-reports-title">Consensus reports</h2>
+      <div className="reviewedItemsFilters">
+        <label>
+          <span>Consensus status</span>
+          <select
+            value={statusFilter}
+            aria-controls="consensus-report-list"
+            onChange={(event) => setStatusFilter(event.target.value as ConsensusReportFilter)}
+          >
+            <option value="all">All ({items.length})</option>
+            <option value="pending">Pending consensus ({items.filter((item) => item.status === "pending").length})</option>
+            <option value="collecting">Collecting extractions ({items.filter((item) => item.status === "collecting").length})</option>
+            <option value="finalized">Finalized ({items.filter((item) => item.status === "finalized").length})</option>
+          </select>
+        </label>
+        <span className="subtle" role="status">Showing {visibleItems.length} of {items.length}</span>
+      </div>
+      {statusFilter === "pending" && children ? children : (
+        <div id="consensus-report-list">
+          {visibleItems.length > 0 ? renderItems(visibleItems) : (
+            <EmptyState
+              icon={GitMerge}
+              title="No matching consensus reports"
+              description="Choose another status or All to view the other reports."
+            />
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 type ConsensusSectionProps = {
   activeCounts: PrismaCounts;
@@ -136,6 +188,44 @@ export function ConsensusSection({
   const hasRequiredVotes = submittedResponsesForActiveReport.length >= requiredVotes;
   const flaggedFieldIdSet = new Set(activeRecord?.flaggedFieldIds ?? getExtractionConflictFieldIds(activeExtractionTemplate.fields, submittedResponsesForActiveReport));
   const conflictedFields = activeExtractionTemplate.fields.filter((field) => flaggedFieldIdSet.has(field.id));
+  const renderReportItems = (items: ConsensusQueueItem[]) => (
+    <div className="exportReviewItems consensusPendingItems">
+      <ul>
+        {items.map(({ report, index, record, submittedResponses, status }) => {
+          const isSelected = report.id === activeReportForConsensus?.id;
+          const study = projectScreeningStudies.find((item) => item.id === report.studyId);
+          const reportLabel = formatReportQueueOption(report, projectScreeningStudies, index + 1);
+          const conflictCount = (record?.flaggedFieldIds ?? getExtractionConflictFieldIds(activeExtractionTemplate.fields, submittedResponses)).length;
+          const statusLabel = status === "pending" ? "Pending consensus" : status === "collecting" ? "Collecting extractions" : "Finalized";
+          return (
+            <li key={report.id} aria-current={isSelected ? "true" : undefined}>
+              <strong>{reportLabel}</strong>
+              {study ? <div className="reviewedItemDoi">{renderDoiLink(study.doi, `DOI ${study.doi || "Missing"}`, study)}</div> : null}
+              <Badge label={statusLabel} tone={status === "finalized" ? "success" : status === "pending" ? "warning" : "info"} />
+              <small>
+                {status === "pending"
+                  ? conflictCount > 0 ? `${conflictCount} field conflict${conflictCount === 1 ? "" : "s"} to resolve` : "Ready for finalization"
+                  : status === "collecting"
+                    ? `${submittedResponses.length}/${requiredVotes} extraction votes submitted`
+                    : `Finalized by ${record?.finalizedByUserName || "System"} at ${formatAuditTime(record?.finalizedAt || record?.updatedAt || "")}`}
+              </small>
+              <button
+                className={isSelected ? "primaryButton" : "ghostButton"}
+                type="button"
+                disabled={isFinalizingExtractionConsensus}
+                aria-controls="consensus-report-details"
+                aria-label={`${status === "pending" ? "Review consensus" : "View consensus"}: ${reportLabel}`}
+                onClick={() => setActiveExtractionReportId(report.id)}
+              >
+                <GitMerge size={16} />
+                {isSelected ? "Reviewing this report" : status === "pending" ? "Review consensus" : "View consensus"}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 
   return (
     <div className="viewStack">
@@ -148,8 +238,9 @@ export function ConsensusSection({
         <div className="reportPicker">
           <div>
             <p className="eyebrow">Queue status</p>
-            <strong>{pendingItems.length > 0 ? <a className="consensusPendingLink" href="#pending-consensus-title">{pendingItems.length} pending</a> : "0 pending"}</strong>
+            <strong>{pendingItems.length} pending</strong>
             <p className="subtle">{finalizedItems.length} finalized records</p>
+            <a className="consensusPendingLink" href="#consensus-reports-title">View report list</a>
           </div>
           <ViewLink className="ghostButton" view="extraction" onNavigate={() => setActiveView("extraction")}>
             <ClipboardCheck size={16} />
@@ -199,41 +290,26 @@ export function ConsensusSection({
         </div>
       ) : null}
 
-      {pendingItems.length > 0 ? (
-        <section className="panel" aria-labelledby="pending-consensus-title">
-          <h2 id="pending-consensus-title">Pending consensus ({pendingItems.length})</h2>
-          <p className="subtle">Resolve these records to finish consensus and enable CSV export.</p>
-          <div className="exportReviewItems consensusPendingItems">
-            <ul>
-              {pendingItems.map(({ report, index, record, submittedResponses }) => {
-                const isSelected = report.id === activeReportForConsensus?.id;
-                const conflictCount = (record?.flaggedFieldIds ?? getExtractionConflictFieldIds(activeExtractionTemplate.fields, submittedResponses)).length;
-                return (
-                  <li key={report.id} aria-current={isSelected ? "true" : undefined}>
-                    <strong>{formatReportQueueOption(report, projectScreeningStudies, index + 1)}</strong>
-                    <small>{conflictCount > 0 ? `${conflictCount} field conflict${conflictCount === 1 ? "" : "s"} to resolve` : "Ready for finalization"}</small>
-                    <button
-                      className={isSelected ? "primaryButton" : "ghostButton"}
-                      type="button"
-                      disabled={isFinalizingExtractionConsensus}
-                      aria-controls="consensus-report-details"
-                      aria-label={`Review consensus: ${formatReportQueueOption(report, projectScreeningStudies, index + 1)}`}
-                      onClick={() => setActiveExtractionReportId(report.id)}
-                    >
-                      <GitMerge size={16} />
-                      {isSelected ? "Reviewing this report" : "Review consensus"}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </section>
-      ) : null}
+      <ConsensusReportOverview
+        key={`${selectedProject.id}:${activeExtractionTemplate.id}`}
+        items={consensusQueue}
+        renderItems={renderReportItems}
+      >
+        {pendingItems.length > 0 ? (
+          <section id="consensus-report-list" aria-labelledby="pending-consensus-title">
+            <h3 id="pending-consensus-title">Pending consensus ({pendingItems.length})</h3>
+            <p className="subtle">Resolve these records to finish consensus and enable CSV export.</p>
+            {renderReportItems(pendingItems)}
+          </section>
+        ) : null}
+      </ConsensusReportOverview>
 
       {!hasRequiredVotes ? (
         <section className="panel" id="consensus-report-details">
           <SectionTitle icon={AlertTriangle} title="Waiting For Independent Extractions" action="Automated gate" />
+          {activeStudyForConsensus ? (
+            <div className="reviewedItemDoi">{renderDoiLink(activeStudyForConsensus.doi, `DOI ${activeStudyForConsensus.doi || "Missing"}`, activeStudyForConsensus)}</div>
+          ) : null}
           <div className="validationItem blocked">
             <AlertTriangle size={17} />
             <span>
@@ -249,6 +325,9 @@ export function ConsensusSection({
               ? `${activeStudyForConsensus.title} · ${activeQueueItem?.status === "finalized" ? "finalized" : "pending arbitration"}`
               : "Select a report to review extraction discrepancies."}
           </p>
+          {activeStudyForConsensus ? (
+            <div className="reviewedItemDoi">{renderDoiLink(activeStudyForConsensus.doi, `DOI ${activeStudyForConsensus.doi || "Missing"}`, activeStudyForConsensus)}</div>
+          ) : null}
           <div className="tableWrap">
             <table>
               <thead>

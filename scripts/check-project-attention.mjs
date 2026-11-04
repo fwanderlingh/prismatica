@@ -19,7 +19,7 @@ try {
     typeRoots: [path.join(root, "node_modules/@types")], rootDir: root, outDir: temp,
     paths: { "@/*": [path.join(root, "*")] }
   }, files: [
-    "lib/projectAttention.ts", "lib/exportConsistency.ts",
+    "lib/projectAttention.ts", "lib/exportConsistency.ts", "lib/workflowSelectors.ts",
     "components/review-sections/app-sidebar.tsx", "components/review-sections/project-dashboard-section.tsx"
   ].map(name => path.join(root, name)) }));
   execFileSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), "-p", config], { stdio: "inherit" });
@@ -32,7 +32,8 @@ try {
   const { NavigationProvider, ViewLink } = require(path.join(temp, "components/navigation-link.js"));
   const { AppSidebar } = require(path.join(temp, "components/review-sections/app-sidebar.js"));
   const { ProjectDashboardSection } = require(path.join(temp, "components/review-sections/project-dashboard-section.js"));
-  const { getProjectAttention } = require(path.join(temp, "lib/projectAttention.js"));
+  const { getProjectAttention, getNavigationAttention } = require(path.join(temp, "lib/projectAttention.js"));
+  const { getPendingReviewWorkCounts, getActiveTitleAbstractStudies, getActiveFullTextReports } = require(path.join(temp, "lib/workflowSelectors.js"));
   const { getExportConsistency } = require(path.join(temp, "lib/exportConsistency.js"));
   const data = require(path.join(temp, "lib/prismaData.js"));
   const icons = require("lucide-react");
@@ -164,7 +165,7 @@ try {
   assert.doesNotMatch(render(ProjectDashboardSection, { ...overviewProps, attentionItems: settled, exportFailedCount: 0 }), /projectAttention|Needs attention/);
 
   const phaseAccess = { fullText: false, extraction: false, consensus: false };
-  const locked = getProjectAttention({ ...input, phaseAccess, pendingExtractionCount: 2 });
+  const locked = getProjectAttention({ ...input, phaseAccess });
   assert.deepEqual(locked.map(item => item.phase), ["exports"], "future phases stay quiet until they can be acted on");
   const lockedTree = AppSidebar({ ...sidebarProps, attentionItems: locked, canNavigateToProjectView: key => phaseAccess[key] !== false });
   const lockedConsensus = nodes(lockedTree).find(node => node.type === ViewLink && node.props.view === "consensus");
@@ -172,15 +173,15 @@ try {
   assert.equal(lockedConsensus.props["aria-disabled"], true);
   assert.equal(lockedConsensus.props["aria-label"], "Consensus");
   assert.doesNotMatch(lockedConsensus.props.className, /navItemAttention/);
-  assert.deepEqual(getProjectAttention({ counts: { ...correctedCounts, studiesIncluded: 0 }, consistency: correctedConsistency, needsExtractionTemplate: true }), [],
-    "empty reviews do not warn about a future extraction template");
+  assert.deepEqual(getProjectAttention({ counts: { ...correctedCounts, studiesIncluded: 0 }, consistency: correctedConsistency }), [],
+    "empty reviews do not warn about future review work");
 
   const fullTextPending = getProjectAttention({ counts: correctedCounts, consistency: correctedConsistency, pendingFullTextCount: 1 });
-  assert.deepEqual(fullTextPending.map(item => [item.phase, item.view]), [["fullText", "fullText"]],
-    "a retrieved report awaiting eligibility votes still marks Full text without requiring a conflict");
-  assert.match(fullTextPending[0].label, /1 report.*full.text/i);
+  assert.deepEqual(fullTextPending, [], "ordinary full-text review remains progress rather than an attention warning");
   assert.deepEqual(getProjectAttention({ counts: correctedCounts, consistency: correctedConsistency, pendingFullTextCount: 0 }), [],
-    "the full-text attention clears after the final eligibility decision");
+    "completed full-text decisions do not introduce an attention warning");
+  assert.deepEqual(getProjectAttention({ counts: { ...correctedCounts, studiesExtracted: 2 }, consistency: correctedConsistency }), [],
+    "ordinary remaining extraction submissions do not create an attention warning");
   for (const [check, phase] of [
     ["identifiedCheckOk", "imports"], ["screenedCheckOk", "screening"],
     ["retrievalCheckOk", "fullText"], ["assessedCheckOk", "fullText"], ["exclusionReasonCheckOk", "fullText"]
@@ -201,12 +202,222 @@ try {
   const conflictNotices = nodes(conflictOverview).find(node => node.props?.className === "projectAttention");
   assert.deepEqual(nodes(conflictNotices).filter(node => node.type === ViewLink).map(node => node.props.view), ["screeningConflicts", "fullTextConflicts"]);
 
+  const reviewerWithWork = "reviewer-with-work";
+  const reviewerFinished = "reviewer-finished";
+  const personalProject = { ...project, abstractRequiredVotes: 2, fullTextRequiredVotes: 2, maybePolicy: "third_vote", blindMode: true };
+  const personalStudies = [
+    { ...studies[0], id: "personal-screening", stage: "title_abstract", titleAbstractStatus: "awaiting_votes", titleAbstractVoteCount: 1,
+      titleAbstractActiveViewerCount: 1, titleAbstractCheckedOutByCurrentUser: false },
+    { ...studies[0], id: "personal-conflict", stage: "title_abstract", titleAbstractStatus: "conflict", titleAbstractVoteCount: 2 },
+    { ...studies[0], id: "personal-third-vote", stage: "title_abstract", titleAbstractStatus: "needs_third_vote", titleAbstractVoteCount: 2 },
+    { ...studies[0], id: "personal-completed", titleAbstractStatus: "advance_full_text", titleAbstractVoteCount: 2 },
+    { ...studies[0], id: "personal-at-minimum", stage: "title_abstract", titleAbstractStatus: "awaiting_votes", titleAbstractVoteCount: 2 },
+    { ...studies[0], id: "foreign-screening", projectId: "another-project", stage: "title_abstract", titleAbstractStatus: "awaiting_votes", titleAbstractVoteCount: 0 }
+  ];
+  const personalReports = ["not_sought", "sought", "retrieved"].map((retrievalStatus, index) => ({
+    ...reports[0], id: `personal-report-${index}`, studyId: `personal-full-text-${index}`, retrievalStatus,
+    fullTextStatus: "awaiting_votes", fullTextVoteCount: 1, fullTextExclusionReasonId: undefined,
+    fullTextActiveViewerCount: 1, fullTextCheckedOutByCurrentUser: false
+  }));
+  personalReports.push(
+    { ...personalReports[2], id: "personal-full-text-conflict", fullTextStatus: "conflict", fullTextVoteCount: 2 },
+    { ...personalReports[2], id: "personal-full-text-manual", fullTextStatus: "manual_review", fullTextVoteCount: 2 },
+    { ...personalReports[2], id: "personal-full-text-completed", fullTextStatus: "advance_extraction", fullTextVoteCount: 2 },
+    { ...personalReports[2], id: "personal-full-text-at-minimum", fullTextVoteCount: 2 },
+    { ...personalReports[2], id: "personal-full-text-unavailable", retrievalStatus: "not_retrieved", fullTextVoteCount: 0 },
+    { ...personalReports[2], id: "foreign-full-text", projectId: "another-project", fullTextVoteCount: 0 }
+  );
+  const decision = (id, studyId, stage, userId, extra = {}) => ({
+    id, projectId: project.id, studyId, stage, userId, userName: userId,
+    decisionValue: "include", isCurrent: true, createdAt: "2026-01-01T00:00:00Z", ...extra
+  });
+  const personalDecisions = [
+    decision("own-screening", "personal-screening", "title_abstract", reviewerFinished),
+    ...personalReports.slice(0, 3).map(report => decision(`own-${report.id}`, report.studyId, "full_text", reviewerFinished, { reportId: report.id })),
+    decision("historic-screening", "personal-screening", "title_abstract", reviewerWithWork, { isCurrent: false }),
+    decision("foreign-screening-vote", "personal-screening", "title_abstract", reviewerWithWork, { projectId: "another-project" }),
+    decision("other-stage-vote", "personal-screening", "full_text", reviewerWithWork),
+    decision("historic-full-text", personalReports[2].studyId, "full_text", reviewerWithWork, { reportId: personalReports[2].id, isCurrent: false }),
+    decision("foreign-full-text-vote", personalReports[2].studyId, "full_text", reviewerWithWork, { reportId: personalReports[2].id, projectId: "another-project" }),
+    decision("screening-only-vote", personalReports[2].studyId, "title_abstract", reviewerWithWork)
+  ];
+  const workRemaining = getPendingReviewWorkCounts(personalProject, personalStudies, personalReports, personalDecisions, reviewerWithWork);
+  const ownVotesFinished = getPendingReviewWorkCounts(personalProject, personalStudies, personalReports, personalDecisions, reviewerFinished);
+  assert.deepEqual(workRemaining, { screening: 1, fullText: 3 },
+    "only unfinished ordinary work without this reviewer's current vote counts; retrieval remains normal full-text work");
+  assert.deepEqual(ownVotesFinished, { screening: 0, fullText: 0 },
+    "a reviewer who already voted has no ordinary work while waiting for peers");
+  assert.equal(getActiveTitleAbstractStudies(personalProject, [personalStudies[0]], personalDecisions, reviewerWithWork).length, 0);
+  assert.equal(getActiveFullTextReports(personalProject, [personalReports[2]], personalDecisions, reviewerWithWork).length, 0);
+  assert.deepEqual(getPendingReviewWorkCounts(personalProject,
+    personalStudies.map(study => ({ ...study, titleAbstractActiveViewerCount: 0 })),
+    personalReports.map(report => ({ ...report, fullTextActiveViewerCount: 0 })), personalDecisions, reviewerWithWork), workRemaining,
+  "temporary peer checkouts cannot make an unfinished personal queue appear conflict-only");
+  const blindCompleteStudy = { ...personalStudies[0], titleAbstractStatus: "advance_full_text", titleAbstractVoteCount: 2 };
+  const blindCompleteReport = { ...personalReports[2], fullTextStatus: "advance_extraction", fullTextVoteCount: 2 };
+  assert.deepEqual(getPendingReviewWorkCounts(personalProject, [blindCompleteStudy], [blindCompleteReport], [], reviewerWithWork), { screening: 0, fullText: 0 },
+    "blind-review aggregates prevent hidden peer decisions from reopening completed work");
+  assert.deepEqual(getPendingReviewWorkCounts(personalProject,
+    [{ ...personalStudies[0], titleAbstractStatus: undefined, titleAbstractVoteCount: undefined }],
+    [{ ...personalReports[2], fullTextStatus: undefined, fullTextVoteCount: undefined }], personalDecisions, reviewerWithWork), { screening: 1, fullText: 1 },
+  "snapshots without aggregate metadata fall back to current stage-specific votes");
+  assert.deepEqual(getPendingReviewWorkCounts(personalProject,
+    [{ ...personalStudies[0], titleAbstractVoteCount: 2, titleAbstractRequiredVotes: 3 }],
+    [{ ...personalReports[2], fullTextVoteCount: 2, fullTextRequiredVotes: 3 }], [], reviewerWithWork), { screening: 1, fullText: 1 },
+  "per-record minimum votes determine whether ordinary review remains");
+
+  const quietNavigation = getNavigationAttention(conflicts, workRemaining);
+  const conflictOnlyNavigation = getNavigationAttention(conflicts, ownVotesFinished);
+  assert.deepEqual(quietNavigation, [], "conflicts do not warn reviewers who still have ordinary work");
+  assert.deepEqual(conflictOnlyNavigation, conflicts, "the same project warns reviewers whose ordinary work is finished");
+  assert.deepEqual(getNavigationAttention(conflicts, { screening: 1, fullText: 0 }).map(item => item.view), ["fullTextConflicts"],
+    "ordinary screening work only suppresses that phase's conflict warning");
+  assert.deepEqual(getNavigationAttention(conflicts, { screening: 0, fullText: 1 }).map(item => item.view), ["screeningConflicts"]);
+  assert.deepEqual(conflicts.map(item => item.view), ["screeningConflicts", "fullTextConflicts"],
+    "personal navbar filtering leaves project-wide conflict attention intact");
+  for (const [isSidebarCollapsed, isMobileNavOpen] of [[false, false], [true, false], [false, true]]) {
+    for (const [attentionItems, hasWarning] of [[quietNavigation, false], [conflictOnlyNavigation, true]]) {
+      const props = { ...sidebarProps, isSidebarCollapsed, isMobileNavOpen, attentionItems, exportFailedCount: 0 };
+      const tree = AppSidebar(props);
+      for (const [phase, label] of [["screening", "Screening"], ["fullText", "Full text"]]) {
+        const link = nodes(tree).find(node => node.type === ViewLink && node.props.view === phase);
+        assert.equal(link.props.className.includes("navItemAttention"), hasWarning);
+        assert.equal(link.props["aria-label"].includes("Needs attention"), hasWarning);
+        assert.equal(link.props["data-tooltip"], link.props["aria-label"]);
+        assert.equal(nodes(link).filter(node => node.props?.className === "navAttentionIcon").length, Number(hasWarning));
+        if (hasWarning) assert.match(link.props.title, /Needs attention/);
+        else {
+          assert.equal(link.props["aria-label"], label);
+          assert.doesNotMatch(link.props.title, /conflict|Needs attention/i);
+          const linkHtml = renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id }, link));
+          assert.match(linkHtml, /class="navPhaseMarker"/,
+            "clearing the personal warning restores the phase marker on desktop and mobile");
+        }
+      }
+      const html = render(AppSidebar, props);
+      assert.equal((html.match(/class="[^\"]*navAttentionIcon/g) ?? []).length, hasWarning ? 2 : 0);
+    }
+  }
+  const projectConflictHtml = render(ProjectDashboardSection, { ...overviewProps, attentionItems: conflicts });
+  assert.match(projectConflictHtml, /1 screening conflict needs resolution/);
+  assert.match(projectConflictHtml, /2 full-text conflicts need resolution/);
+  const consistencyDuringWork = getProjectAttention({
+    counts: correctedCounts, consistency: { ...correctedConsistency, screenedCheckOk: false, failedCount: 1 }
+  });
+  assert.deepEqual(getNavigationAttention(consistencyDuringWork, workRemaining), consistencyDuringWork,
+    "real reporting inconsistencies remain visible while ordinary review work is pending");
+  const conflictsWithImbalances = getProjectAttention({
+    counts: correctedCounts, screeningConflictCount: 1, fullTextConflictCount: 2,
+    consistency: { ...correctedConsistency, screenedCheckOk: false, assessedCheckOk: false, failedCount: 2,
+      screenBalanceTotal: correctedCounts.recordsScreened + 1, assessedBalanceTotal: correctedCounts.reportsAssessed + 1 }
+  });
+  const imbalancesDuringWork = getNavigationAttention(conflictsWithImbalances, workRemaining);
+  assert.deepEqual(imbalancesDuringWork.map(item => [item.phase, item.view]), [
+    ["screening", "exports"], ["fullText", "exports"], ["exports", "exports"]
+  ], "a phase's genuine consistency warning survives when its simultaneous conflict warning is suppressed");
+  const imbalancedTree = AppSidebar({ ...sidebarProps, attentionItems: imbalancesDuringWork });
+  for (const phase of ["screening", "fullText"]) {
+    const link = nodes(imbalancedTree).find(node => node.type === ViewLink && node.props.view === phase);
+    assert.match(link.props["aria-label"], /Needs attention/);
+    assert.doesNotMatch(link.props["aria-label"], /conflict/i);
+  }
+  assert.deepEqual(getNavigationAttention(attention, workRemaining), attention,
+    "reason corrections, consensus finalization, and export checks are unaffected by personal conflict filtering");
+
+  // Underwater Manipulation has a large normal screening queue and a small set
+  // of actual conflicts. A temporary balance deficit must not relabel the queue
+  // as either an attention notice or an export integrity warning.
+  const underwaterStudies = Array.from({ length: 526 }, (_, index) => ({
+    ...studies[0], id: `underwater-${index}`, stage: "title_abstract", titleAbstractStatus: "awaiting_votes"
+  }));
+  const underwaterCounts = {
+    ...correctedCounts, recordsIdentifiedDatabase: 800, recordsScreened: 500, recordsExcluded: 200,
+    reportsSought: 0, reportsNotRetrieved: 0, reportsAssessed: 0,
+    reportsExcludedWithReasons: {}, studiesIncluded: 0, studiesExtracted: 0
+  };
+  const underwaterConsistency = getExportConsistency({ project, counts: underwaterCounts, studies: underwaterStudies, reports: [], decisions: [] });
+  assert.equal(underwaterConsistency.unresolvedScreeningStudies.length, 526);
+  assert.equal(underwaterConsistency.failedCount, 1, "the Exports page retains its raw in-progress consistency calculation");
+  const underwaterInput = { counts: underwaterCounts, consistency: underwaterConsistency };
+  const normalScreening = getProjectAttention(underwaterInput);
+  assert.deepEqual(normalScreening, [], "526 ordinary screening records do not need attention");
+  assert.equal(underwaterConsistency.failedCount, 1, "attention filtering never rewrites raw PRISMA check results");
+  assert.doesNotMatch(render(ProjectDashboardSection, { ...overviewProps, attentionItems: normalScreening }), /projectAttention|Needs attention/);
+  const normalScreeningSidebar = AppSidebar({ ...sidebarProps, activeView: "screening", attentionItems: normalScreening, exportFailedCount: 0 });
+  const normalScreeningLink = nodes(normalScreeningSidebar).find(node => node.type === ViewLink && node.props.view === "screening");
+  assert.doesNotMatch(normalScreeningLink.props.className, /navItemAttention/);
+  const normalScreeningLinkHtml = render(AppSidebar, { ...sidebarProps, activeView: "screening", attentionItems: normalScreening, exportFailedCount: 0 })
+    .match(/<a(?=[^>]*aria-label="Screening")[^>]*>[\s\S]*?<\/a>/)?.[0] ?? "";
+  assert.match(normalScreeningLinkHtml, /class="navPhaseMarker"/, "normal screening keeps its phase progress marker");
+
+  const underwaterConflicts = getProjectAttention({ ...underwaterInput, screeningConflictCount: 10 });
+  assert.deepEqual(underwaterConflicts.map(item => [item.phase, item.view, item.count]), [["screening", "screeningConflicts", 10]]);
+  assert.match(underwaterConflicts[0].label, /^10 screening conflicts need resolution\.$/);
+  assert.doesNotMatch(underwaterConflicts[0].label, /526|final decision/);
+  const underwaterOverview = ProjectDashboardSection({ ...overviewProps, attentionItems: underwaterConflicts });
+  const underwaterNotice = nodes(underwaterOverview).find(node => node.props?.className === "projectAttention");
+  assert.match(text(underwaterNotice), /10 screening conflicts need resolution/);
+  assert.doesNotMatch(text(underwaterNotice), /526|screening records need a final decision|Screening totals/);
+  const underwaterConflictLink = nodes(underwaterNotice).find(node => node.type === ViewLink);
+  destination = undefined;
+  underwaterConflictLink.props.onNavigate();
+  assert.equal(destination, "screeningConflicts", "the conflict notice opens the conflict list directly");
+  assert.match(render(ProjectDashboardSection, { ...overviewProps, attentionItems: underwaterConflicts }), /class="projectAttentionLink"[^>]*href="[^\"]+\/screening\/conflicts"/);
+  const underwaterSidebar = AppSidebar({ ...sidebarProps, activeView: "screening", attentionItems: underwaterConflicts, exportFailedCount: 0 });
+  const underwaterSidebarLink = nodes(underwaterSidebar).find(node => node.type === ViewLink && node.props.view === "screening");
+  assert.match(underwaterSidebarLink.props["aria-label"], /10 screening conflicts need resolution/);
+  assert.doesNotMatch(underwaterSidebarLink.props["aria-label"], /526/);
+  assert.equal(nodes(underwaterSidebarLink).filter(node => node.props?.className === "navAttentionIcon").length, 1);
+
+  for (const recordsScreened of [100, 799]) {
+    const changedCounts = { ...underwaterCounts, recordsScreened };
+    const changedConsistency = getExportConsistency({ project, counts: changedCounts, studies: underwaterStudies, reports: [], decisions: [] });
+    const actualImbalance = getProjectAttention({ counts: changedCounts, consistency: changedConsistency });
+    assert.deepEqual(actualImbalance.map(item => item.phase), ["screening", "exports"],
+      "negative screening gaps or deficits larger than the normal unfinished queue remain integrity warnings");
+  }
+
+  const reviewReports = ["not_sought", "sought", "retrieved"].map((retrievalStatus, index) => ({
+    ...reports[0], id: `ongoing-report-${index}`, studyId: `ongoing-study-${index}`, retrievalStatus,
+    fullTextStatus: "awaiting_votes", fullTextVoteCount: index === 2 ? 1 : 0, fullTextExclusionReasonId: undefined
+  }));
+  const reviewStudies = reviewReports.map((report, index) => ({
+    ...studies[0], id: report.studyId, title: `Ongoing full text ${index}`, titleAbstractStatus: "advance_full_text"
+  }));
+  const ongoingCounts = {
+    ...correctedCounts, recordsIdentifiedDatabase: 3, recordsScreened: 3, recordsExcluded: 0,
+    reportsSought: 2, reportsAssessed: 1, reportsNotRetrieved: 0,
+    reportsExcludedWithReasons: {}, studiesIncluded: 0, studiesExtracted: 0
+  };
+  const getOngoingConsistency = currentCounts => getExportConsistency({ project, counts: currentCounts, studies: reviewStudies, reports: reviewReports, decisions: [] });
+  const ongoingConsistency = getOngoingConsistency(ongoingCounts);
+  assert.equal(ongoingConsistency.failedCount, 2);
+  assert.equal(ongoingConsistency.pendingRetrievalReports.length, 1);
+  assert.deepEqual(getProjectAttention({ counts: ongoingCounts, consistency: ongoingConsistency, pendingFullTextCount: 2 }), [],
+    "routine retrieval and eligibility decisions explain temporary full-text check deficits");
+  const withFullTextConflict = getProjectAttention({ counts: ongoingCounts, consistency: ongoingConsistency, pendingFullTextCount: 1, fullTextConflictCount: 1 });
+  assert.deepEqual(withFullTextConflict.map(item => [item.phase, item.view, item.count]), [["fullText", "fullTextConflicts", 1]],
+    "full-text conflicts are still highlighted without warning about the ordinary pending queue");
+  const noPendingVotes = getProjectAttention({ counts: ongoingCounts, consistency: ongoingConsistency, pendingFullTextCount: 0 });
+  assert.deepEqual(noPendingVotes.map(item => item.phase), ["fullText", "exports"],
+    "a not-sought report alone cannot explain a deficit among reports already sought or assessed");
+  for (const changedCounts of [
+    { ...ongoingCounts, recordsScreened: 2, reportsSought: 1, reportsAssessed: 2 },
+    { ...ongoingCounts, recordsIdentifiedDatabase: 9, recordsScreened: 9, reportsSought: 8, reportsAssessed: 1 },
+    { ...ongoingCounts, recordsIdentifiedDatabase: 9, recordsScreened: 9, reportsSought: 8, reportsAssessed: 8 }
+  ]) {
+    const actualImbalance = getProjectAttention({ counts: changedCounts, consistency: getOngoingConsistency(changedCounts), pendingFullTextCount: 2 });
+    assert.deepEqual(actualImbalance.map(item => item.phase), ["fullText", "exports"],
+      "opposite-sign or excessive full-text gaps remain visible during ordinary reviewing");
+    assert.ok(actualImbalance.find(item => item.phase === "exports").count >= 1);
+  }
+
   const css = fs.readFileSync(path.join(root, "app/globals.css"), "utf8");
   assert.match(css, /\.appFrame\.sidebar-collapsed\s+\.navItem[^{}]*\.navAttentionIcon\s*\{[^}]*position:\s*absolute/s,
     "collapsed warning is positioned over the phase icon instead of hidden with the normal completion dot");
   assert.match(css, /\.navItem[^{}]*\.navAttentionIcon\s*\{[^}]*color:\s*var\(--amber-text\)/s,
     "warning color follows semantic theme tokens");
-  console.log("Project attention checks passed: current issues, sidebar triangles, accessible links, collapsed/mobile navigation, phase gates, and automatic clearing.");
+  console.log("Project attention checks passed: normal review queues stay quiet, conflicts and genuine inconsistencies stay actionable, and sidebar/overview links clear correctly.");
 } finally {
   Module._resolveFilename = originalResolve;
   fs.rmSync(temp, { recursive: true, force: true });

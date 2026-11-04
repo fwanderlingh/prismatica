@@ -1,10 +1,10 @@
 import { ViewLink } from "@/components/navigation-link";
-import type { ReactNode } from "react";
-import type { ViewKey } from "@/lib/prismaData";
+import { useState, type ReactNode } from "react";
+import type { Study, ViewKey } from "@/lib/prismaData";
 import { formatReviewDateTime } from "@/lib/reviewDisplay";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, ArrowLeft, Check, RotateCcw } from "lucide-react";
-import { Badge, EmptyState, SectionTitle } from "@/components/prisma-review-ui";
+import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 
 export type ReviewedQueueItem = {
   id: string;
@@ -14,6 +14,8 @@ export type ReviewedQueueItem = {
   statusLabel: string;
   statusTone: "success" | "warning" | "danger" | "info" | "neutral";
   completedAt?: string;
+  study?: Study;
+  filterValue?: string;
 };
 
 type ReviewedItemsSectionProps = {
@@ -26,6 +28,8 @@ type ReviewedItemsSectionProps = {
   emptyTitle: string;
   emptyDescription: string;
   items: ReviewedQueueItem[];
+  statusFilters?: { value: string; label: string }[];
+  filterLabel?: string;
   message: string;
   pendingItemId: string;
   actionLabel: string;
@@ -44,6 +48,8 @@ export function ReviewedItemsSection({
   emptyTitle,
   emptyDescription,
   items,
+  statusFilters,
+  filterLabel = "Status",
   message,
   pendingItemId,
   actionLabel,
@@ -51,6 +57,10 @@ export function ReviewedItemsSection({
   onReturnToQueue,
   children
 }: ReviewedItemsSectionProps) {
+  const [statusFilter, setStatusFilter] = useState("all");
+  const visibleItems = statusFilters && statusFilter !== "all"
+    ? items.filter((item) => item.filterValue === statusFilter)
+    : items;
   const messageIsSuccess = /returned|queue|saved|updated/i.test(message);
   const messageIsError = /already|cannot|denied|duplicate|error|failed|forbidden|invalid|no longer|not found|required|unauthorized/i.test(message);
   const messageClassName = messageIsSuccess ? "validationItem ok" : messageIsError ? "validationItem blocked" : "validationItem muted";
@@ -81,7 +91,23 @@ export function ReviewedItemsSection({
       {children}
       <section className="panel">
         <SectionTitle icon={Icon} title="Reviewed Items" action={`${items.length} completed`} />
-        {items.length > 0 ? (
+        {statusFilters ? (
+          <div className="reviewedItemsFilters">
+            <label>
+              <span>{filterLabel}</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="all">All ({items.length})</option>
+                {statusFilters.map((filter) => (
+                  <option key={filter.value} value={filter.value}>
+                    {filter.label} ({items.filter((item) => item.filterValue === filter.value).length})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="subtle" role="status">Showing {visibleItems.length} of {items.length}</span>
+          </div>
+        ) : null}
+        {visibleItems.length > 0 ? (
           <div className="tableWrap">
             <table>
               <thead>
@@ -93,7 +119,7 @@ export function ReviewedItemsSection({
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
+                {visibleItems.map((item) => {
                   const isPending = pendingItemId === item.id;
                   return (
                     <tr key={item.id}>
@@ -101,6 +127,9 @@ export function ReviewedItemsSection({
                         <strong>{item.title}</strong>
                         <span>{item.subtitle}</span>
                         {item.detail ? <span>{item.detail}</span> : null}
+                        {item.study ? (
+                          <div className="reviewedItemDoi">{renderDoiLink(item.study.doi, `DOI ${item.study.doi || "Missing"}`, item.study)}</div>
+                        ) : null}
                       </td>
                       <td>
                         <Badge label={item.statusLabel} tone={item.statusTone} />
@@ -124,7 +153,11 @@ export function ReviewedItemsSection({
             </table>
           </div>
         ) : (
-          <EmptyState icon={Icon} title={emptyTitle} description={emptyDescription} />
+          <EmptyState
+            icon={Icon}
+            title={items.length > 0 ? "No matching reviewed items" : emptyTitle}
+            description={items.length > 0 ? "Choose another status or All to view your other reviewed items." : emptyDescription}
+          />
         )}
       </section>
     </div>
