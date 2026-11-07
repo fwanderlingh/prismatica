@@ -325,7 +325,6 @@ body {
 a[href^="http"],
 a[target="_blank"],
 .storageReviewLink,
-.consensusPendingLink,
 .projectAttentionLink {
   color: var(--link-external);
   text-decoration: underline;
@@ -340,8 +339,6 @@ a[target="_blank"]:hover,
 a[target="_blank"]:focus-visible,
 .storageReviewLink:hover,
 .storageReviewLink:focus-visible,
-.consensusPendingLink:hover,
-.consensusPendingLink:focus-visible,
 .projectAttentionLink:hover,
 .projectAttentionLink:focus-visible {
   color: var(--link-external-hover);

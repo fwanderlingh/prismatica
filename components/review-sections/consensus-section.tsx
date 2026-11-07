@@ -240,7 +240,6 @@ export function ConsensusSection({
             <p className="eyebrow">Queue status</p>
             <strong>{pendingItems.length} pending</strong>
             <p className="subtle">{finalizedItems.length} finalized records</p>
-            <a className="consensusPendingLink" href="#consensus-reports-title">View report list</a>
           </div>
           <ViewLink className="ghostButton" view="extraction" onNavigate={() => setActiveView("extraction")}>
             <ClipboardCheck size={16} />

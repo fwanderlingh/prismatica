@@ -94,9 +94,6 @@ try {
   const picker = nodes(tree).find(node => node.props?.id === "consensus-report-picker");
   assert.equal(picker.props.value, reports[0].id, "an explicitly selected finalized record stays selected");
   assert.deepEqual(nodes(picker).filter(node => node.type === "optgroup").map(node => node.props.label), ["Pending consensus (1)", "Finalized consensus (101)"]);
-  const markup = renderToStaticMarkup(React.createElement(NavigationProvider, { projectId: project.id }, React.createElement(ConsensusSection, props)));
-  assert.match(markup, /href="#consensus-reports-title"/, "report overview shortcut targets a stable heading for every status filter");
-
   const queue = getExtractionConsensusQueue(project, reports, responses, records, template.id);
   assert.deepEqual(queue.filter(item => item.status === "pending").map(item => item.report.id), [reports[101].id]);
   const staleRecords = records.map((record, index) => index === 0 ? { ...record, finalizedAt: "2026-10-19T10:00:00Z" } : record);
