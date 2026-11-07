@@ -10,6 +10,8 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "prismatica-consensus-navigation-"));
 const originalResolve = Module._resolveFilename;
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
 
 try {
   const config = path.join(temp, "tsconfig.json");
@@ -62,12 +64,40 @@ try {
   }));
   const noop = () => {};
   let selected = "";
+  const navigationEvents = [];
+  const animationFrames = [];
+  let reducedMotion = false;
+  let detailsAvailable = true;
+  const details = {
+    focus: options => navigationEvents.push(["focus", options]),
+    scrollIntoView: options => navigationEvents.push(["scroll", options])
+  };
+  Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: {
+    requestAnimationFrame: callback => {
+      navigationEvents.push(["requestAnimationFrame"]);
+      animationFrames.push(callback);
+      return animationFrames.length;
+    },
+    matchMedia: query => {
+      assert.equal(query, "(prefers-reduced-motion: reduce)");
+      return { matches: reducedMotion };
+    }
+  } });
+  Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: {
+    getElementById: id => {
+      navigationEvents.push(["lookup", id]);
+      return detailsAvailable ? details : null;
+    }
+  } });
   const props = {
     activeCounts: { studiesIncluded: 102 }, selectedProject: project,
     currentUser: { id: project.ownerId }, consensusMessage: "", activeExtractionTemplate: template,
     projectExtractionReports: reports, extractionResponses: responses, extractionConsensus: records,
     activeExtractionReport: reports[0], projectScreeningStudies: studies, activeExtractionConsensus: records[0],
-    setActiveView: noop, setActiveExtractionReportId: id => selected = id,
+    setActiveView: noop, setActiveExtractionReportId: id => {
+      selected = id;
+      navigationEvents.push(["select", id]);
+    },
     formatExtractionResponseValue: value => String(value ?? ""), formatAuditTime: value => value,
     finalizeExtractionConsensus: noop, isFinalizingExtractionConsensus: false,
     consensusFormValues: {}, updateConsensusValue: noop, toggleConsensusChoice: noop
@@ -76,7 +106,36 @@ try {
     ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
   const label = node => node == null ? "" : typeof node === "string" || typeof node === "number"
     ? String(node) : Array.isArray(node) ? node.map(label).join(" ") : label(node.props?.children);
+  const assertReportNavigation = (activate, reportId, message) => {
+    assert.equal(animationFrames.length, 0, "the previous navigation callback has completed");
+    navigationEvents.length = 0;
+    selected = "";
+    activate();
+    assert.equal(selected, reportId, message);
+    assert.deepEqual(navigationEvents, [["select", reportId], ["requestAnimationFrame"]],
+      `${message}: selection updates before focus and scrolling are scheduled`);
+    assert.equal(animationFrames.length, 1, "one navigation callback is scheduled per action");
+    animationFrames.shift()();
+    assert.deepEqual(navigationEvents, [
+      ["select", reportId], ["requestAnimationFrame"], ["lookup", "consensus-report-details"],
+      ...(detailsAvailable ? [
+        ["focus", { preventScroll: true }],
+        ["scroll", { behavior: reducedMotion ? "instant" : "smooth", block: "start" }]
+      ] : [])
+    ], `${message}: the updated details receive focus before scrolling`);
+  };
+  const assertFocusableDetails = tree => {
+    const target = nodes(tree).find(node => node.props?.id === "consensus-report-details");
+    assert.ok(target, "report details provide the shared navigation destination");
+    assert.equal(target.props.tabIndex, -1, "report details accept programmatic focus without adding a tab stop");
+    const accessibleName = target.props["aria-label"] || label(nodes(tree).find(node => node.props?.id === target.props["aria-labelledby"]));
+    assert.ok(accessibleName.trim(), "focused report details have an accessible name");
+    return target;
+  };
   const tree = ConsensusSection(props);
+  assert.deepEqual(navigationEvents, [], "initial rendering does not move focus or scroll");
+  assert.equal(animationFrames.length, 0, "initial rendering does not schedule navigation");
+  assertFocusableDetails(tree);
   const pendingList = nodes(tree).find(node => node.type === "section" && node.props["aria-labelledby"] === "pending-consensus-title");
   assert.ok(pendingList, "pending records have a visible section outside the dropdown");
   assert.match(label(pendingList), /# 282/);
@@ -84,22 +143,42 @@ try {
   assert.match(label(pendingList), /3 field conflicts to resolve/);
   assert.doesNotMatch(label(pendingList), /Finalized paper/);
   const direct = nodes(pendingList).find(node => node.type === "button" && node.props["aria-label"]?.includes(pendingTitle));
-  direct.props.onClick();
-  assert.equal(selected, reports[101].id, "direct action selects report 282 without scrubbing through finalized records");
+  assertReportNavigation(() => direct.props.onClick(), reports[101].id,
+    "direct action opens report 282 without scrubbing through finalized records");
   const nextPending = nodes(tree).find(node => node.type === "button" && label(node).includes("Review pending consensus"));
   assert.ok(nextPending && !nextPending.props.disabled);
-  selected = "";
-  nextPending.props.onClick();
-  assert.equal(selected, reports[101].id);
+  assertReportNavigation(() => nextPending.props.onClick(), reports[101].id,
+    "the next pending action opens and focuses the pending report");
   const picker = nodes(tree).find(node => node.props?.id === "consensus-report-picker");
   assert.equal(picker.props.value, reports[0].id, "an explicitly selected finalized record stays selected");
   assert.deepEqual(nodes(picker).filter(node => node.type === "optgroup").map(node => node.props.label), ["Pending consensus (1)", "Finalized consensus (101)"]);
+  assertReportNavigation(() => picker.props.onChange({ target: { value: reports[101].id } }), reports[101].id,
+    "the dropdown uses the same selection, focus, and scroll behavior");
+  navigationEvents.length = 0;
+  const selectedTree = ConsensusSection({ ...props, activeExtractionReport: reports[101], activeExtractionConsensus: records[101] });
+  assert.deepEqual(navigationEvents, [], "rerendering alone does not move focus or scroll");
+  const selectedAction = nodes(selectedTree).find(node => node.type === "button" && node.props["aria-label"]?.includes(pendingTitle));
+  assert.ok(selectedAction && !selectedAction.props.disabled, "the currently selected report can still be opened from its list action");
+  assertReportNavigation(() => selectedAction.props.onClick(), reports[101].id,
+    "opening the already selected report still focuses its details");
+  reducedMotion = true;
+  assertReportNavigation(() => direct.props.onClick(), reports[101].id,
+    "reduced motion jumps directly to the details");
+  reducedMotion = false;
+  detailsAvailable = false;
+  assertReportNavigation(() => picker.props.onChange({ target: { value: reports[101].id } }), reports[101].id,
+    "navigation safely handles a details panel removed before the animation frame");
+  detailsAvailable = true;
   const queue = getExtractionConsensusQueue(project, reports, responses, records, template.id);
   assert.deepEqual(queue.filter(item => item.status === "pending").map(item => item.report.id), [reports[101].id]);
   const staleRecords = records.map((record, index) => index === 0 ? { ...record, finalizedAt: "2026-10-19T10:00:00Z" } : record);
   assert.equal(getExtractionConsensusQueue(project, reports, responses, staleRecords, template.id)[0].status, "pending", "stale finalization must remain discoverable as pending");
   const collecting = getExtractionConsensusQueue(project, reports, responses.slice(1), records, template.id);
   assert.equal(collecting[0].status, "collecting", "a record without submitted votes cannot appear finalized");
+  const waitingTree = ConsensusSection({ ...props, extractionResponses: responses.slice(1) });
+  const waitingDetails = assertFocusableDetails(waitingTree);
+  assert.ok(nodes(waitingDetails).some(node => node.props?.title === "Waiting For Independent Extractions"),
+    "the waiting details panel also supports the shared focus destination");
   const foreignResponse = { ...responses[101], id: "foreign", projectId: "other-project" };
   assert.equal(getExtractionConsensusQueue(project, reports, [...responses, foreignResponse], records, template.id)[101].submittedResponses.length, 1);
   const allFinalized = records.map(record => ({ ...record, status: "finalized", finalizedAt: "2026-10-20T10:00:00Z" }));
@@ -163,5 +242,9 @@ try {
   console.log("Consensus navigation checks passed.");
 } finally {
   Module._resolveFilename = originalResolve;
+  if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+  else delete globalThis.window;
+  if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
+  else delete globalThis.document;
   fs.rmSync(temp, { recursive: true, force: true });
 }

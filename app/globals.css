@@ -361,7 +361,8 @@ a:focus-visible,
 summary:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+#consensus-report-details:focus-visible {
   outline: calc(3px * var(--ui-scale)) solid var(--teal);
   outline-offset: calc(2px * var(--ui-scale));
 }
@@ -2375,7 +2376,7 @@ a.primaryButton[target="_blank"]:focus-visible {
 }
 
 .votePill.danger {
-  color: #8b2f28;
+  color: var(--coral-text);
   background: var(--coral-soft);
 }
 
@@ -2636,7 +2637,7 @@ td span {
 }
 
 .badge.danger {
-  color: #8b2f28;
+  color: var(--coral-text);
   background: var(--coral-soft);
 }
 
@@ -3436,12 +3437,12 @@ td span {
 }
 
 .conflictVotesBox > strong {
-  color: #8b2f28;
+  color: var(--coral-text);
   font-size: 0.9rem;
 }
 
 .conflictVotesBox p {
-  color: #8b2f28;
+  color: var(--coral-text);
   font-size: 0.82rem;
   line-height: 1.35;
 }
@@ -4877,7 +4878,7 @@ button:disabled {
 }
 
 .judgementRail .active.high {
-  color: #8b2f28;
+  color: var(--coral-text);
   background: var(--coral-soft);
   border-color: #efcac5;
 }

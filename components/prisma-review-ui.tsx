@@ -4,6 +4,7 @@ import {
   Archive,
   BarChart3,
   BookOpen,
+  Check,
   CheckCircle2,
   Database,
   Eye,
@@ -13,6 +14,7 @@ import {
   XCircle
 } from "lucide-react";
 import { EditableDoiPill } from "@/components/doi-edit";
+import type { FeedbackMessage } from "@/lib/feedback";
 import type { PrismaCounts, Study } from "@/lib/prismaData";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 
@@ -69,6 +71,30 @@ export function StatusRow({
 
 export function Badge({ label, tone }: { label: string; tone: "success" | "warning" | "danger" | "info" | "neutral" }) {
   return <span className={`badge ${tone}`}>{label}</span>;
+}
+
+export function FeedbackNotice({ feedback }: { feedback: FeedbackMessage | null }) {
+  if (!feedback) return null;
+
+  const tone = {
+    pending: "muted",
+    success: "ok",
+    warning: "warning",
+    error: "blocked"
+  }[feedback.status];
+
+  return (
+    <div className={`validationItem ${tone}`} role={feedback.status === "error" ? "alert" : "status"} aria-atomic="true">
+      {feedback.status === "pending" ? (
+        <span className="inlineSpinner" aria-hidden="true" />
+      ) : feedback.status === "success" ? (
+        <Check size={17} aria-hidden="true" />
+      ) : (
+        <AlertTriangle size={17} aria-hidden="true" />
+      )}
+      <span>{feedback.message}</span>
+    </div>
+  );
 }
 
 export function EmptyState({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {

@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, Database, FileSearch, FileText, PenLine, Trash2, X } from "lucide-react";
 import type { ImportBatch, Study } from "@/lib/prismaData";
-import { EmptyState, SectionTitle } from "@/components/prisma-review-ui";
+import type { FeedbackMessage } from "@/lib/feedback";
+import { EmptyState, FeedbackNotice, SectionTitle } from "@/components/prisma-review-ui";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 
 type FormSubmitEvent = {
@@ -26,7 +27,7 @@ type ImportEditorSectionProps = {
   batch: ImportBatch;
   batchStudies: Study[];
   warningMessages: string[];
-  importDetailMessage: string;
+  importDetailFeedback: FeedbackMessage | null;
   importDetailForm: ImportDetailForm;
   studyEditId: string;
   studyEditForm: StudyEditForm;
@@ -55,7 +56,7 @@ export function ImportEditorSection({
   batch,
   batchStudies,
   warningMessages,
-  importDetailMessage,
+  importDetailFeedback,
   importDetailForm,
   studyEditId,
   studyEditForm,
@@ -79,7 +80,6 @@ export function ImportEditorSection({
   pendingDeleteStudyId,
   pendingDeleteImportId
 }: ImportEditorSectionProps) {
-  const messageIsSuccess = /imported|updated|deleted|reviewed/i.test(importDetailMessage);
   const entryFallbackIndexes = new Map(batchStudies.map((study, index) => [study.id, index + 1]));
   const reviewQueueStudies = batchStudies.filter((study) => studyNeedsReview(study));
   const okStudies = batchStudies.filter((study) => !studyNeedsReview(study));
@@ -231,12 +231,7 @@ export function ImportEditorSection({
         </div>
       </section>
 
-      {importDetailMessage ? (
-        <div className={messageIsSuccess ? "validationItem ok" : "validationItem blocked"} role="status" aria-live="polite">
-          {messageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
-          <span>{importDetailMessage}</span>
-        </div>
-      ) : null}
+      <FeedbackNotice feedback={importDetailFeedback} />
 
       <section className="importEditorLayout">
         <div className="panel">

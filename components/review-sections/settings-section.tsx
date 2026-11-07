@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, FileText, Lock, Plus, Settings, UserRoundCheck, Users, X } from "lucide-react";
 import { type AppUser, type ReviewProject, roleRows } from "@/lib/prismaData";
-import { Badge, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
+import type { FeedbackMessage } from "@/lib/feedback";
+import { Badge, FeedbackNotice, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
 
 type ProjectSettingsFormShape = {
   title: string;
@@ -58,7 +59,7 @@ type SettingsSectionProps = {
   onInviteEmailChange: (value: string) => void;
   onInviteTitleChange: (value: string) => void;
   inviteUserToProject: (event: FormSubmitEvent) => void;
-  teamMessage: string;
+  teamFeedback: FeedbackMessage | null;
   toggleProjectOwner: (userId: string) => void;
   removeUserFromProject: (userId: string) => void;
   teamAddPendingUserId: string | null;
@@ -103,7 +104,7 @@ export function SettingsSection({
   onInviteEmailChange,
   onInviteTitleChange,
   inviteUserToProject,
-  teamMessage,
+  teamFeedback,
   toggleProjectOwner,
   removeUserFromProject,
   teamAddPendingUserId,
@@ -527,12 +528,7 @@ export function SettingsSection({
             </button>
           </form>
 
-          {teamMessage ? (
-            <div className="validationItem ok">
-              <Check size={17} />
-              <span>{teamMessage}</span>
-            </div>
-          ) : null}
+          <FeedbackNotice feedback={teamFeedback} />
         </div>
       </section>
 

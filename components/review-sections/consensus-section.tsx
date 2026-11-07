@@ -188,6 +188,21 @@ export function ConsensusSection({
   const hasRequiredVotes = submittedResponsesForActiveReport.length >= requiredVotes;
   const flaggedFieldIdSet = new Set(activeRecord?.flaggedFieldIds ?? getExtractionConflictFieldIds(activeExtractionTemplate.fields, submittedResponsesForActiveReport));
   const conflictedFields = activeExtractionTemplate.fields.filter((field) => flaggedFieldIdSet.has(field.id));
+  const detailsLabel = `Consensus details for ${activeReportForConsensus.title}`;
+
+  function selectConsensusReport(reportId: string) {
+    setActiveExtractionReportId(reportId);
+    window.requestAnimationFrame(() => {
+      const details = document.getElementById("consensus-report-details");
+      if (!details) return;
+      details.focus({ preventScroll: true });
+      details.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        block: "start"
+      });
+    });
+  }
+
   const renderReportItems = (items: ConsensusQueueItem[]) => (
     <div className="exportReviewItems consensusPendingItems">
       <ul>
@@ -215,7 +230,7 @@ export function ConsensusSection({
                 disabled={isFinalizingExtractionConsensus}
                 aria-controls="consensus-report-details"
                 aria-label={`${status === "pending" ? "Review consensus" : "View consensus"}: ${reportLabel}`}
-                onClick={() => setActiveExtractionReportId(report.id)}
+                onClick={() => selectConsensusReport(report.id)}
               >
                 <GitMerge size={16} />
                 {isSelected ? "Reviewing this report" : status === "pending" ? "Review consensus" : "View consensus"}
@@ -250,7 +265,8 @@ export function ConsensusSection({
               className="primaryButton"
               type="button"
               disabled={isFinalizingExtractionConsensus || nextPendingItem.report.id === activeReportForConsensus?.id}
-              onClick={() => setActiveExtractionReportId(nextPendingItem.report.id)}
+              aria-controls="consensus-report-details"
+              onClick={() => selectConsensusReport(nextPendingItem.report.id)}
             >
               <GitMerge size={16} />
               {activePendingIndex < 0 ? "Review pending consensus" : "Next pending consensus"}
@@ -264,15 +280,7 @@ export function ConsensusSection({
             value={activeReportForConsensus?.id ?? ""}
             disabled={isFinalizingExtractionConsensus}
             aria-controls="consensus-report-details"
-            onChange={(event) => {
-              setActiveExtractionReportId(event.target.value);
-              window.requestAnimationFrame(() => {
-                document.getElementById("consensus-report-details")?.scrollIntoView({
-                  behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-                  block: "start"
-                });
-              });
-            }}
+            onChange={(event) => selectConsensusReport(event.target.value)}
           >
             {[
               { label: `Pending consensus (${pendingItems.length})`, items: pendingItems },
@@ -313,7 +321,7 @@ export function ConsensusSection({
       </ConsensusReportOverview>
 
       {!hasRequiredVotes ? (
-        <section className="panel" id="consensus-report-details">
+        <section className="panel" id="consensus-report-details" tabIndex={-1} aria-label={detailsLabel}>
           <SectionTitle icon={AlertTriangle} title="Waiting For Independent Extractions" action="Automated gate" />
           {activeStudyForConsensus ? (
             <div className="reviewedItemDoi">{renderDoiLink(activeStudyForConsensus.doi, `DOI ${activeStudyForConsensus.doi || "Missing"}`, activeStudyForConsensus)}</div>
@@ -326,7 +334,7 @@ export function ConsensusSection({
           </div>
         </section>
       ) : (
-        <section className="panel" id="consensus-report-details">
+        <section className="panel" id="consensus-report-details" tabIndex={-1} aria-label={detailsLabel}>
           <SectionTitle icon={GitMerge} title="Automated Conflict Flagging" action={`${activeExtractionTemplate.fields.length} fields compared`} />
           <p className="subtle">
             {activeStudyForConsensus

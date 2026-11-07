@@ -10,8 +10,10 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "prismatica-reviewed-reports-"));
 const originalResolve = Module._resolveFilename;
+const originalWindow = globalThis.window;
 
 try {
+  globalThis.window = { requestAnimationFrame: () => 0 };
   const config = path.join(temp, "tsconfig.json");
   fs.writeFileSync(config, JSON.stringify({ compilerOptions: {
     target: "ES2020", module: "Node16", moduleResolution: "Node16", jsx: "react-jsx", esModuleInterop: true,
@@ -226,6 +228,8 @@ try {
   assert.equal(consensusTitles(finalizedTree).length, 1);
   console.log("Reviewed report checks passed: editable DOI pills, included/excluded filters and counts, filtered return actions and pending states, empty states, and consensus status browsing without changing the active report.");
 } finally {
+  if (originalWindow === undefined) delete globalThis.window;
+  else globalThis.window = originalWindow;
   Module._resolveFilename = originalResolve;
   fs.rmSync(temp, { recursive: true, force: true });
 }

@@ -7,6 +7,9 @@ import { NavigationProvider } from "@/components/navigation-link";
 import { useUserPresence } from "@/components/use-user-presence";
 import { useReviewCheckout, type ReviewCheckoutTarget } from "@/components/use-review-checkout";
 import { useReviewQueueScroll, type SavedQueueDecision } from "@/components/use-review-queue-scroll";
+import { useExtractionDiscardConfirmation } from "@/components/use-extraction-discard-confirmation";
+import { hasUnsavedExtractionAnswers } from "@/lib/extractionDraft";
+import type { FeedbackMessage } from "@/lib/feedback";
 
 import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -570,7 +573,7 @@ export function PrismaReviewApp() {
     email: "",
     title: "Reviewer"
   });
-  const [teamMessage, setTeamMessage] = useState("");
+  const [teamFeedback, setTeamFeedbackState] = useState<(FeedbackMessage & { projectId: string }) | null>(null);
   const [teamRolePendingUserId, setTeamRolePendingUserId] = useState<string | null>(null);
   const [teamRemovePendingUserId, setTeamRemovePendingUserId] = useState<string | null>(null);
   const [teamAddPendingUserId, setTeamAddPendingUserId] = useState<string | null>(null);
@@ -622,6 +625,10 @@ export function PrismaReviewApp() {
   const [extractionTemplateForm, setExtractionTemplateForm] = useState<ExtractionTemplateForm>(emptyExtractionTemplateForm);
   const [isEditingExtractionTemplate, setIsEditingExtractionTemplate] = useState(false);
   const [extractionFormValues, setExtractionFormValues] = useState<Record<string, ExtractionResponseValue>>({});
+  const [extractionFormBaseline, setExtractionFormBaseline] = useState<{
+    key: string;
+    values: Record<string, ExtractionResponseValue>;
+  }>({ key: "", values: {} });
   const [extractionMessage, setExtractionMessage] = useState("");
   const [isCreatingExtractionTemplate, setIsCreatingExtractionTemplate] = useState(false);
   const [isSubmittingExtractionResponse, setIsSubmittingExtractionResponse] = useState(false);
@@ -644,7 +651,7 @@ export function PrismaReviewApp() {
   const [workspaceProgress, setWorkspaceProgress] = useState<LoadingProgress>({ label: "Loading your workspace", detail: "Waiting for your reviews and permissions from the server." });
   const [selectedImportId, setSelectedImportId] = useState("");
   const [isImportEditorOpen, setIsImportEditorOpen] = useState(false);
-  const [importDetailMessage, setImportDetailMessage] = useState("");
+  const [importDetailFeedback, setImportDetailFeedbackState] = useState<(FeedbackMessage & { projectId: string; importId: string }) | null>(null);
   const [importDetailForm, setImportDetailForm] = useState<ImportDetailForm>(emptyImportDetailForm);
   const [studyEditId, setStudyEditId] = useState("");
   const [studyEditForm, setStudyEditForm] = useState<StudyEditForm>(emptyStudyEditForm);
@@ -800,9 +807,16 @@ export function PrismaReviewApp() {
     [activeExtractionTemplate, selectedProject, projectExtractionReports, extractionResponses, extractionConsensus]
   );
   const pendingConsensusItems = useMemo(() => consensusQueue.filter((item) => item.status === "pending"), [consensusQueue]);
+  const hasUnsavedExtractionChanges = activeView === "extraction" &&
+    extractionFormBaseline.key === JSON.stringify([selectedProject.id, activeExtractionReportId, activeExtractionTemplate?.id, currentUser.id]) &&
+    hasUnsavedExtractionAnswers(activeExtractionTemplate?.fields ?? [], extractionFormValues, extractionFormBaseline.values);
+  // A checkout refresh must not replace a report while its answers are unsaved.
+  const dirtyExtractionReport = hasUnsavedExtractionChanges
+    ? projectExtractionReports.find((report) => report.id === activeExtractionReportId)
+    : undefined;
   const activeExtractionReport =
     activeView === "extraction"
-      ? activeExtractionReports.find((report) => report.id === activeExtractionReportId) ?? activeExtractionReports[0]
+      ? dirtyExtractionReport ?? activeExtractionReports.find((report) => report.id === activeExtractionReportId) ?? activeExtractionReports[0]
       : activeView === "consensus"
         ? projectExtractionReports.find((report) => report.id === activeConsensusReportId) ?? pendingConsensusItems[0]?.report ?? projectExtractionReports[0]
         : projectExtractionReports.find((report) => report.id === activeExtractionReportId) ?? projectExtractionReports[0];
@@ -818,6 +832,10 @@ export function PrismaReviewApp() {
           response.userId === currentUser.id
       )
     : undefined;
+  const extractionDraftKey = JSON.stringify([selectedProject.id, activeExtractionReport?.id, activeExtractionTemplate?.id, currentUser.id]);
+  const confirmDiscardExtractionAnswers = useExtractionDiscardConfirmation(hasUnsavedExtractionChanges, () => {
+    setExtractionFormValues(extractionFormBaseline.values);
+  });
   const activeExtractionConsensus = activeExtractionReport && activeExtractionTemplate
     ? extractionConsensus.find(
         (consensus) =>
@@ -1144,8 +1162,10 @@ export function PrismaReviewApp() {
 
     if (nextPath === currentPath) {
       clearPendingRoute();
-      return;
+      return true;
     }
+
+    if (!confirmDiscardExtractionAnswers()) return false;
 
     setPendingRoutePath(nextPath);
     setPendingRouteLabel(getPendingRouteLabel(nextView, nextProjectId));
@@ -1157,6 +1177,7 @@ export function PrismaReviewApp() {
 
       router.push(nextPath);
     });
+    return true;
   }
 
   function navigateToProjectView(view: ViewKey) {
@@ -1597,6 +1618,7 @@ export function PrismaReviewApp() {
     });
     if (hasProjectChanged) {
       setProjectSettingsMessage("");
+      setTeamFeedback(null);
       previousSettingsProjectIdRef.current = selectedProject.id;
     }
   }, [
@@ -1655,6 +1677,7 @@ export function PrismaReviewApp() {
 
   useEffect(() => {
     if (activeView === "extraction") {
+      if (hasUnsavedExtractionChanges) return;
       if (activeExtractionReports.length === 0) {
         if (projectExtractionReports.length === 0 && activeExtractionReportId) {
           setActiveExtractionReportId("");
@@ -1674,12 +1697,15 @@ export function PrismaReviewApp() {
     if (!projectExtractionReports.some((report) => report.id === activeExtractionReportId)) {
       setActiveExtractionReportId(projectExtractionReports[0].id);
     }
-  }, [activeExtractionReportId, activeExtractionReports, activeView, projectExtractionReportKey, projectExtractionReports]);
+  }, [activeExtractionReportId, activeExtractionReports, activeView, hasUnsavedExtractionChanges, projectExtractionReportKey, projectExtractionReports]);
 
   useEffect(() => {
-    setExtractionFormValues(activeExtractionResponse?.values ?? {});
+    if (activeView !== "extraction" || hasUnsavedExtractionChanges) return;
+    const values = activeExtractionResponse?.values ?? {};
+    setExtractionFormValues(values);
+    setExtractionFormBaseline({ key: extractionDraftKey, values });
     setExtractionMessage("");
-  }, [activeExtractionReport?.id, activeExtractionResponse?.id, activeExtractionTemplate?.id, currentUser.id]);
+  }, [activeView, extractionDraftKey, activeExtractionResponse?.id, hasUnsavedExtractionChanges]);
 
   useEffect(() => {
     setConsensusFormValues(activeExtractionConsensus?.resolvedValues ?? {});
@@ -1916,7 +1942,7 @@ export function PrismaReviewApp() {
   }
 
   async function handleLogout() {
-    if (pendingAuthAction) return;
+    if (pendingAuthAction || !confirmDiscardExtractionAnswers()) return;
 
     setPendingAuthAction("logout");
     try {
@@ -1950,8 +1976,8 @@ export function PrismaReviewApp() {
 
   function openProject(projectId: string, view: ViewKey = "projectDashboard") {
     const nextView = projectId === selectedProject.id && !canNavigateToProjectView(view) ? "projectDashboard" : view;
+    if (!setActiveView(nextView, { projectId })) return;
     setSelectedProjectId(projectId);
-    setActiveView(nextView, { projectId });
     setIsMobileNavOpen(false);
     setSelectedScreeningStudyId("");
     setActiveReportId("");
@@ -1983,7 +2009,16 @@ export function PrismaReviewApp() {
     }));
   }
 
+  function setTeamFeedback(feedback: FeedbackMessage | null) {
+    setTeamFeedbackState(feedback ? { ...feedback, projectId: selectedProject.id } : null);
+  }
+
+  function setImportDetailFeedback(feedback: FeedbackMessage | null, importId = selectedImportId) {
+    setImportDetailFeedbackState(feedback ? { ...feedback, projectId: selectedProject.id, importId } : null);
+  }
+
   async function updateProjectMembers(projectId: string, memberIds: string[], ownerIds: string[], eventLabel: string) {
+    setTeamFeedback({ status: "pending", message: "Updating project team..." });
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${projectId}/members`, {
         method: "PATCH",
@@ -1992,7 +2027,7 @@ export function PrismaReviewApp() {
       applyAppState(payload);
       return true;
     } catch (error) {
-      setTeamMessage(getErrorMessage(error));
+      setTeamFeedback({ status: "error", message: getErrorMessage(error) });
       return false;
     }
   }
@@ -2000,12 +2035,12 @@ export function PrismaReviewApp() {
   async function addExistingUserToProject(userId: string) {
     const user = users.find((candidate) => candidate.id === userId);
     if (!user) {
-      setTeamMessage("That user was not found.");
+      setTeamFeedback({ status: "error", message: "That user was not found." });
       return;
     }
 
     if (selectedProject.memberIds.includes(user.id)) {
-      setTeamMessage(`${user.name} is already in this review.`);
+      setTeamFeedback({ status: "warning", message: `${user.name} is already in this review.` });
       return;
     }
 
@@ -2019,7 +2054,7 @@ export function PrismaReviewApp() {
       );
       if (didUpdate) {
         setTeamUserSearch("");
-        setTeamMessage(`${user.name} added to ${selectedProject.title}.`);
+        setTeamFeedback({ status: "success", message: `${user.name} added to ${selectedProject.title}.` });
       }
     } finally {
       setTeamAddPendingUserId((previous) => (previous === userId ? null : previous));
@@ -2032,17 +2067,18 @@ export function PrismaReviewApp() {
     const name = inviteForm.name.trim();
 
     if (!name || !email) {
-      setTeamMessage("Enter a name and email address.");
+      setTeamFeedback({ status: "warning", message: "Enter a name and email address." });
       return;
     }
 
     const invitedUser = users.find((user) => user.email.toLowerCase() === email);
     if (invitedUser && selectedProject.memberIds.includes(invitedUser.id)) {
-      setTeamMessage(`${invitedUser.name} is already in this review.`);
+      setTeamFeedback({ status: "warning", message: `${invitedUser.name} is already in this review.` });
       return;
     }
 
     setIsInvitingProjectUser(true);
+    setTeamFeedback({ status: "pending", message: `Inviting ${name}...` });
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/invite`, {
         method: "POST",
@@ -2054,9 +2090,9 @@ export function PrismaReviewApp() {
       });
       applyAppState(payload);
       setInviteForm({ name: "", email: "", title: "Reviewer" });
-      setTeamMessage(payload.message ?? `${name} invited to ${selectedProject.title}.`);
+      setTeamFeedback({ status: "success", message: payload.message ?? `${name} invited to ${selectedProject.title}.` });
     } catch (error) {
-      setTeamMessage(getErrorMessage(error));
+      setTeamFeedback({ status: "error", message: getErrorMessage(error) });
     } finally {
       setIsInvitingProjectUser(false);
     }
@@ -2069,12 +2105,12 @@ export function PrismaReviewApp() {
     }
 
     if (!selectedProject.ownerIds.includes(currentUser.id) && selectedProject.ownerId !== currentUser.id) {
-      setTeamMessage("Only project owners can remove members.");
+      setTeamFeedback({ status: "error", message: "Only project owners can remove members." });
       return;
     }
 
     if (selectedProject.ownerIds.includes(userId) && selectedProject.ownerIds.length === 1) {
-      setTeamMessage("The last project owner cannot be removed.");
+      setTeamFeedback({ status: "warning", message: "The last project owner cannot be removed." });
       return;
     }
 
@@ -2084,13 +2120,14 @@ export function PrismaReviewApp() {
 
     try {
       setTeamRemovePendingUserId(userId);
+      setTeamFeedback({ status: "pending", message: `Removing ${user.name}...` });
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/members/${userId}`, {
         method: "DELETE"
       });
       applyAppState(payload);
-      setTeamMessage(`${user.name} removed from ${selectedProject.title}.`);
+      setTeamFeedback({ status: "success", message: `${user.name} removed from ${selectedProject.title}.` });
     } catch (error) {
-      setTeamMessage(getErrorMessage(error));
+      setTeamFeedback({ status: "error", message: getErrorMessage(error) });
     } finally {
       setTeamRemovePendingUserId((previous) => (previous === userId ? null : previous));
     }
@@ -2140,7 +2177,7 @@ export function PrismaReviewApp() {
     }
 
     if (!selectedProject.ownerIds.includes(currentUser.id) && selectedProject.ownerId !== currentUser.id) {
-      setTeamMessage("Only project owners can change project roles.");
+      setTeamFeedback({ status: "error", message: "Only project owners can change project roles." });
       return;
     }
 
@@ -2149,7 +2186,7 @@ export function PrismaReviewApp() {
       : [...selectedProject.ownerIds, userId];
 
     if (nextOwnerIds.length === 0) {
-      setTeamMessage("A project must have at least one owner.");
+      setTeamFeedback({ status: "warning", message: "A project must have at least one owner." });
       return;
     }
 
@@ -2162,7 +2199,7 @@ export function PrismaReviewApp() {
         `${nextOwnerIds.includes(userId) ? "Promoted" : "Demoted"} ${user.name} ${nextOwnerIds.includes(userId) ? "to owner" : "to reviewer"}`
       );
       if (didUpdate) {
-        setTeamMessage(nextOwnerIds.includes(userId) ? `${user.name} is now an owner.` : `${user.name} is now a reviewer.`);
+        setTeamFeedback({ status: "success", message: nextOwnerIds.includes(userId) ? `${user.name} is now an owner.` : `${user.name} is now a reviewer.` });
       }
     } finally {
       setTeamRolePendingUserId((previous) => (previous === userId ? null : previous));
@@ -2361,7 +2398,7 @@ export function PrismaReviewApp() {
   }
 
   function startEditingExtractionTemplate() {
-    if (!activeExtractionTemplate) {
+    if (!activeExtractionTemplate || !confirmDiscardExtractionAnswers()) {
       return;
     }
 
@@ -2416,6 +2453,11 @@ export function PrismaReviewApp() {
     }));
   }
 
+  function selectExtractionReport(reportId: string) {
+    if (reportId === activeExtractionReport?.id || !confirmDiscardExtractionAnswers()) return;
+    setActiveExtractionReportId(reportId);
+  }
+
   function toggleExtractionChoice(fieldId: string, option: string, checked: boolean) {
     const currentValue = extractionFormValues[fieldId];
     const currentChoices = Array.isArray(currentValue) ? currentValue : [];
@@ -2453,6 +2495,9 @@ export function PrismaReviewApp() {
           values: extractionFormValues
         })
       });
+      setExtractionFormBaseline((previous) => previous.key === extractionDraftKey
+        ? { key: extractionDraftKey, values: extractionFormValues }
+        : previous);
       applyAppState(payload);
       setExtractionMessage("Extraction submitted.");
       setSavedQueueDecision({ queueKey: reviewQueueKey, itemId: activeExtractionReport.id });
@@ -2549,11 +2594,15 @@ export function PrismaReviewApp() {
       });
       const payload = await readImportProgress<AppMutationPayload>(response, setImportProgress);
       applyAppState(payload);
-      const importedBatchId = payload.imports.find((batch) => batch.projectId === selectedProject.id)?.id ?? "";
+      const importedBatch = payload.imports.find((batch) => batch.projectId === selectedProject.id);
+      const importedBatchId = importedBatch?.id ?? "";
       const successMessage = payload.message || `${file.name} imported and stored on the server.`;
       setSelectedImportId(importedBatchId);
       setIsImportEditorOpen(Boolean(importedBatchId));
-      setImportDetailMessage(successMessage);
+      setImportDetailFeedback({
+        status: importedBatch && (importedBatch.status === "needs_review" || importedBatch.parserWarnings > 0 || (importedBatch.pdfRetrievalFailures ?? 0) > 0) ? "warning" : "success",
+        message: successMessage
+      }, importedBatchId);
       setImportMessage(successMessage);
     } catch (error) {
       setImportMessage(getErrorMessage(error));
@@ -2568,7 +2617,7 @@ export function PrismaReviewApp() {
     setStudyEditId("");
     setStudyEditForm(emptyStudyEditForm);
     setPendingReviewedStudyId("");
-    setImportDetailMessage("");
+    setImportDetailFeedback(null);
     setIsImportEditorOpen(true);
   }
 
@@ -2577,7 +2626,7 @@ export function PrismaReviewApp() {
     setStudyEditId("");
     setStudyEditForm(emptyStudyEditForm);
     setPendingReviewedStudyId("");
-    setImportDetailMessage("");
+    setImportDetailFeedback(null);
   }
 
   async function updateImportDetails(event: FormSubmitEvent) {
@@ -2587,15 +2636,16 @@ export function PrismaReviewApp() {
     }
 
     setIsSavingImportDetails(true);
+    setImportDetailFeedback({ status: "pending", message: "Saving import details..." });
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${selectedImportId}`, {
         method: "PATCH",
         body: JSON.stringify(importDetailForm)
       });
       applyAppState(payload);
-      setImportDetailMessage("Import details updated.");
+      setImportDetailFeedback({ status: "success", message: "Import details updated." });
     } catch (error) {
-      setImportDetailMessage(getErrorMessage(error));
+      setImportDetailFeedback({ status: "error", message: getErrorMessage(error) });
     } finally {
       setIsSavingImportDetails(false);
     }
@@ -2603,16 +2653,16 @@ export function PrismaReviewApp() {
 
   async function reviewImportWarnings(importId: string) {
     setIsReviewingImportWarnings(true);
-    setImportDetailMessage("Saving review...");
+    setImportDetailFeedback({ status: "pending", message: "Saving review..." }, importId);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${importId}/review`, {
         method: "POST",
         body: JSON.stringify(importDetailForm)
       });
       applyAppState(payload);
-      setImportDetailMessage(payload.message ?? "Parser warnings reviewed.");
+      setImportDetailFeedback({ status: "success", message: payload.message ?? "Parser warnings reviewed." }, importId);
     } catch (error) {
-      setImportDetailMessage(getErrorMessage(error));
+      setImportDetailFeedback({ status: "error", message: getErrorMessage(error) }, importId);
     } finally {
       setIsReviewingImportWarnings(false);
     }
@@ -2624,7 +2674,7 @@ export function PrismaReviewApp() {
     }
 
     setPendingReviewedStudyId(study.id);
-    setImportDetailMessage("");
+    setImportDetailFeedback({ status: "pending", message: "Saving citation review..." });
     try {
       const payload = await apiRequest<AppMutationPayload>(
         `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${study.id}`,
@@ -2633,9 +2683,9 @@ export function PrismaReviewApp() {
         }
       );
       applyAppState(payload);
-      setImportDetailMessage(payload.message ?? "Citation entry marked reviewed.");
+      setImportDetailFeedback({ status: "success", message: payload.message ?? "Citation entry marked reviewed." });
     } catch (error) {
-      setImportDetailMessage(getErrorMessage(error));
+      setImportDetailFeedback({ status: "error", message: getErrorMessage(error) });
     } finally {
       setPendingReviewedStudyId("");
     }
@@ -2652,7 +2702,7 @@ export function PrismaReviewApp() {
       keywords: study.keywords.join("; "),
       abstract: study.abstract
     });
-    setImportDetailMessage("");
+    setImportDetailFeedback(null);
   }
 
   async function updateImportStudy(event: FormSubmitEvent) {
@@ -2662,6 +2712,7 @@ export function PrismaReviewApp() {
     }
 
     setIsSavingStudyEdit(true);
+    setImportDetailFeedback({ status: "pending", message: "Saving citation entry..." });
     try {
       const payload = await apiRequest<AppMutationPayload>(
         `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${studyEditId}`,
@@ -2673,9 +2724,9 @@ export function PrismaReviewApp() {
       applyAppState(payload);
       setStudyEditId("");
       setStudyEditForm(emptyStudyEditForm);
-      setImportDetailMessage("Citation entry updated.");
+      setImportDetailFeedback({ status: "success", message: "Citation entry updated." });
     } catch (error) {
-      setImportDetailMessage(getErrorMessage(error));
+      setImportDetailFeedback({ status: "error", message: getErrorMessage(error) });
     } finally {
       setIsSavingStudyEdit(false);
     }
@@ -2687,7 +2738,7 @@ export function PrismaReviewApp() {
     }
 
     setPendingDeleteStudyId(study.id);
-    setImportDetailMessage("");
+    setImportDetailFeedback({ status: "pending", message: "Deleting citation entry..." });
     try {
       const payload = await apiRequest<AppMutationPayload>(
         `/api/projects/${selectedProject.id}/imports/${selectedImportId}/studies/${study.id}`,
@@ -2700,9 +2751,9 @@ export function PrismaReviewApp() {
         setStudyEditId("");
         setStudyEditForm(emptyStudyEditForm);
       }
-      setImportDetailMessage(`Deleted "${study.title}" from this import batch.`);
+      setImportDetailFeedback({ status: "success", message: `Deleted "${study.title}" from this import batch.` });
     } catch (error) {
-      setImportDetailMessage(getErrorMessage(error));
+      setImportDetailFeedback({ status: "error", message: getErrorMessage(error) });
     } finally {
       setPendingDeleteStudyId("");
     }
@@ -2719,7 +2770,7 @@ export function PrismaReviewApp() {
     }
 
     setPendingDeleteImportId(importId);
-    setImportDetailMessage("");
+    setImportDetailFeedback({ status: "pending", message: "Deleting import batch..." }, importId);
     try {
       const payload = await apiRequest<AppMutationPayload>(`/api/projects/${selectedProject.id}/imports/${importId}`, {
         method: "DELETE"
@@ -2729,7 +2780,7 @@ export function PrismaReviewApp() {
       closeImportEditor();
       setImportMessage(payload.message ?? "Import batch deleted.");
     } catch (error) {
-      setImportDetailMessage(getErrorMessage(error));
+      setImportDetailFeedback({ status: "error", message: getErrorMessage(error) }, importId);
     } finally {
       setPendingDeleteImportId("");
     }
@@ -3391,7 +3442,9 @@ export function PrismaReviewApp() {
         batch={batch}
         batchStudies={batchStudies}
         warningMessages={warningMessages}
-        importDetailMessage={importDetailMessage}
+        importDetailFeedback={importDetailFeedback?.projectId === selectedProject.id && importDetailFeedback.importId === batch.id
+          ? importDetailFeedback
+          : null}
         importDetailForm={importDetailForm}
         studyEditId={studyEditId}
         studyEditForm={studyEditForm}
@@ -3691,10 +3744,12 @@ export function PrismaReviewApp() {
         startEditingExtractionTemplate={startEditingExtractionTemplate}
         cancelEditingExtractionTemplate={cancelEditingExtractionTemplate}
         activeExtractionReport={activeExtractionReport}
-        projectExtractionReports={activeExtractionReports}
+        projectExtractionReports={dirtyExtractionReport && !activeExtractionReports.some((report) => report.id === dirtyExtractionReport.id)
+          ? [dirtyExtractionReport, ...activeExtractionReports]
+          : activeExtractionReports}
         totalExtractionReportCount={projectExtractionReports.length}
         setActiveView={navigateToProjectView}
-        setActiveExtractionReportId={setActiveExtractionReportId}
+        setActiveExtractionReportId={selectExtractionReport}
         setActiveReportId={setActiveReportId}
         projectScreeningStudies={projectScreeningStudies}
         extractionResponses={extractionResponses}
@@ -3872,7 +3927,7 @@ export function PrismaReviewApp() {
         onInviteEmailChange={(value) => setInviteForm((previous) => ({ ...previous, email: value }))}
         onInviteTitleChange={(value) => setInviteForm((previous) => ({ ...previous, title: value }))}
         inviteUserToProject={inviteUserToProject}
-        teamMessage={teamMessage}
+        teamFeedback={teamFeedback?.projectId === selectedProject.id ? teamFeedback : null}
         toggleProjectOwner={toggleProjectOwner}
         removeUserFromProject={removeUserFromProject}
         teamAddPendingUserId={teamAddPendingUserId}

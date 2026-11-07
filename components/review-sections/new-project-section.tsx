@@ -1,4 +1,5 @@
 import { ViewLink } from "@/components/navigation-link";
+import { useId } from "react";
 import { AlertTriangle, ArrowLeft, FileText, Lock, Mail, Plus, UserPlus, Users, X } from "lucide-react";
 import type { AppUser } from "@/lib/prismaData";
 import { SectionTitle } from "@/components/prisma-review-ui";
@@ -87,6 +88,7 @@ export function NewProjectSection({
   queuedInvites,
   onRemoveQueuedInvite
 }: NewProjectSectionProps) {
+  const projectFormId = useId();
   const selectedMembers = newProjectForm.memberIds
     .map((memberId) => users.find((user) => user.id === memberId))
     .filter((user): user is AppUser => Boolean(user));
@@ -105,19 +107,19 @@ export function NewProjectSection({
         </ViewLink>
       </section>
 
-      <form className="projectForm" onSubmit={onSubmit}>
+      <div className="projectForm">
         <section className="panel formActions formActionsProminent">
           <div>
             <strong>{creationStatus}</strong>
             <span>{creationSummary}</span>
           </div>
-          <button className="primaryButton" type="submit" disabled={!canCreate || isCreatingProject}>
+          <button className="primaryButton" type="submit" form={projectFormId} disabled={!canCreate || isCreatingProject}>
             {isCreatingProject ? <span className="inlineSpinner" aria-hidden="true" /> : <Plus size={17} />}
             {isCreatingProject ? "Creating..." : "Create Review"}
           </button>
         </section>
 
-        <section className="panel">
+        <form className="panel" id={projectFormId} aria-label="Create review project" onSubmit={onSubmit}>
           <SectionTitle icon={FileText} title="Review Details" action="Required setup" />
           <div className="formGrid">
             <label>
@@ -150,34 +152,34 @@ export function NewProjectSection({
               placeholder="Optional. Paste database names, keywords, Boolean strings, dates, filters, and search-platform notes."
             />
           </label>
-        </section>
+        </form>
 
         <section className="settingsGrid">
           <div className="panel">
             <SectionTitle icon={Lock} title="Screening Policy" action="Workflow state machine" />
             <label className="toggleRow">
-              <input type="checkbox" checked={newProjectForm.blindMode} onChange={(event) => onBlindModeChange(event.target.checked)} />
+              <input type="checkbox" form={projectFormId} checked={newProjectForm.blindMode} onChange={(event) => onBlindModeChange(event.target.checked)} />
               <span />
               <strong>Enable blind mode</strong>
             </label>
             <div className="formGrid compactFormGrid">
               <label>
                 <span>Title/abstract votes</span>
-                <input type="number" min={1} max={4} value={newProjectForm.abstractRequiredVotes} onChange={(event) => onAbstractVotesChange(Number(event.target.value))} />
+                <input type="number" form={projectFormId} min={1} max={4} value={newProjectForm.abstractRequiredVotes} onChange={(event) => onAbstractVotesChange(Number(event.target.value))} />
               </label>
               <label>
                 <span>Full-text votes</span>
-                <input type="number" min={2} max={4} value={newProjectForm.fullTextRequiredVotes} onChange={(event) => onFullTextVotesChange(Number(event.target.value))} />
+                <input type="number" form={projectFormId} min={2} max={4} value={newProjectForm.fullTextRequiredVotes} onChange={(event) => onFullTextVotesChange(Number(event.target.value))} />
               </label>
               <label>
                 <span>Extraction votes</span>
-                <input type="number" min={1} max={4} value={newProjectForm.extractionRequiredVotes} onChange={(event) => onExtractionVotesChange(Number(event.target.value))} />
+                <input type="number" form={projectFormId} min={1} max={4} value={newProjectForm.extractionRequiredVotes} onChange={(event) => onExtractionVotesChange(Number(event.target.value))} />
               </label>
             </div>
             <label className="fieldLabel" htmlFor="new-project-maybe-policy">
               Maybe policy
             </label>
-            <select id="new-project-maybe-policy" value={newProjectForm.maybePolicy} onChange={(event) => onMaybePolicyChange(event.target.value as NewProjectForm["maybePolicy"])}>
+            <select id="new-project-maybe-policy" form={projectFormId} value={newProjectForm.maybePolicy} onChange={(event) => onMaybePolicyChange(event.target.value as NewProjectForm["maybePolicy"])}>
               <option value="advance_to_full_text">Advance to full text</option>
               <option value="third_vote">Request third vote</option>
               <option value="conflict">Treat as conflict</option>
@@ -225,6 +227,7 @@ export function NewProjectSection({
             {canShowInviteForm ? (
               <form
                 className="inviteForm"
+                aria-label="Queue reviewer invitation"
                 onSubmit={(event) => {
                   event.preventDefault();
                   onQueueInvite();
@@ -306,12 +309,12 @@ export function NewProjectSection({
             <strong>{creationStatus}</strong>
             <span>{creationSummary}</span>
           </div>
-          <button className="primaryButton" type="submit" disabled={!canCreate || isCreatingProject}>
+          <button className="primaryButton" type="submit" form={projectFormId} disabled={!canCreate || isCreatingProject}>
             {isCreatingProject ? <span className="inlineSpinner" aria-hidden="true" /> : <Plus size={17} />}
             {isCreatingProject ? "Creating..." : "Create Review"}
           </button>
         </section>
-      </form>
+      </div>
     </div>
   );
 }
