@@ -486,7 +486,8 @@ async function readStudies(client) {
       stage: row.stage ?? payload?.stage ?? "title_abstract",
       keywords: asArray(row.keywords ?? payload?.keywords),
       rawCitation: row.raw_citation ?? payload?.rawCitation,
-      parserWarnings: asArray(row.parser_warnings ?? payload?.parserWarnings)
+      parserWarnings: asArray(row.parser_warnings ?? payload?.parserWarnings),
+      comments: Array.isArray(payload?.comments) ? payload.comments : undefined
     };
 
     const importItemId = row.import_item_id ?? payload?.importItemId;

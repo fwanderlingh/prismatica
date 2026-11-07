@@ -446,7 +446,13 @@ export function getPendingReviewWorkCounts(
   return { screening: pendingScreeningIds.size, fullText: pendingFullTextIds.size };
 }
 
-export function getActiveTitleAbstractStudies(project: ReviewProject, studies: Study[], decisions: Decision[], currentUserId: string) {
+export function getActiveTitleAbstractStudies(
+  project: ReviewProject,
+  studies: Study[],
+  decisions: Decision[],
+  currentUserId: string,
+  queueTailStudyIds: string[] = []
+) {
   const currentDecisions = decisions.filter(
     (decision) => decision.projectId === project.id && decision.stage === "title_abstract" && decision.isCurrent
   );
@@ -482,13 +488,27 @@ export function getActiveTitleAbstractStudies(project: ReviewProject, studies: S
     return checkedOutByCurrentUser || activeViewerCount < Math.max(requiredVotes - voteCount, 1);
   });
 
-  return deferReviewedConflicts(randomizeReviewQueueItems(activeStudies, {
+  const activeQueue = deferReviewedConflicts(randomizeReviewQueueItems(activeStudies, {
     projectId: project.id,
     currentUserId,
     phase: "title_abstract",
     isPinned: (study) => Boolean(study.titleAbstractCheckedOutByCurrentUser),
     isLast: (study) => conflictIds.has(study.id)
   }), conflictIds, ownDecisionOrder);
+  if (queueTailStudyIds.length === 0) return activeQueue;
+
+  const queueTailOrder = new Map(queueTailStudyIds.map((studyId, index) => [studyId, index]));
+  const ordinaryStudies: Study[] = [];
+  const queueTailStudies: Study[] = [];
+  const conflictStudies: Study[] = [];
+  for (const study of activeQueue) {
+    if (conflictIds.has(study.id)) conflictStudies.push(study);
+    else if (queueTailOrder.has(study.id)) queueTailStudies.push(study);
+    else ordinaryStudies.push(study);
+  }
+  // Local queue order takes priority over checkout pinning, including stale checkout metadata.
+  queueTailStudies.sort((left, right) => queueTailOrder.get(left.id)! - queueTailOrder.get(right.id)!);
+  return [...ordinaryStudies, ...queueTailStudies, ...conflictStudies];
 }
 
 export function getActiveFullTextReports(project: ReviewProject, reports: Report[], decisions: Decision[], currentUserId: string) {

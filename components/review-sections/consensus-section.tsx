@@ -264,7 +264,16 @@ export function ConsensusSection({
             id="consensus-report-picker"
             value={activeReportForConsensus?.id ?? ""}
             disabled={isFinalizingExtractionConsensus}
-            onChange={(event) => setActiveExtractionReportId(event.target.value)}
+            aria-controls="consensus-report-details"
+            onChange={(event) => {
+              setActiveExtractionReportId(event.target.value);
+              window.requestAnimationFrame(() => {
+                document.getElementById("consensus-report-details")?.scrollIntoView({
+                  behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+                  block: "start"
+                });
+              });
+            }}
           >
             {[
               { label: `Pending consensus (${pendingItems.length})`, items: pendingItems },

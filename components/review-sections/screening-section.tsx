@@ -1,6 +1,6 @@
 import { ViewLink } from "@/components/navigation-link";
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock, FileSearch, History, ListChecks, Lock, Minus, PanelRight, XCircle } from "lucide-react";
 import type { Decision, ProjectWorkflowConflict, Study } from "@/lib/prismaData";
 import { Badge, EmptyState, ReviewReservationNotice, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
@@ -29,8 +29,7 @@ type ScreeningSectionProps = {
   decisionTone: (value: DecisionValue) => "success" | "warning" | "danger" | "info" | "neutral";
   currentStudy: Study;
   stageEvaluation: StageEvaluation;
-  screeningNote: string;
-  setScreeningNote: (value: string) => void;
+  paperComments?: ReactNode;
   screeningMessage: string;
   canRecordScreeningDecision: boolean;
   checkoutError: string;
@@ -46,6 +45,8 @@ type ScreeningSectionProps = {
   selectedProjectAbstractRequiredVotes: number;
   addScreeningDecision: (value: Exclude<DecisionValue, "not_retrieved">) => void;
   undoLastDecision: () => void;
+  onPostpone: () => void;
+  canPostpone: boolean;
 };
 
 export function ScreeningSection({
@@ -63,8 +64,7 @@ export function ScreeningSection({
   decisionTone,
   currentStudy,
   stageEvaluation,
-  screeningNote,
-  setScreeningNote,
+  paperComments,
   screeningMessage,
   canRecordScreeningDecision,
   checkoutError,
@@ -79,7 +79,9 @@ export function ScreeningSection({
   formatConflictResolutionHint,
   selectedProjectAbstractRequiredVotes,
   addScreeningDecision,
-  undoLastDecision
+  undoLastDecision,
+  onPostpone,
+  canPostpone
 }: ScreeningSectionProps) {
   const decisionsByStudy = useMemo(() => {
     const result = new Map<string, Decision>();
@@ -191,12 +193,7 @@ export function ScreeningSection({
             </span>
           </div>
           <p className="abstractText">{renderAbstractText(currentStudy.abstract)}</p>
-          <textarea
-            value={screeningNote}
-            onChange={(event) => setScreeningNote(event.target.value)}
-            placeholder="My note"
-            aria-label="Screening note"
-          />
+          {paperComments}
         </article>
 
         <aside className="panel actionPanel">
@@ -255,12 +252,13 @@ export function ScreeningSection({
               {pendingScreeningDecision === "exclude" ? "Saving..." : "Exclude"}
             </button>
           </div>
-          <div className="buttonRow bottomMargin">
+          <div className="buttonRow screeningNavigationButtons bottomMargin">
             <button
               className="ghostButton iconOnly"
               type="button"
               onClick={() => setStudyIndex((index) => Math.max(index - 1, 0))}
               title="Previous citation"
+              aria-label="Previous citation"
               disabled={isSubmittingDecision || isUndoingScreeningDecision}
             >
               <ArrowLeft size={17} />
@@ -280,11 +278,22 @@ export function ScreeningSection({
               type="button"
               onClick={() => setStudyIndex((index) => Math.min(index + 1, projectScreeningStudies.length - 1))}
               title="Next citation"
+              aria-label="Next citation"
               disabled={isSubmittingDecision || isUndoingScreeningDecision}
             >
               <ArrowRight size={17} />
             </button>
           </div>
+          <button
+            className="ghostButton screeningPostponeButton bottomMargin"
+            type="button"
+            onClick={onPostpone}
+            title="Move this citation to the end of the screening queue, before conflicts, to review it later."
+            disabled={isSubmittingDecision || isUndoingScreeningDecision || !canPostpone}
+          >
+            <Clock size={17} />
+            Postpone
+          </button>
           {blindMode ? (
             <div className="validationItem muted">
               <Lock size={17} />

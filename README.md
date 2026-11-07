@@ -111,6 +111,17 @@ One vote does not count as completed when more are required. This project-wide
 percentage is shared by the dashboard, project overview, and reviewer queue;
 conflicts remain listed separately for resolution.
 
+In Screening, **Postpone** moves the current citation behind the other regular
+papers and before conflicts, then opens the next citation. Queue order and draft
+comments stay with your reviewer, project, and paper while the page is open. Postponing records
+no decision and adds no article status.
+
+**Paper comments** show the same reviewer comments in Screening, Full text, and
+Extraction. Each reviewer can edit or remove their own comment using **Save comment**;
+other reviewers' comments are read-only. Comments are shared with project reviewers,
+including in blind mode, and saving them does not cast or change a vote. Existing
+vote notes are retained as comments under their original authors.
+
 **Full text → Reviewed** shows DOI pills beside reviewed reports and filters for
 included and excluded papers. The status follows your saved full-text decision.
 

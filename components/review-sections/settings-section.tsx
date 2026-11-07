@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, FileText, Lock, Plus, Settings, UserRoundCheck, Users, X } from "lucide-react";
 import { type AppUser, type ReviewProject, roleRows } from "@/lib/prismaData";
 import { Badge, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
@@ -117,39 +117,107 @@ export function SettingsSection({
   onDeleteProject
 }: SettingsSectionProps) {
   const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
+  const [isMainSaveVisible, setIsMainSaveVisible] = useState(true);
+  const mainSaveButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const saveButton = mainSaveButtonRef.current;
+    if (!saveButton || typeof IntersectionObserver === "undefined") return;
+
+    let observer: IntersectionObserver;
+    function observeSaveButton() {
+      observer?.disconnect();
+      const headerHeight = document.querySelector(".contentHeader")?.getBoundingClientRect().height ?? 0;
+      observer = new IntersectionObserver(([entry]) => {
+        setIsMainSaveVisible(entry.isIntersecting && entry.intersectionRatio >= 1);
+      }, { rootMargin: `-${Math.ceil(headerHeight)}px 0px 0px 0px`, threshold: [0, 1] });
+      observer.observe(saveButton!);
+    }
+
+    observeSaveButton();
+    window.addEventListener("resize", observeSaveButton);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", observeSaveButton);
+    };
+  }, [selectedProject.id]);
+
   const projectMembers = selectedProject.memberIds
     .map((memberId) => users.find((user) => user.id === memberId))
     .filter((user): user is AppUser => Boolean(user));
   const canManageProject = selectedProject.ownerIds.includes(currentUser.id) || selectedProject.ownerId === currentUser.id;
   const canSubmitDelete = canManageProject && deleteConfirmationInput.trim() === DELETE_CONFIRMATION_TEXT;
   const settingsMessageIsSuccess = projectSettingsMessage === "Project settings saved.";
+  const settingsSaveFailed = Boolean(projectSettingsMessage) && !settingsMessageIsSuccess;
   const hasExclusionReasons = projectSettingsForm.exclusionReasonsText.trim().length > 0;
+  const { exclusionReasonsText, ...settingsValues } = projectSettingsForm;
+  const hasUnsavedSettings = canManageProject && (
+    (Object.keys(settingsValues) as (keyof typeof settingsValues)[]).some(
+      (key) => settingsValues[key] !== selectedProject[key]
+    ) || exclusionReasonsText !== selectedProject.exclusionReasons.join("\n")
+  );
+  const showFloatingSave = canManageProject && (hasUnsavedSettings || isSavingProjectSettings) && !isMainSaveVisible;
+  const saveButtonClassName = `primaryButton projectSettingsSaveButton${hasUnsavedSettings ? " isUnsaved" : ""}`;
+  const saveButtonContent = isSavingProjectSettings ? (
+    <>
+      <span className="inlineSpinner" aria-hidden="true" />
+      Saving...
+    </>
+  ) : (
+    <>
+      <Check size={17} aria-hidden="true" />
+      Save
+    </>
+  );
 
   return (
-    <div className="viewStack">
+    <div className={`viewStack projectSettingsView${showFloatingSave ? " hasFloatingSave" : ""}`}>
       <section className="overviewBand">
         <div>
           <p className="eyebrow">Project settings</p>
           <h1>Review Controls</h1>
           <p className="subtle">Authorization, blind-mode visibility, and transition policy are separate controls.</p>
         </div>
-        <button className="primaryButton" type="submit" form="project-settings-form" title="Save settings" disabled={!canManageProject || isSavingProjectSettings}>
-          {isSavingProjectSettings ? (
-            <>
-              <span className="inlineSpinner" aria-hidden="true" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Check size={17} />
-              Save
-            </>
-          )}
-        </button>
+        <div className="projectSettingsSaveActions">
+          {hasUnsavedSettings ? (
+            <span className="projectSettingsUnsaved" id="project-settings-save-status" role="status">
+              {isSavingProjectSettings ? "Saving settings..." : "Unsaved changes"}
+            </span>
+          ) : null}
+          <button
+            ref={mainSaveButtonRef}
+            className={saveButtonClassName}
+            type="submit"
+            form="project-settings-form"
+            title="Save settings"
+            aria-describedby={hasUnsavedSettings ? "project-settings-save-status" : undefined}
+            disabled={!canManageProject || isSavingProjectSettings}
+          >
+            {saveButtonContent}
+          </button>
+        </div>
       </section>
 
+      {showFloatingSave ? (
+        <div className="projectSettingsFloatingSave" role="group" aria-label="Save project settings">
+          <span className="projectSettingsUnsaved" title={settingsSaveFailed ? projectSettingsMessage : undefined} aria-hidden="true">
+            {isSavingProjectSettings ? "Saving settings..." : settingsSaveFailed ? "Settings not saved" : "Unsaved changes"}
+          </span>
+          <button
+            className={saveButtonClassName}
+            type="submit"
+            form="project-settings-form"
+            title="Save settings"
+            aria-describedby={hasUnsavedSettings ? "project-settings-save-status" : undefined}
+            disabled={!canManageProject || isSavingProjectSettings}
+          >
+            {saveButtonContent}
+          </button>
+        </div>
+      ) : null}
+
       {projectSettingsMessage ? (
-        <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"}>
+        <div className={settingsMessageIsSuccess ? "validationItem ok" : "validationItem blocked"} role={settingsMessageIsSuccess ? "status" : "alert"}>
           {settingsMessageIsSuccess ? <Check size={17} /> : <AlertTriangle size={17} />}
           <span>{projectSettingsMessage}</span>
         </div>
@@ -164,7 +232,7 @@ export function SettingsSection({
               <input
                 value={projectSettingsForm.title}
                 onChange={(event) => onSettingsTitleChange(event.target.value)}
-                disabled={!canManageProject}
+                disabled={!canManageProject || isSavingProjectSettings}
               />
             </label>
             <label>
@@ -172,7 +240,7 @@ export function SettingsSection({
               <input
                 value={projectSettingsForm.organization}
                 onChange={(event) => onSettingsOrganizationChange(event.target.value)}
-                disabled={!canManageProject}
+                disabled={!canManageProject || isSavingProjectSettings}
               />
             </label>
             <label>
@@ -180,7 +248,7 @@ export function SettingsSection({
               <input
                 value={projectSettingsForm.protocolId}
                 onChange={(event) => onSettingsProtocolIdChange(event.target.value)}
-                disabled={!canManageProject}
+                disabled={!canManageProject || isSavingProjectSettings}
               />
             </label>
             <label>
@@ -190,7 +258,7 @@ export function SettingsSection({
                 pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}"
                 value={projectSettingsForm.dueDate}
                 onChange={(event) => onSettingsDueDateChange(event.target.value)}
-                disabled={!canManageProject}
+                disabled={!canManageProject || isSavingProjectSettings}
               />
             </label>
           </div>
@@ -199,7 +267,7 @@ export function SettingsSection({
             <textarea
               value={projectSettingsForm.description}
               onChange={(event) => onSettingsDescriptionChange(event.target.value)}
-              disabled={!canManageProject}
+              disabled={!canManageProject || isSavingProjectSettings}
             />
           </label>
           <label className="wideField">
@@ -208,7 +276,7 @@ export function SettingsSection({
               className="strategyTextarea"
               value={projectSettingsForm.searchStrategies}
               onChange={(event) => onSettingsSearchStrategiesChange(event.target.value)}
-              disabled={!canManageProject}
+              disabled={!canManageProject || isSavingProjectSettings}
               placeholder={"Paste exact database searches, keywords, Boolean strings, dates, filters, and platform notes.\n\nExample:\nPubMed (2026-05-29)\n(\"underwater mapping\" OR sonar) AND (3D OR reconstruction)\nFilters: English; 2015-2026"}
             />
           </label>
@@ -222,7 +290,7 @@ export function SettingsSection({
                 type="checkbox"
                 checked={projectSettingsForm.blindMode}
                 onChange={(event) => onSettingsBlindModeChange(event.target.checked)}
-                disabled={!canManageProject}
+                disabled={!canManageProject || isSavingProjectSettings}
               />
               <span />
               <strong>Reviewer endpoints hide other votes</strong>
@@ -241,7 +309,7 @@ export function SettingsSection({
                 type="checkbox"
                 checked={projectSettingsForm.requireSequentialPhases}
                 onChange={(event) => onSettingsRequireSequentialPhasesChange(event.target.checked)}
-                disabled={!canManageProject}
+                disabled={!canManageProject || isSavingProjectSettings}
               />
               <span />
               <strong>Lock future phases until the previous phase is complete</strong>
@@ -255,7 +323,7 @@ export function SettingsSection({
                   max={4}
                   value={projectSettingsForm.abstractRequiredVotes}
                   onChange={(event) => onSettingsAbstractVotesChange(Number(event.target.value))}
-                  disabled={!canManageProject}
+                  disabled={!canManageProject || isSavingProjectSettings}
                 />
               </label>
               <label>
@@ -266,7 +334,7 @@ export function SettingsSection({
                   max={4}
                   value={projectSettingsForm.fullTextRequiredVotes}
                   onChange={(event) => onSettingsFullTextVotesChange(Number(event.target.value))}
-                  disabled={!canManageProject}
+                  disabled={!canManageProject || isSavingProjectSettings}
                 />
               </label>
               <label>
@@ -277,7 +345,7 @@ export function SettingsSection({
                   max={4}
                   value={projectSettingsForm.extractionRequiredVotes}
                   onChange={(event) => onSettingsExtractionVotesChange(Number(event.target.value))}
-                  disabled={!canManageProject}
+                  disabled={!canManageProject || isSavingProjectSettings}
                 />
               </label>
             </div>
@@ -288,7 +356,7 @@ export function SettingsSection({
               id="project-settings-maybe-policy"
               value={projectSettingsForm.maybePolicy}
               onChange={(event) => onSettingsMaybePolicyChange(event.target.value as ProjectSettingsFormShape["maybePolicy"])}
-              disabled={!canManageProject}
+              disabled={!canManageProject || isSavingProjectSettings}
             >
               <option value="advance_to_full_text">Advance to full text</option>
               <option value="third_vote">Request third vote</option>
@@ -303,7 +371,7 @@ export function SettingsSection({
                 aria-describedby={!hasExclusionReasons ? "project-settings-exclusion-reasons-error" : undefined}
                 value={projectSettingsForm.exclusionReasonsText}
                 onChange={(event) => onSettingsExclusionReasonsTextChange(event.target.value)}
-                disabled={!canManageProject}
+                disabled={!canManageProject || isSavingProjectSettings}
                 placeholder={"Wrong population\nWrong intervention\nWrong comparator"}
               />
             </label>

@@ -54,6 +54,7 @@ type FullTextSectionProps = {
   conflicts: ProjectWorkflowConflict[];
   onResolveConflict: () => void;
   onOpenPdfUpload: () => void;
+  paperComments?: ReactNode;
 };
 
 type PdfLoadState = "idle" | "loading" | "ready" | "error";
@@ -89,10 +90,17 @@ export function FullTextSection({
   onOpenReviewed,
   conflicts,
   onResolveConflict,
-  onOpenPdfUpload
+  onOpenPdfUpload,
+  paperComments
 }: FullTextSectionProps) {
   const [now, setNow] = useState(Date.now());
   const [isRetrievalHintOpen, setIsRetrievalHintOpen] = useState(false);
+  const [retrievalStatus, setRetrievalStatus] = useState(activeReport.retrievalStatus);
+
+  useEffect(() => {
+    setRetrievalStatus(activeReport.retrievalStatus);
+  }, [selectedProject.id, currentUser.id, activeReport.id, activeReport.retrievalStatus]);
+
   const pdfViewerUrl = activeReport.fileName
     ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}${pdfViewerPreferences}`
     : "";
@@ -117,11 +125,6 @@ export function FullTextSection({
     const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [activeReport.fullTextCheckedOutByCurrentUser, activeReport.fullTextCheckoutExpiresAt]);
-
-  const reportActionLabel =
-    activeReport.fullTextCheckedOutByCurrentUser && activeReport.fullTextCheckoutExpiresAt
-      ? `${activeReport.notes} notes · ${formatCheckoutTimer(activeReport.fullTextCheckoutExpiresAt, now)}`
-      : `${activeReport.notes} notes`;
 
   if (projectReportQueue.length === 0) {
     return (
@@ -162,6 +165,12 @@ export function FullTextSection({
 
   const fullTextStudyPool = hasProjectSeedData ? screeningStudies : studies;
   const currentReportStudy = fullTextStudyPool.find((study) => study.id === activeReport.studyId) ?? screeningStudies[0];
+  const commentCount = currentReportStudy.comments?.length ?? 0;
+  const commentCountLabel = `${commentCount} comment${commentCount === 1 ? "" : "s"}`;
+  const reportActionLabel =
+    activeReport.fullTextCheckedOutByCurrentUser && activeReport.fullTextCheckoutExpiresAt
+      ? `${commentCountLabel} · ${formatCheckoutTimer(activeReport.fullTextCheckoutExpiresAt, now)}`
+      : commentCountLabel;
   const activeReportIndex = projectReportQueue.findIndex((report) => report.id === activeReport.id);
   const activeFullTextDecision = decisions.find(
     (decision) =>
@@ -197,12 +206,12 @@ export function FullTextSection({
     sought: "Retrieval in progress",
     retrieved: "Full text available",
     not_retrieved: "Not retrieved after attempts"
-  }[activeReport.retrievalStatus];
+  }[retrievalStatus];
   const hasConfiguredExclusionReasons = exclusionReasons.length > 0;
   const hasFullTextCheckout = Boolean(activeReport.fullTextCheckedOutByCurrentUser);
   const fullTextVoteCount = activeReport.fullTextVoteCount ?? currentFullTextDecisions.length;
   const retrievalLocked = Boolean(activeReport.storagePath || activeReport.fileName || fullTextVoteCount > 0);
-  const canAssessFullText = activeReport.retrievalStatus === "retrieved";
+  const canAssessFullText = retrievalStatus === "retrieved";
   const fullTextRequiredVotes = activeReport.fullTextRequiredVotes ?? selectedProject.fullTextRequiredVotes;
   const fullTextStatus = activeReport.fullTextStatus ?? visibleFullTextEvaluation.state;
   const fullTextStatusLabel = activeReport.fullTextStatusLabel ?? visibleFullTextEvaluation.label;
@@ -325,7 +334,8 @@ export function FullTextSection({
               </button>
               <span className={`retrievalTooltip${isRetrievalHintOpen ? " isOpen" : ""}`} id="retrieval-status-help" role="tooltip">
                 Mark the full text available when you can read the complete report, including outside this app. PDF upload is optional.
-                Mark not retrieved only when retrieval attempts have ended; this closes the queue item without an eligibility exclusion.
+                Your selection is saved when you submit a vote or confirm not retrieved.
+                Mark not retrieved only when retrieval attempts have ended; confirming this closes the queue item without an eligibility exclusion.
                 {retrievalLocked ? " A stored PDF or current full-text vote requires the report to remain available." : ""}
                 {activeReport.retrievalStatus === "not_sought" ? " This report is pending retrieval and is not yet counted as sought in the PRISMA diagram." : ""}
               </span>
@@ -333,10 +343,10 @@ export function FullTextSection({
           </div>
           <select
             id="retrieval-status"
-            value={activeReport.retrievalStatus}
+            value={retrievalStatus}
             aria-describedby="retrieval-status-help"
             disabled={isFullTextActionPending}
-            onChange={(event) => updateFullTextReport({ retrievalStatus: event.target.value as Report["retrievalStatus"] })}
+            onChange={(event) => setRetrievalStatus(event.target.value as Report["retrievalStatus"])}
           >
             <option value="not_sought" disabled={retrievalLocked}>Retrieval not started</option>
             <option value="sought" disabled={retrievalLocked}>Retrieval in progress</option>
@@ -379,7 +389,7 @@ export function FullTextSection({
               className={selectedDecision === "include" ? "includeButton active" : "includeButton"}
               type="button"
               disabled={!canRecordFullTextDecision || !canAssessFullText || isFullTextActionPending}
-              onClick={() => updateFullTextReport({ decisionValue: "include" })}
+              onClick={() => updateFullTextReport({ retrievalStatus, decisionValue: "include" })}
             >
               {pendingFullTextAction === "include" ? <span className="inlineSpinner" aria-hidden="true" /> : <CheckCircle2 size={18} />}
               {pendingFullTextAction === "include" ? "Saving..." : "Include"}
@@ -389,11 +399,22 @@ export function FullTextSection({
               type="button"
               aria-describedby={!hasConfiguredExclusionReasons ? "missing-exclusion-reasons" : undefined}
               disabled={!canRecordFullTextDecision || !canAssessFullText || !hasConfiguredExclusionReasons || isFullTextActionPending}
-              onClick={() => updateFullTextReport({ decisionValue: "exclude", exclusionReasonId: fullTextReason })}
+              onClick={() => updateFullTextReport({ retrievalStatus, decisionValue: "exclude", exclusionReasonId: fullTextReason })}
             >
               {pendingFullTextAction === "exclude" ? <span className="inlineSpinner" aria-hidden="true" /> : <XCircle size={18} />}
               {pendingFullTextAction === "exclude" ? "Saving..." : "Exclude"}
             </button>
+            {retrievalStatus === "not_retrieved" ? (
+              <button
+                className="ghostButton"
+                type="button"
+                disabled={!canRecordFullTextDecision || retrievalLocked || isFullTextActionPending}
+                onClick={() => updateFullTextReport({ retrievalStatus })}
+              >
+                {pendingFullTextAction === "retrieval" ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={18} />}
+                {pendingFullTextAction === "retrieval" ? "Saving..." : "Confirm not retrieved"}
+              </button>
+            ) : null}
           </div>
           {showDecisionMessage ? (
             <div className={fullTextMessageClassName}>
@@ -423,7 +444,9 @@ export function FullTextSection({
           <div className={canRecordFullTextDecision && !hasFullTextConflict ? "validationBox muted" : "validationBox"}>
             {canRecordFullTextDecision && !hasFullTextConflict ? <Check size={17} /> : <AlertTriangle size={17} />}
             <span>
-              {!canAssessFullText
+              {retrievalStatus === "not_retrieved"
+                ? "Confirm not retrieved to finish this report without an eligibility vote."
+                : !canAssessFullText
                 ? "Confirm that the full text is available before choosing Include or Exclude."
                 : !hasConfiguredExclusionReasons
                 ? "Set project exclusion reasons before recording an exclusion."
@@ -463,68 +486,73 @@ export function FullTextSection({
           </div>
         </aside>
 
-        <div className="pdfPane">
-          <div className="pdfToolbar">
-            <strong className="pdfTitle" title={pdfDisplayName}>
-              {pdfDisplayName}
-            </strong>
-            <div className="toolbarCluster">
-              <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
-              <button
-                className={hasUploadedPdf ? "ghostButton" : "primaryButton missingPdfUploadButton"}
-                type="button"
-                title={hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
-                disabled={isFullTextActionPending}
-                onClick={() => pdfInputRef.current?.click()}
-              >
-                {pendingFullTextAction === "upload" ? <span className="inlineSpinner" aria-hidden="true" /> : <Upload size={16} />}
-                {pendingFullTextAction === "upload" ? "Uploading..." : hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
-              </button>
+        <div className="fullTextPdfColumn">
+          <div className="pdfPane">
+            <div className="pdfToolbar">
+              <strong className="pdfTitle" title={pdfDisplayName}>
+                {pdfDisplayName}
+              </strong>
+              <div className="toolbarCluster">
+                <input className="hiddenFileInput" ref={pdfInputRef} type="file" accept="application/pdf,.pdf" onChange={uploadReportPdf} />
+                <button
+                  className={hasUploadedPdf ? "ghostButton" : "primaryButton missingPdfUploadButton"}
+                  type="button"
+                  title={hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
+                  disabled={isFullTextActionPending}
+                  onClick={() => pdfInputRef.current?.click()}
+                >
+                  {pendingFullTextAction === "upload" ? <span className="inlineSpinner" aria-hidden="true" /> : <Upload size={16} />}
+                  {pendingFullTextAction === "upload" ? "Uploading..." : hasUploadedPdf ? "Replace PDF" : "Upload PDF"}
+                </button>
+              </div>
             </div>
-          </div>
-          {showUploadMessage ? (
-            <div className={fullTextMessageClassName}>
-              {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
-              <span>{fullTextMessage}</span>
-            </div>
-          ) : null}
-          <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
-            {pdfViewerUrl ? (
-              <div className="pdfFrameWrap" aria-busy={isPdfLoading}>
-                {isPdfLoading || hasPdfLoadError ? (
-                  <div className={hasPdfLoadError ? "pdfLoadingOverlay pdfLoadingOverlayError" : "pdfLoadingOverlay"} role="status" aria-live="polite">
-                    <div className="pdfLoadingStatus">
-                      {hasPdfLoadError ? <AlertTriangle size={18} /> : <span className="inlineSpinner" aria-hidden="true" />}
-                      <span className="pdfLoadingText">{hasPdfLoadError ? "PDF failed to load." : "Loading PDF..."}</span>
+            {showUploadMessage ? (
+              <div className={fullTextMessageClassName}>
+                {messageIsSuccess ? <Check size={17} /> : messageIsError ? <AlertTriangle size={17} /> : <Upload size={17} />}
+                <span>{fullTextMessage}</span>
+              </div>
+            ) : null}
+            <div className={pdfViewerUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="PDF review pane">
+              {pdfViewerUrl ? (
+                <div className="pdfFrameWrap" aria-busy={isPdfLoading}>
+                  {isPdfLoading || hasPdfLoadError ? (
+                    <div className={hasPdfLoadError ? "pdfLoadingOverlay pdfLoadingOverlayError" : "pdfLoadingOverlay"} role="status" aria-live="polite">
+                      <div className="pdfLoadingStatus">
+                        {hasPdfLoadError ? <AlertTriangle size={18} /> : <span className="inlineSpinner" aria-hidden="true" />}
+                        <span className="pdfLoadingText">{hasPdfLoadError ? "PDF failed to load." : "Loading PDF..."}</span>
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-                <iframe
-                  key={pdfFrameKey}
-                  className={isPdfLoading ? "pdfViewer pdfViewerLoading" : "pdfViewer"}
-                  src={pdfViewerUrl}
-                  title={`${activeReport.title} PDF`}
-                  onLoad={() => setPdfLoadState("ready")}
-                  onError={() => setPdfLoadState("error")}
-                />
-              </div>
-            ) : (
-              <div className="paperPage emptyPdfPage">
-                <p className="paperEyebrow">{pdfStatus}</p>
-                <h2>{currentReportStudy.title}</h2>
-                {activeReport.validationNotes.length > 0 ? (
-                  <div className="pdfValidationNotes">
-                    {activeReport.validationNotes.slice(0, 4).map((note) => (
-                      <span key={note}>{note}</span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="paperLine wide" />
-                <div className="paperLine" />
-                <div className="paperLine short" />
-              </div>
-            )}
+                  ) : null}
+                  <iframe
+                    key={pdfFrameKey}
+                    className={isPdfLoading ? "pdfViewer pdfViewerLoading" : "pdfViewer"}
+                    src={pdfViewerUrl}
+                    title={`${activeReport.title} PDF`}
+                    onLoad={() => setPdfLoadState("ready")}
+                    onError={() => setPdfLoadState("error")}
+                  />
+                </div>
+              ) : (
+                <div className="paperPage emptyPdfPage">
+                  <p className="paperEyebrow">{pdfStatus}</p>
+                  <h2>{currentReportStudy.title}</h2>
+                  {activeReport.validationNotes.length > 0 ? (
+                    <div className="pdfValidationNotes">
+                      {activeReport.validationNotes.slice(0, 4).map((note) => (
+                        <span key={note}>{note}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="paperLine wide" />
+                  <div className="paperLine" />
+                  <div className="paperLine short" />
+                </div>
+              )}
+            </div>
           </div>
+          {paperComments ? (
+            <div className="panel fullTextCommentsPanel">{paperComments}</div>
+          ) : null}
         </div>
       </section>
     </div>

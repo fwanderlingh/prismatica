@@ -97,6 +97,14 @@ export type ImportBatch = {
   uploadedAt: string;
 };
 
+export type PaperComment = {
+  userId: string;
+  userName: string;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Study = {
   id: string;
   importItemId?: number;
@@ -121,6 +129,7 @@ export type Study = {
   pdfUrl?: string;
   rawCitation?: string;
   parserWarnings?: string[];
+  comments?: PaperComment[];
 };
 
 export type Report = {

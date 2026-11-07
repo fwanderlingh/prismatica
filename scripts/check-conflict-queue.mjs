@@ -195,6 +195,7 @@ try {
           ...selectors, activeScreeningStudies: [study], selectedProject: project, currentStudy: study, activeReport: report,
           screeningNote: "", currentUser: { id: reviewer }, hasProjectSeedData: false,
           screeningStudies: [], reportQueue: [], reviewQueueKey: `project:${stage}`,
+          screeningQueueTailStudyIds: [],
           apiRequest: async (url, init) => { requests.push({ url, method: init.method, body: JSON.parse(init.body) }); return payload; },
           applyAppState: value => applied.push(value), formatDecision: String,
           setPendingScreeningDecision: value => pending.push(value), setPendingFullTextAction: value => pending.push(value),

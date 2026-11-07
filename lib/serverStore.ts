@@ -24,6 +24,7 @@ import {
   type ExtractionTemplate,
   type ExtractionTemplateField,
   type ImportBatch,
+  type PaperComment,
   type ProjectWorkflowConflict,
   type Report,
   type ReviewProject,
@@ -648,6 +649,45 @@ function getNextImportItemId(state: PersistedState, projectId: string) {
   return maxId + 1;
 }
 
+function migrateLegacyPaperComments(studies: Study[], decisions: Decision[], users: Array<Pick<AppUser, "id" | "name">>): Study[] {
+  const decisionsByStudy = groupByKey(decisions, (decision) => decision.studyId);
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  return studies.map((study) => {
+    // An explicit empty array records that an author removed their migrated comment.
+    if (Array.isArray(study.comments)) return study;
+
+    const legacyNotes = (decisionsByStudy.get(study.id) ?? [])
+      .filter((decision) => decision.projectId === study.projectId && typeof decision.note === "string" && decision.note.trim())
+      .sort((left, right) => (Date.parse(left.createdAt) || 0) - (Date.parse(right.createdAt) || 0));
+    const commentsByUser = new Map<string, PaperComment & { notes: Set<string> }>();
+    for (const decision of legacyNotes) {
+      const text = decision.note!.trim();
+      const existing = commentsByUser.get(decision.userId);
+      if (existing) {
+        if (!existing.notes.has(text)) {
+          existing.text += `\n\n${text}`;
+          existing.notes.add(text);
+        }
+        existing.updatedAt = decision.createdAt;
+        continue;
+      }
+      commentsByUser.set(decision.userId, {
+        userId: decision.userId,
+        userName: usersById.get(decision.userId)?.name ?? decision.userName,
+        text,
+        createdAt: decision.createdAt,
+        updatedAt: decision.createdAt,
+        notes: new Set([text])
+      });
+    }
+    return {
+      ...study,
+      // Keep the stored decisions unchanged; only their free-text notes become shared comments.
+      comments: Array.from(commentsByUser.values(), ({ notes: _notes, ...comment }) => comment)
+    };
+  });
+}
+
 function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = true): PersistedState {
   const now = new Date().toISOString();
   const authSettings = normalizeAuthSettings(state.authSettings);
@@ -727,7 +767,11 @@ function normalizeState(state: Partial<PersistedState>, rebuildDerivedState = tr
       }));
     })
   ];
-  const studiesWithImportItemIds = assignImportItemIds(studies);
+  const studiesWithImportItemIds = migrateLegacyPaperComments(
+    assignImportItemIds(studies),
+    Array.isArray(state.decisions) ? state.decisions : [],
+    users
+  );
   const importsWithStudyWarnings: ImportBatch[] = imports.map((batch): ImportBatch => {
     if (batch.parserWarnings <= 0) {
       return batch;
@@ -2732,6 +2776,52 @@ export function deleteImportBatchForUser(userId: string, projectId: string, impo
     ...buildPayload(state, userId),
     message: `Deleted ${batch.filename} and ${removedStudyIds.size} citation ${removedStudyIds.size === 1 ? "entry" : "entries"}.`
   };
+}
+
+export function updateStudyCommentForUser(
+  userId: string,
+  projectId: string,
+  studyId: string,
+  input: { comment: string }
+): AppMutationPayload {
+  if (typeof input.comment !== "string") {
+    throw new ApiError("Paper comment must be text.");
+  }
+  const text = input.comment.trim();
+  if (text.length > 10_000) {
+    throw new ApiError("Paper comment must be 10,000 characters or fewer.");
+  }
+
+  return withReviewMutation(userId, projectId, (state) => {
+    const currentUser = getUser(state, userId);
+    if (!currentUser) {
+      throw new ApiError("Your session is no longer valid. Sign in again.", 401);
+    }
+    requireProjectMember(state, projectId, userId);
+    const study = state.studies.find((item) => item.id === studyId && item.projectId === projectId);
+    if (!study) {
+      throw new ApiError("Paper not found in this project.", 404);
+    }
+
+    const comments = study.comments ?? [];
+    const existing = comments.find((comment) => comment.userId === userId);
+    const now = new Date().toISOString();
+    study.comments = comments.filter((comment) => comment.userId !== userId);
+    if (text) {
+      const comment: PaperComment = {
+        userId: currentUser.id,
+        userName: currentUser.name,
+        text,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now
+      };
+      study.comments.push(comment);
+    }
+    if ((existing?.text ?? "") !== text) {
+      appendEvent(state, currentUser.name, text ? "Updated paper comment" : "Removed paper comment", studyId, currentUser.id);
+    }
+    return buildPayload(state, userId);
+  });
 }
 
 export function updateImportStudyForUser(

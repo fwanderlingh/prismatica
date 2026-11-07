@@ -1,5 +1,5 @@
 import { ViewLink } from "@/components/navigation-link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, BookOpen, Check, ClipboardCheck, GitMerge, GripVertical, History, Plus, SquareCheck, CircleDot, Trash2, LetterText } from "lucide-react";
 import {
   type AppUser,
@@ -68,6 +68,7 @@ type ExtractionSectionProps = {
   toggleExtractionChoice: (fieldId: string, option: string, checked: boolean) => void;
   reviewedCount: number;
   onOpenReviewed: () => void;
+  paperComments?: ReactNode;
 };
 
 const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
@@ -106,7 +107,8 @@ export function ExtractionSection({
   updateExtractionValue,
   toggleExtractionChoice,
   reviewedCount,
-  onOpenReviewed
+  onOpenReviewed,
+  paperComments
 }: ExtractionSectionProps) {
   const [now, setNow] = useState(Date.now());
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
@@ -635,38 +637,43 @@ export function ExtractionSection({
           </form>
         </aside>
 
-        <div className="pdfPane">
-          <div className="pdfToolbar">
-            <strong className="pdfTitle" title={activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}>
-              {activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}
-            </strong>
-            {activeReportForExtraction ? (
-              <ViewLink
-                className="ghostButton"
-                view="fullText"
-                onNavigate={() => {
-                  setActiveReportId(activeReportForExtraction.id);
-                  setActiveView("fullText");
-                }}
-              >
-                <BookOpen size={16} />
-                Full text
-              </ViewLink>
-            ) : null}
+        <div className="extractionPdfColumn">
+          <div className="pdfPane">
+            <div className="pdfToolbar">
+              <strong className="pdfTitle" title={activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}>
+                {activeReportForExtraction?.fileName || activeReportForExtraction?.pdfName || "No PDF uploaded"}
+              </strong>
+              {activeReportForExtraction ? (
+                <ViewLink
+                  className="ghostButton"
+                  view="fullText"
+                  onNavigate={() => {
+                    setActiveReportId(activeReportForExtraction.id);
+                    setActiveView("fullText");
+                  }}
+                >
+                  <BookOpen size={16} />
+                  Full text
+                </ViewLink>
+              ) : null}
+            </div>
+            <div className={extractionPdfUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="Extraction PDF review pane">
+              {extractionPdfUrl ? (
+                <iframe className="pdfViewer" src={extractionPdfUrl} title={`${activeReportForExtraction?.title ?? "Included report"} PDF`} />
+              ) : (
+                <div className="paperPage emptyPdfPage">
+                  <p className="paperEyebrow">PDF unavailable</p>
+                  <h2>{activeReportForExtraction?.title ?? "No included report selected"}</h2>
+                  <div className="paperLine wide" />
+                  <div className="paperLine" />
+                  <div className="paperLine short" />
+                </div>
+              )}
+            </div>
           </div>
-          <div className={extractionPdfUrl ? "pdfCanvas pdfCanvasViewer" : "pdfCanvas"} aria-label="Extraction PDF review pane">
-            {extractionPdfUrl ? (
-              <iframe className="pdfViewer" src={extractionPdfUrl} title={`${activeReportForExtraction?.title ?? "Included report"} PDF`} />
-            ) : (
-              <div className="paperPage emptyPdfPage">
-                <p className="paperEyebrow">PDF unavailable</p>
-                <h2>{activeReportForExtraction?.title ?? "No included report selected"}</h2>
-                <div className="paperLine wide" />
-                <div className="paperLine" />
-                <div className="paperLine short" />
-              </div>
-            )}
-          </div>
+          {paperComments ? (
+            <div className="panel extractionCommentsPanel">{paperComments}</div>
+          ) : null}
         </div>
       </section>
     </div>
