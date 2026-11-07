@@ -374,7 +374,6 @@ export function FullTextSection({
             </div>
           ) : null}
 
-          {!canRecordFullTextDecision ? <ReviewReservationNotice item="report" error={checkoutError} /> : null}
           {!hasConfiguredExclusionReasons ? (
             <div className="validationItem blocked exclusionReasonsNotice" id="missing-exclusion-reasons" role="status">
               <AlertTriangle size={18} aria-hidden="true" />
@@ -484,6 +483,7 @@ export function FullTextSection({
             />
             <StatusRow label="Checksum" value={activeReport.checksum ? activeReport.checksum.slice(0, 12) : "Not available"} tone="info" />
           </div>
+          {!canRecordFullTextDecision ? <ReviewReservationNotice item="report" error={checkoutError} /> : null}
         </aside>
 
         <div className="fullTextPdfColumn">

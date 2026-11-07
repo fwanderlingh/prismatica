@@ -198,7 +198,6 @@ export function ScreeningSection({
 
         <aside className="panel actionPanel">
           <SectionTitle icon={PanelRight} title="Decision" action={screeningCheckoutTimer} />
-          {!canRecordScreeningDecision ? <ReviewReservationNotice item="record" error={checkoutError} /> : null}
           <div className="decisionState">
             <span>My current vote</span>
             <strong>{currentUserDecision ? formatDecision(currentUserDecision.decisionValue) : "No vote"}</strong>
@@ -300,6 +299,7 @@ export function ScreeningSection({
               <span>Other reviewer votes are hidden while blind mode is enabled.</span>
             </div>
           ) : null}
+          {!canRecordScreeningDecision ? <ReviewReservationNotice item="record" error={checkoutError} /> : null}
         </aside>
 
         <ReviewQueueDisclosure label={`Screening queue · ${projectScreeningStudies.length} records`}>

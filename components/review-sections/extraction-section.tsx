@@ -623,17 +623,16 @@ export function ExtractionSection({
               );
             })}
 
+            <button className="primaryButton" type="submit" disabled={!canSubmitExtraction || isSubmittingExtractionResponse}>
+              {isSubmittingExtractionResponse ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
+              {isSubmittingExtractionResponse ? "Submitting..." : "Submit Extraction"}
+            </button>
             {!canSubmitExtraction ? (
               <div className="validationBox">
                 <AlertTriangle size={17} />
                 <span>Waiting for an active reviewer slot before submitting extraction data.</span>
               </div>
             ) : null}
-
-            <button className="primaryButton" type="submit" disabled={!canSubmitExtraction || isSubmittingExtractionResponse}>
-              {isSubmittingExtractionResponse ? <span className="inlineSpinner" aria-hidden="true" /> : <Check size={17} />}
-              {isSubmittingExtractionResponse ? "Submitting..." : "Submit Extraction"}
-            </button>
           </form>
         </aside>
 
