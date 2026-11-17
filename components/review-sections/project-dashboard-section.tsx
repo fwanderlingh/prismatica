@@ -3,7 +3,7 @@ import { Activity, AlertTriangle, ChevronRight, History, Settings, Users } from 
 import type { Decision, PrismaCounts, ProjectWorkflowConflict, Report, ReviewProject, Study, WorkflowEvent, AppUser, ViewKey } from "@/lib/prismaData";
 import type { ProjectAttentionItem } from "@/lib/projectAttention";
 import { EmptyState, SectionTitle, StatusRow } from "@/components/prisma-review-ui";
-import { getProjectPhaseProgress, getScreeningCompletion } from "@/lib/workflowSelectors";
+import { getProjectPhaseProgress, getScreeningCompletion, isFullTextReportComplete } from "@/lib/workflowSelectors";
 import { ResolveConflictButton } from "./resolve-conflict-button";
 
 type ProjectUserStatRow = {
@@ -76,6 +76,7 @@ export function ProjectDashboardSection({
   const phaseConflicts = workflowConflicts.filter((conflict) => conflict.projectId === selectedProject.id && conflict.stage === conflictStage);
   const phaseProgress = getProjectPhaseProgress(selectedProject, activeCounts, projectReportQueue, formatNumber, projectScreeningStudies, decisions);
   const screeningCompletion = getScreeningCompletion(selectedProject, activeCounts, projectScreeningStudies, decisions);
+  const completedFullTextReports = projectReportQueue.filter((report) => isFullTextReportComplete(report, selectedProject)).length;
   const phaseActions: Record<ReviewProject["stage"], { label: string; view: ViewKey }> = {
     setup: { label: "Import records", view: "imports" },
     import: { label: "Import records", view: "imports" },
@@ -143,7 +144,7 @@ export function ProjectDashboardSection({
               ["Import", `${formatNumber(recordsIdentified)} records`, getWorkflowStepState("imports", selectedProject.stage)],
               ["Deduplicate", `${activeCounts.duplicateRecordsRemoved} removed`, recordsIdentified > 0 ? "complete" : "pending"],
               ["Screen", `${formatNumber(screeningCompletion.completed)}/${formatNumber(screeningCompletion.total)} screened`, getWorkflowStepState("screening", selectedProject.stage)],
-              ["Full text", `${activeCounts.reportsSought} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
+              ["Full text", `${formatNumber(completedFullTextReports)}/${formatNumber(projectReportQueue.length)} reports`, getWorkflowStepState("fullText", selectedProject.stage)],
               [
                 "Extract",
                 `${activeCounts.studiesExtracted}/${activeCounts.studiesIncluded} extracted`,
