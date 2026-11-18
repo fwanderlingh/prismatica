@@ -27,6 +27,7 @@ import {
   Info,
   Import,
   LayoutDashboard,
+  Server,
   Settings,
   Users
 } from "lucide-react";
@@ -97,6 +98,7 @@ import { AdminReviewsSection } from "./review-sections/admin-reviews-section";
 import { RegisteredUsersSection } from "./review-sections/registered-users-section";
 import { SystemSettingsSection } from "./review-sections/system-settings-section";
 import { StorageInfoSection } from "./review-sections/storage-info-section";
+import { InfrastructureSection } from "./review-sections/infrastructure-section";
 import { ImportEditorSection } from "./review-sections/import-editor-section";
 import { ImportsSection } from "./review-sections/imports-section";
 import { DedupSection } from "./review-sections/dedup-section";
@@ -163,6 +165,7 @@ const globalNavItems: NavItem[] = [
   { key: "registeredUsers", label: "Registered Users", path: "/admin/users", Icon: Users },
   { key: "systemSettings", label: "System Settings", path: "/admin/settings", Icon: Settings },
   { key: "storageInfo", label: "Storage Info", path: "/admin/storage", Icon: HardDrive },
+  { key: "infrastructure", label: "Infrastructure", path: "/admin/infrastructure", Icon: Server },
   { key: "profile", label: "Profile", path: "/profile" },
   { key: "about", label: "About", path: "/about", Icon: Info }
 ];
@@ -181,7 +184,7 @@ const projectNavItems: NavItem[] = [
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
 
-const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "systemSettings", "storageInfo", "profile"];
+const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "systemSettings", "storageInfo", "infrastructure", "profile"];
 const reviewPhaseNavKeys = new Set<ViewKey>([
   "imports",
   "dedup",
@@ -221,6 +224,7 @@ const viewKeySet = new Set<ViewKey>([
   "registeredUsers",
   "systemSettings",
   "storageInfo",
+  "infrastructure",
   "profile"
 ]);
 
@@ -275,6 +279,9 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
   }
   if (normalizedPath === "/admin/storage") {
     return { view: "storageInfo", isKnownRoute: true };
+  }
+  if (normalizedPath === "/admin/infrastructure") {
+    return { view: "infrastructure", isKnownRoute: true };
   }
   if (normalizedPath === "/profile") {
     return { view: "profile", isKnownRoute: true };
@@ -3363,6 +3370,8 @@ export function PrismaReviewApp() {
         return currentUser.isAdmin ? renderSystemSettings() : renderProfile();
       case "storageInfo":
         return currentUser.isAdmin ? <StorageInfoSection openProject={openProject} /> : renderProfile();
+      case "infrastructure":
+        return currentUser.isAdmin ? <InfrastructureSection /> : renderProfile();
       case "profile":
         return renderProfile();
       default:

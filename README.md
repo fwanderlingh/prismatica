@@ -544,6 +544,33 @@ sizes, disk capacity, used/available disk space, and usage per review. Refresh
 collects a new snapshot without downloading PDFs. The admin-only endpoint is
 `GET /api/admin/storage`.
 
+The **Infrastructure** sidebar item (`/admin/infrastructure`) shows the active JSON/PostgreSQL
+database, database host/name or state-file path, local/MinIO PDF storage, bucket,
+endpoint, region, local fallback, and temporary backup directory. Credentials
+are omitted. These values describe the current server environment and are read-only.
+
+Below the storage usage on **Storage Info**, use **Create database backup**, then
+**Download backup** when it is ready. Creation
+runs in a separate process; leaving the page does not cancel it. Administrators
+can return to the page to retrieve the latest job. PostgreSQL backups use the
+custom `pg_dump` format and are checked with `pg_restore` before download; JSON
+mode copies and validates the state file. The server needs `pg_dump` and
+`pg_restore` compatible with its PostgreSQL server version. Backups contain
+private user records, including password hashes, and cover all reviews. PDFs,
+environment secrets, application code, and PostgreSQL cluster roles are separate.
+
+Files are private to the application user in a per-installation directory under
+the system temporary directory, outside the web root. Creation, status, configuration,
+and streamed downloads require a current administrator session. One backup runs
+at a time; repeated requests share that job. Downloads expire after 24 hours,
+and expired files are removed on the next backup request. Temporary files may
+also be removed by server maintenance, so download and retain your copy promptly.
+To restore a PostgreSQL archive into a new empty database, use
+`pg_restore --no-owner --no-acl --dbname=NEW_DATABASE_URL BACKUP.dump`.
+
+Run `npm run check:backups` for isolated backup, authorization, download, expiry,
+and infrastructure configuration checks.
+
 The inventory counts files in the local `pdfs/` tree and, with MinIO enabled,
 current objects under `reports/` in the configured bucket. The MinIO credentials
 need `s3:ListBucket` permission for this prefix. Local migration copies count

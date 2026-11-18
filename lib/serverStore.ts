@@ -11,6 +11,8 @@ import type { AppAuthSettings, AppReviewSettings, AppMutationPayload, AppStatePa
 import { createPdfStorageAdapter } from "./pdfStorage";
 import { fetchPublicPdf, RemotePdfSizeError } from "./remotePdf";
 import { collectStorageInfo } from "./storageInfo";
+import { getInfrastructureInfo } from "./infrastructure";
+import { getLatestDatabaseBackup, openDatabaseBackup, startDatabaseBackup } from "./databaseBackup";
 import { getActiveTitleAbstractStudies, getSequentialProjectStage } from "./workflowSelectors";
 import { formatAuthorList } from "./reviewDisplay";
 import {
@@ -1631,6 +1633,26 @@ export async function getStorageInfoForAdmin(userId: string) {
   const state = readState();
   requireAdminUser(state, userId);
   return collectStorageInfo(state.projects, dataFilePath());
+}
+
+export function getInfrastructureInfoForAdmin(userId: string) {
+  requireAdminUser(readState(), userId);
+  return getInfrastructureInfo(dataFilePath());
+}
+
+export function getDatabaseBackupForAdmin(userId: string) {
+  requireAdminUser(readState(), userId);
+  return getLatestDatabaseBackup();
+}
+
+export function createDatabaseBackupForAdmin(userId: string) {
+  requireAdminUser(readState(), userId);
+  return startDatabaseBackup(dataFilePath());
+}
+
+export function downloadDatabaseBackupForAdmin(userId: string, id: string) {
+  requireAdminUser(readState(), userId);
+  return openDatabaseBackup(id);
 }
 
 export async function requestAccountEmail(email: string, purpose: AccountEmailPurpose) {

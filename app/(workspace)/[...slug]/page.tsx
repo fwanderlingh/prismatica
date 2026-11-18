@@ -43,7 +43,7 @@ function isKnownCatchAllRoute(slug: string[]) {
     return true;
   }
 
-  if (joined === "projects/new" || joined === "admin/reviews" || joined === "admin/users" || joined === "admin/settings" || joined === "admin/storage") {
+  if (joined === "projects/new" || joined === "admin/reviews" || joined === "admin/users" || joined === "admin/settings" || joined === "admin/storage" || joined === "admin/infrastructure") {
     return true;
   }
 

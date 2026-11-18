@@ -35,6 +35,7 @@
     "check:pdf-security": "node scripts/check-pdf-retrieval-security.mjs",
     "check:presence": "node scripts/check-presence.mjs",
     "check:storage": "node scripts/check-storage.mjs",
+    "check:backups": "node scripts/check-database-backups.mjs",
     "check:admin-users": "node scripts/check-admin-users.mjs",
     "check:email": "node scripts/check-transactional-email.mjs",
     "check:api-auth": "node scripts/check-api-route-auth.mjs",

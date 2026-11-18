@@ -2,6 +2,7 @@ import { EmailDeliveryError } from "./transactionalEmail";
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "./serverAuth";
 import { ApiError } from "./serverStore";
+import { DatabaseBackupError } from "./databaseBackup";
 import { createContentDisposition } from "./contentDisposition";
 
 const authRateLimitMaxAttempts = 10;
@@ -122,7 +123,7 @@ export function jsonError(error: unknown) {
   if (error instanceof EmailDeliveryError) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
-  if (error instanceof ApiError) {
+  if (error instanceof ApiError || error instanceof DatabaseBackupError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
 

@@ -4,6 +4,7 @@ import { SectionTitle } from "@/components/prisma-review-ui";
 import { ViewLink } from "@/components/navigation-link";
 import type { StorageInfo } from "@/lib/storageInfo";
 import type { ViewKey } from "@/lib/prismaData";
+import { DatabaseBackupPanel } from "./infrastructure-section";
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -44,7 +45,7 @@ export function StorageInfoSection({ openProject }: { openProject: (projectId: s
         <div>
           <p className="eyebrow">Administration</p>
           <h1>Storage Info</h1>
-          <p className="subtle">PDF storage usage across all reviews and available disk space.</p>
+          <p className="subtle">PDF storage usage, available disk space, and database backups.</p>
         </div>
         <button className="ghostButton" disabled={loading} onClick={() => setRefresh(value => value + 1)}>
           {loading ? <span className="inlineSpinner" aria-hidden="true" /> : <RefreshCw size={17} />}
@@ -90,6 +91,7 @@ export function StorageInfoSection({ openProject }: { openProject: (projectId: s
           </div>
         </section>
       </> : null}
+      <DatabaseBackupPanel key={refresh} />
     </div>
   );
 }

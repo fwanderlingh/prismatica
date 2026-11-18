@@ -1906,6 +1906,15 @@ a.primaryButton[target="_blank"]:focus-visible {
   background: var(--surface);
 }
 
+.databaseBackupPanel > .buttonRow {
+  margin-block: calc(14px * var(--ui-scale));
+}
+
+.databaseBackupPanel > p {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 /* Separate panel notices without adding to gaps in notification lists or forms. */
 .panel > :where(:not(.sectionTitle, .bottomMargin)) + :where(.validationItem) {
   margin-top: calc(10px * var(--ui-scale));

@@ -25,6 +25,7 @@ export type ViewKey =
   | "registeredUsers"
   | "systemSettings"
   | "storageInfo"
+  | "infrastructure"
   | "profile";
 
 export type AppUser = {
