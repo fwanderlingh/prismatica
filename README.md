@@ -559,6 +559,9 @@ mode copies and validates the state file. The server needs `pg_dump` and
 private user records, including password hashes, and cover all reviews. PDFs,
 environment secrets, application code, and PostgreSQL cluster roles are separate.
 
+See the [PDF storage backup guide](README_PDF_BACKUP.md) for MinIO client commands
+to copy the PDF bucket, create an archive, and download it.
+
 Files are private to the application user in a per-installation directory under
 the system temporary directory, outside the web root. Creation, status, configuration,
 and streamed downloads require a current administrator session. One backup runs
