@@ -15,6 +15,7 @@ import {
 } from "@/lib/prismaData";
 import { EmptyState, SectionTitle, StatusRow, renderDoiLink } from "@/components/prisma-review-ui";
 import { ReportPicker } from "@/components/review-sections/review-queue";
+import { PaperCommentIndicator } from "@/components/paper-comment-indicator";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 
 type FormSubmitEvent = {
@@ -335,7 +336,7 @@ export function ExtractionSection({
                     {projectReportQueue.map((report) => (
                       <tr key={report.id}>
                         <td>
-                          <strong>{report.title}</strong>
+                          <strong>{report.title}<PaperCommentIndicator study={projectScreeningStudies.find((study) => study.id === report.studyId)} /></strong>
                         </td>
                         <td>{report.fileName ? "Uploaded" : "Missing"}</td>
                         <td>{projectExtractionStudyIds.has(report.studyId) ? "Visible" : "Awaiting Include"}</td>
@@ -544,7 +545,7 @@ export function ExtractionSection({
             title="Extraction Form"
             action={extractionFormAction}
           />
-          <h2>{activeReportForExtraction?.title ?? "Included report"}</h2>
+          <h2>{activeReportForExtraction?.title ?? "Included report"}<PaperCommentIndicator study={activeStudyForExtraction} /></h2>
           <p className="subtle">
             {activeStudyForExtraction
               ? `${formatAuthorList(activeStudyForExtraction.authors) || "No authors parsed"} · ${activeStudyForExtraction.journal} · ${

@@ -1,6 +1,6 @@
 "use client";
 
-import { buildPathForState } from "@/lib/navigation";
+import { buildPathForState, buildReviewedFullTextReportPath } from "@/lib/navigation";
 import { StudyDoiEditContext } from "@/components/doi-edit";
 import { PaperComments } from "@/components/paper-comments";
 import { NavigationProvider } from "@/components/navigation-link";
@@ -104,6 +104,7 @@ import { ImportsSection } from "./review-sections/imports-section";
 import { DedupSection } from "./review-sections/dedup-section";
 import { ScreeningSection } from "./review-sections/screening-section";
 import { ReviewedItemsSection, type ReviewedQueueItem } from "./review-sections/reviewed-items-section";
+import { ReviewedFullTextReportSection } from "./review-sections/reviewed-full-text-report-section";
 import { RiskSection } from "./review-sections/risk-section";
 import { LoginShell } from "./review-sections/login-shell";
 import { AppSidebar } from "./review-sections/app-sidebar";
@@ -541,6 +542,7 @@ export function PrismaReviewApp() {
     [pathname, routeSearch]
   );
   const activeView = routeState.view;
+  const reviewedFullTextReportId = activeView === "fullTextReviewed" ? searchParams.get("reportId") : null;
   const requestedProjectId = routeState.projectId ?? null;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -994,6 +996,7 @@ export function PrismaReviewApp() {
           id: study.id,
           title: study.title,
           subtitle: formatStudySubtitle(study),
+          study,
           detail: study.titleAbstractStatusLabel ? `Queue state: ${study.titleAbstractStatusLabel}` : undefined,
           statusLabel: formatDecision(decision.decisionValue),
           statusTone: decisionTone(decision.decisionValue),
@@ -3699,13 +3702,28 @@ export function PrismaReviewApp() {
   }
 
   function renderFullTextReviewed() {
+    if (reviewedFullTextReportId !== null) {
+      const item = reviewedFullTextItems.find((entry) => entry.id === reviewedFullTextReportId);
+      const report = item ? projectReportQueue.find((entry) => entry.id === item.id) : undefined;
+      const ownDecision = decisions.find((decision) => decision.projectId === selectedProject.id &&
+        decision.reportId === report?.id && decision.userId === currentUser.id && decision.stage === "full_text" && decision.isCurrent);
+      return <ReviewedFullTextReportSection
+        key={`${selectedProject.id}:${reviewedFullTextReportId}`}
+        project={selectedProject}
+        report={report}
+        item={item}
+        study={item?.study}
+        exclusionReason={ownDecision?.decisionValue === "exclude" ? ownDecision.exclusionReasonId : undefined}
+        paperComments={report ? renderPaperComments(report.studyId) : undefined}
+      />;
+    }
     return (
       <ReviewedItemsSection
         key={`${selectedProject.id}:fullTextReviewed`}
         icon={BookOpen}
         eyebrow="Full-text screening"
         title="Reviewed Reports"
-        description="Filter your completed full-text decisions by outcome, or view reports not retrieved. Return a report to reopen review or resume retrieval."
+        description="View report details, PDFs, and shared comments, or filter your completed decisions by outcome. Return a report to reopen review or resume retrieval."
         queueLabel="Full-Text Queue"
         emptyTitle="No reviewed reports"
         emptyDescription="Reports appear here after a full-text decision or a completed retrieval attempt marked not retrieved."
@@ -3723,6 +3741,7 @@ export function PrismaReviewApp() {
         queueView="fullText"
         onOpenQueue={() => navigateToProjectView("fullText")}
         onReturnToQueue={returnFullTextReportToQueue}
+        getViewHref={(reportId) => buildReviewedFullTextReportPath(selectedProject.id, reportId)}
       >
         {renderExclusionReasonCorrections()}
       </ReviewedItemsSection>
@@ -4213,7 +4232,7 @@ export function PrismaReviewApp() {
     <StudyDoiEditContext.Provider value={saveStudyDoi}>
     <NavigationProvider projectId={selectedProject.id} homeView={homeView}>
       <AppShell
-        pageKey={pathname ?? ""}
+        pageKey={`${pathname ?? ""}${reviewedFullTextReportId !== null ? `?reportId=${encodeURIComponent(reviewedFullTextReportId)}` : ""}`}
         navigationTarget={pendingRoutePath}
         isSidebarCollapsed={isSidebarCollapsed}
         isMobileNavOpen={isMobileNavOpen}

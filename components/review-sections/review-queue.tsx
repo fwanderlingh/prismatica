@@ -2,6 +2,7 @@ import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown } from "lucide-react";
 import type { Report, Study } from "@/lib/prismaData";
 import { formatArticleQueueId, formatReportQueueOption } from "@/lib/reviewDisplay";
+import { PaperCommentIndicator } from "@/components/paper-comment-indicator";
 
 const queueDesktopQuery = "(min-width: 1181px)";
 function subscribeToQueueLayout(onChange: () => void) {
@@ -30,7 +31,7 @@ export function ReviewQueueDisclosure({ label, children }: { label: string; chil
 }
 
 type ArticleIdLabelProps = {
-  study?: Pick<Study, "importItemId">;
+  study?: Pick<Study, "importItemId" | "comments">;
   fallbackId?: number | string;
 };
 
@@ -75,7 +76,10 @@ export function ReviewQueueItem({ active, title, study, fallbackId, badges, onSe
         <ArticleIdLabel study={study} fallbackId={fallbackId} />
         {badges ? <span className="queueBadges">{badges}</span> : null}
       </div>
-      <span className="queueItemTitle">{title}</span>
+      <span className="queueItemTitleRow">
+        <span className="queueItemTitle">{title}</span>
+        <PaperCommentIndicator study={study} />
+      </span>
     </button>
   );
 }

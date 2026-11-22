@@ -2,6 +2,11 @@ import type { Report, Study } from "@/lib/prismaData";
 
 type ArticleDisplaySource = Pick<Study, "importItemId"> | undefined;
 
+export function getReportPdfUrl(projectId: string, report: Pick<Report, "id" | "fileName" | "checksum">) {
+  if (!report.fileName) return "";
+  return `/api/projects/${encodeURIComponent(projectId)}/reports/${encodeURIComponent(report.id)}?pdf=1&checksum=${encodeURIComponent(report.checksum ?? "")}&file=${encodeURIComponent(report.fileName)}#page=1&view=FitH&pagemode=none&navpanes=0`;
+}
+
 export function formatAuthorList(authors: string[]) {
   return authors
     .map((author) => {

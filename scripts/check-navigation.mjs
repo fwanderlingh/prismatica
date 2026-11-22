@@ -551,12 +551,12 @@ try {
   const checkoutSelectionCode = babel.core().transformSync([
     sourceText(appFunction.body.body[checkoutDeclarationIndex]), sourceText(appFunction.body.body[checkoutDeclarationIndex + 1]), "checkoutTarget;"
   ].join("\n"), { filename: "conflict-checkout-target.ts", configFile: false, babelrc: false, presets: [babel.presetTypescript()] }).code;
-  for (const activeView of ["screeningConflicts", "fullTextConflicts", "screening", "fullText"]) {
+  for (const activeView of ["screeningConflicts", "fullTextConflicts", "fullTextReviewed", "screening", "fullText"]) {
     const target = vm.runInNewContext(checkoutSelectionCode, {
       activeView, isAuthenticated: true, isAuthResolved: true, selectedProject: project, currentStudy: study,
       isCurrentStudyInActiveScreeningQueue: true, isActiveReportInActiveFullTextQueue: true, activeReport: report
     });
-    assert.equal(target === null, activeView.endsWith("Conflicts"), `${activeView}: browsing a conflict list does not reserve a paper`);
+    assert.equal(target === null, !["screening", "fullText"].includes(activeView), `${activeView}: browsing conflicts or reviewed reports does not reserve a paper`);
   }
   const reviewedSelector = appFunction.body.body
     .filter(node => node.type === "VariableDeclaration")

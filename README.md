@@ -117,13 +117,20 @@ comments stay with your reviewer, project, and paper while the page is open. Pos
 no decision and adds no article status.
 
 **Paper comments** show the same reviewer comments in Screening, Full text, and
-Extraction. Each reviewer can edit or remove their own comment using **Save comment**;
-other reviewers' comments are read-only. Comments are shared with project reviewers,
+Extraction. Your saved comment appears in the same style as other reviewers' comments.
+Choose **Edit** (or **Add comment** for a new comment) to open the editor, then
+**Save comment** to save and close it, or **Cancel** to discard your changes.
+Clear the text and save to remove your comment. Other reviewers' comments are read-only.
+Comments are shared with project reviewers,
 including in blind mode, and saving them does not cast or change a vote. Existing
 vote notes are retained as comments under their original authors.
 
 **Full text → Reviewed** shows DOI pills beside reviewed reports and filters for
 included and excluded papers. The status follows your saved full-text decision.
+Choose **View** to open report details, its PDF, and shared paper comments without
+reopening the report or reserving a review slot. **Return** reopens the report for
+review. Reports with comments show a small accent-colored message icon beside
+their titles in review queues, reviewed lists, and report details.
 
 **Extraction → Reviewed** shows DOI pills for your submitted extractions, with
 filters for reports collecting extraction votes, pending consensus, or finalized.
@@ -634,6 +641,11 @@ CSV availability is explained separately from the checks.
 
 Run `npm run check:checkouts` for checkout renewal, cancellation, and release
 checks across all review stages, plus single-request project settings saves.
+
+Screening, full-text, and extraction queues keep a stable order for each reviewer.
+Acquiring, renewing, or releasing a reservation does not move an eligible article
+in the queue or report picker. Reservations still control availability; completed
+decisions, conflicts, and screening postponement continue to affect the queue.
 
 Run `npm run check:conflicts` for conflict queue ordering, reservations, and blind
 vote privacy. After voting, a conflicted paper moves behind the reviewer's other

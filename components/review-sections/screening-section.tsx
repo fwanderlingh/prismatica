@@ -5,6 +5,7 @@ import type { Decision, ProjectWorkflowConflict, Study } from "@/lib/prismaData"
 import { Badge, EmptyState, ReviewReservationNotice, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 import type { DecisionValue } from "@/lib/workflow";
 import { ReviewQueueDisclosure, ReviewQueueItem } from "@/components/review-sections/review-queue";
+import { PaperCommentIndicator } from "@/components/paper-comment-indicator";
 import { renderAbstractText } from "@/components/review-sections/abstract-text";
 import { formatAuthorList } from "@/lib/reviewDisplay";
 import { ResolveConflictButton } from "./resolve-conflict-button";
@@ -178,7 +179,7 @@ export function ScreeningSection({
           <div className="citationHeader">
             <div>
               <p className="eyebrow">{currentStudy.source}</p>
-              <h2>{currentStudy.title}</h2>
+              <h2>{currentStudy.title}<PaperCommentIndicator study={currentStudy} /></h2>
               <p className="subtle">
                 {currentStudy.authors.length > 0 ? formatAuthorList(currentStudy.authors) : "No authors parsed"} · {currentStudy.journal} ·{" "}
                 {currentStudy.year > 0 ? currentStudy.year : <span className="needsReviewText">Year needs review</span>}

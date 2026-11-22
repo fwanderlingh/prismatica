@@ -1,4 +1,6 @@
 import { ViewLink } from "@/components/navigation-link";
+import { PaperCommentIndicator } from "@/components/paper-comment-indicator";
+import { getReportPdfUrl } from "@/lib/reviewDisplay";
 import { useEffect, useState, type ChangeEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import {
@@ -59,8 +61,6 @@ type FullTextSectionProps = {
 
 type PdfLoadState = "idle" | "loading" | "ready" | "error";
 
-const pdfViewerPreferences = "#page=1&view=FitH&pagemode=none&navpanes=0";
-
 export function FullTextSection({
   hasProjectSeedData,
   phaseProgress,
@@ -101,9 +101,7 @@ export function FullTextSection({
     setRetrievalStatus(activeReport.retrievalStatus);
   }, [selectedProject.id, currentUser.id, activeReport.id, activeReport.retrievalStatus]);
 
-  const pdfViewerUrl = activeReport.fileName
-    ? `/api/projects/${selectedProject.id}/reports/${activeReport.id}?pdf=1&checksum=${encodeURIComponent(activeReport.checksum ?? "")}&file=${encodeURIComponent(activeReport.fileName)}${pdfViewerPreferences}`
-    : "";
+  const pdfViewerUrl = getReportPdfUrl(selectedProject.id, activeReport);
   const pdfFrameKey = [
     selectedProject.id,
     activeReport.id,
@@ -269,7 +267,7 @@ export function FullTextSection({
               </ViewLink>
             </div>
           }
-          detail={`Active report: ${activeReport.title}`}
+          detail={<>Active report: {activeReport.title}<PaperCommentIndicator study={currentReportStudy} /></>}
           eyebrow="Report queue"
           id="full-text-report-picker"
           navigation={
@@ -305,7 +303,7 @@ export function FullTextSection({
       <section className="fullTextLayout">
         <aside className="panel fullTextPanel">
           <SectionTitle icon={BookOpen} title="Report Metadata" action={reportActionLabel} />
-          <h2>{activeReport.title}</h2>
+          <h2>{activeReport.title}<PaperCommentIndicator study={currentReportStudy} /></h2>
           <p className="subtle">{activeReport.citation}</p>
           <div className="metaStrip">
             {renderDoiLink(currentReportStudy.doi, `DOI ${currentReportStudy.doi || "Missing"}`, currentReportStudy)}
@@ -405,7 +403,7 @@ export function FullTextSection({
             </button>
             {retrievalStatus === "not_retrieved" ? (
               <button
-                className="ghostButton"
+                className="ghostButton notRetrievedButton"
                 type="button"
                 disabled={!canRecordFullTextDecision || retrievalLocked || isFullTextActionPending}
                 onClick={() => updateFullTextReport({ retrievalStatus })}

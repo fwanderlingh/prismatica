@@ -324,21 +324,18 @@ export function randomizeReviewQueueItems<T extends { id: string }>(
     projectId: string;
     currentUserId: string;
     phase: ReviewQueuePhase;
-    isPinned?: (item: T) => boolean;
     isLast?: (item: T) => boolean;
     salt?: string;
   }
 ) {
-  const { projectId, currentUserId, phase, isPinned, isLast, salt = "" } = options;
+  const { projectId, currentUserId, phase, isLast, salt = "" } = options;
   const prefix = `${projectId}:${currentUserId}:${phase}:${salt}:`;
   return items.map((item) => ({
     item,
     last: isLast?.(item) ? 1 : 0,
-    pinned: isPinned?.(item) ? 1 : 0,
     key: reviewQueueHash(`${prefix}${item.id}`)
   })).sort((left, right) => {
     if (left.last !== right.last) return left.last - right.last;
-    if (left.pinned !== right.pinned) return right.pinned - left.pinned;
     if (left.key !== right.key) return left.key - right.key;
     return left.item.id.localeCompare(right.item.id);
   }).map(({ item }) => item);
@@ -492,7 +489,6 @@ export function getActiveTitleAbstractStudies(
     projectId: project.id,
     currentUserId,
     phase: "title_abstract",
-    isPinned: (study) => Boolean(study.titleAbstractCheckedOutByCurrentUser),
     isLast: (study) => conflictIds.has(study.id)
   }), conflictIds, ownDecisionOrder);
   if (queueTailStudyIds.length === 0) return activeQueue;
@@ -506,7 +502,7 @@ export function getActiveTitleAbstractStudies(
     else if (queueTailOrder.has(study.id)) queueTailStudies.push(study);
     else ordinaryStudies.push(study);
   }
-  // Local queue order takes priority over checkout pinning, including stale checkout metadata.
+  // Postponed citations follow the reviewer's chosen postponement order.
   queueTailStudies.sort((left, right) => queueTailOrder.get(left.id)! - queueTailOrder.get(right.id)!);
   return [...ordinaryStudies, ...queueTailStudies, ...conflictStudies];
 }
@@ -560,7 +556,6 @@ export function getActiveFullTextReports(project: ReviewProject, reports: Report
     projectId: project.id,
     currentUserId,
     phase: "full_text",
-    isPinned: (report) => Boolean(report.fullTextCheckedOutByCurrentUser),
     isLast: (report) => conflictIds.has(report.id)
   }), conflictIds, ownDecisionOrder);
 }
@@ -595,7 +590,6 @@ export function getActiveExtractionReports(
     projectId: project.id,
     currentUserId,
     phase: "extraction",
-    isPinned: (report) => Boolean(report.extractionCheckedOutByCurrentUser),
     salt: templateId
   });
 }

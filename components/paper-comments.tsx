@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Save } from "lucide-react";
+import { MessageSquare, Pencil, Plus, Save } from "lucide-react";
 import { useEffect, useId, useSyncExternalStore } from "react";
 import type { AppUser, Study } from "@/lib/prismaData";
 
@@ -17,6 +17,7 @@ type CommentDraft = {
   text: string;
   baseline: string;
   sourceText: string;
+  isEditing: boolean;
   isSaving: boolean;
   error: string;
   notice: string;
@@ -39,7 +40,7 @@ function updateDraft(key: string, draft: CommentDraft) {
 }
 
 function initialDraft(text: string): CommentDraft {
-  return { text, baseline: text, sourceText: text, isSaving: false, error: "", notice: "" };
+  return { text, baseline: text, sourceText: text, isEditing: false, isSaving: false, error: "", notice: "" };
 }
 
 function commentDate(value: string, timezone: string) {
@@ -85,10 +86,21 @@ export function PaperComments({ projectId, study, currentUser, onSaveComment }: 
     });
   }, [draftKey, savedText]);
 
+  function editComment() {
+    const currentDraft = commentDrafts.get(draftKey) ?? initialDraft(savedText);
+    updateDraft(draftKey, { ...currentDraft, isEditing: true, error: "", notice: "" });
+  }
+
+  function cancelEditing() {
+    const currentDraft = commentDrafts.get(draftKey) ?? initialDraft(savedText);
+    if (currentDraft.isSaving) return;
+    updateDraft(draftKey, { ...currentDraft, text: currentDraft.baseline, isEditing: false, error: "", notice: "" });
+  }
+
   async function saveComment() {
     const currentDraft = commentDrafts.get(draftKey) ?? initialDraft(savedText);
     const text = currentDraft.text.trim();
-    if (currentDraft.isSaving || text === currentDraft.baseline) {
+    if (!currentDraft.isEditing || currentDraft.isSaving || text === currentDraft.baseline) {
       return;
     }
     updateDraft(draftKey, { ...currentDraft, isSaving: true, error: "", notice: "" });
@@ -100,6 +112,7 @@ export function PaperComments({ projectId, study, currentUser, onSaveComment }: 
         text: latestDraft.text.trim() === text ? text : latestDraft.text,
         baseline: text,
         sourceText: text,
+        isEditing: latestDraft.text.trim() !== text,
         isSaving: false,
         error: "",
         notice: text ? "Comment saved." : "Comment removed."
@@ -120,51 +133,67 @@ export function PaperComments({ projectId, study, currentUser, onSaveComment }: 
       <h3 id={`${id}-heading`}><MessageSquare size={18} aria-hidden="true" /> Paper comments</h3>
       <p className="paperCommentsHint" id={`${id}-hint`}>Comments are shared with project reviewers across review stages.</p>
 
-      <div className="paperCommentEditor" aria-busy={draft.isSaving}>
-        <div className="paperCommentMeta">
-          <label htmlFor={`${id}-comment`}>Your comment <span>({currentUser.name})</span></label>
-          {ownUpdatedAt && ownDate ? <time dateTime={ownUpdatedAt}>Updated {ownDate}</time> : null}
-        </div>
-        <textarea
-          id={`${id}-comment`}
-          value={draft.text}
-          maxLength={10000}
-          rows={4}
-          placeholder="Add a comment for the other reviewers…"
-          aria-describedby={`${id}-hint${draft.error ? ` ${id}-error` : ""}`}
-          disabled={draft.isSaving}
-          onChange={(event) => updateDraft(draftKey, { ...draft, text: event.target.value, error: "", notice: "" })}
-        />
-        <div className="paperCommentActions">
-          <button type="button" className="primaryButton" disabled={draft.isSaving || !isDirty} onClick={() => { void saveComment(); }}>
-            {draft.isSaving ? <span className="inlineSpinner" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
-            {draft.isSaving ? "Saving…" : "Save comment"}
-          </button>
-          <span className="paperCommentStatus" role="status" aria-live="polite">
-            {draft.isSaving ? "Saving your comment…" : isDirty ? "Unsaved comment" : draft.notice}
-          </span>
-        </div>
-        {draft.baseline ? <p className="paperCommentHelp">Clear the text and save to remove your comment.</p> : null}
-        {draft.error ? <p className="paperCommentError" id={`${id}-error`} role="alert">{draft.error}</p> : null}
+      <div className="paperCommentList" aria-label="Reviewer comments">
+        {draft.isEditing ? (
+          <div className="paperCommentEditor" aria-busy={draft.isSaving}>
+            <div className="paperCommentMeta">
+              <label htmlFor={`${id}-comment`}>Your comment <span>({currentUser.name})</span></label>
+              {ownUpdatedAt && ownDate ? <time dateTime={ownUpdatedAt}>Updated {ownDate}</time> : null}
+            </div>
+            <textarea
+              id={`${id}-comment`}
+              value={draft.text}
+              maxLength={10000}
+              rows={4}
+              autoFocus
+              placeholder="Add a comment for the other reviewers…"
+              aria-describedby={`${id}-hint${draft.error ? ` ${id}-error` : ""}`}
+              disabled={draft.isSaving}
+              onChange={(event) => updateDraft(draftKey, { ...draft, text: event.target.value, error: "", notice: "" })}
+            />
+            <div className="paperCommentActions">
+              <button type="button" className="primaryButton" disabled={draft.isSaving || !isDirty} onClick={() => { void saveComment(); }}>
+                {draft.isSaving ? <span className="inlineSpinner" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+                {draft.isSaving ? "Saving…" : "Save comment"}
+              </button>
+              <button type="button" className="ghostButton" disabled={draft.isSaving} onClick={cancelEditing}>Cancel</button>
+              <span className="paperCommentStatus" role="status" aria-live="polite">
+                {draft.isSaving ? "Saving your comment…" : isDirty ? "Unsaved comment" : draft.notice}
+              </span>
+            </div>
+            {draft.baseline ? <p className="paperCommentHelp">Clear the text and save to remove your comment.</p> : null}
+            {draft.error ? <p className="paperCommentError" id={`${id}-error`} role="alert">{draft.error}</p> : null}
+          </div>
+        ) : (
+          <article className="paperComment">
+            <div className="paperCommentMeta">
+              <h4>{currentUser.name} <span>(you)</span></h4>
+              <div className="paperCommentMetaActions">
+                {draft.baseline && ownUpdatedAt && ownDate ? <time dateTime={ownUpdatedAt}>Updated {ownDate}</time> : null}
+                <button type="button" className="ghostButton paperCommentEditButton" aria-label={draft.baseline ? "Edit your comment" : "Add your comment"} onClick={editComment}>
+                  {draft.baseline ? <Pencil size={14} aria-hidden="true" /> : <Plus size={14} aria-hidden="true" />}
+                  {draft.baseline ? "Edit" : "Add comment"}
+                </button>
+              </div>
+            </div>
+            {draft.baseline ? <p className="paperCommentText">{draft.baseline}</p> : <p className="paperCommentHelp">No comment yet.</p>}
+            {draft.notice ? <p className="paperCommentStatus" role="status" aria-live="polite">{draft.notice}</p> : null}
+          </article>
+        )}
+        {otherComments.map((comment) => {
+          const updatedAt = comment.updatedAt || comment.createdAt;
+          const date = commentDate(updatedAt, currentUser.timezone);
+          return (
+            <article className="paperComment" key={comment.userId}>
+              <div className="paperCommentMeta">
+                <h4>{comment.userName}</h4>
+                {date ? <time dateTime={updatedAt}>Updated {date}</time> : null}
+              </div>
+              <p className="paperCommentText">{comment.text}</p>
+            </article>
+          );
+        })}
       </div>
-
-      {otherComments.length ? (
-        <div className="paperCommentList" aria-label="Other reviewers’ comments">
-          {otherComments.map((comment) => {
-            const updatedAt = comment.updatedAt || comment.createdAt;
-            const date = commentDate(updatedAt, currentUser.timezone);
-            return (
-              <article className="paperComment" key={comment.userId}>
-                <div className="paperCommentMeta">
-                  <h4>{comment.userName}</h4>
-                  {date ? <time dateTime={updatedAt}>Updated {date}</time> : null}
-                </div>
-                <p className="paperCommentText">{comment.text}</p>
-              </article>
-            );
-          })}
-        </div>
-      ) : null}
     </section>
   );
 }

@@ -102,13 +102,35 @@ try {
       assert.deepEqual(ids(select(project, items, decisions, reviewer)), ["older", "revoted"]);
     });
 
-    check(`${stage}: checkout capacity still excludes occupied conflicts and respects the current checkout`, () => {
+    check(`${stage}: checkout capacity still excludes occupied papers and retains the current reservation`, () => {
       const occupied = item("occupied", "conflict", { [`${prefix}ActiveViewerCount`]: 1 });
       assert.deepEqual(select(project, [occupied], [vote(occupied.id)], reviewer), []);
       assert.deepEqual(ids(select(project, [{ ...occupied, [`${prefix}CheckedOutByCurrentUser`]: true }], [vote(occupied.id)], reviewer)), [occupied.id]);
-      const items = [item("normal"), item("pinned-normal", "awaiting_votes", { [`${prefix}CheckedOutByCurrentUser`]: true }),
-        item("pinned-conflict", "conflict", { [`${prefix}CheckedOutByCurrentUser`]: true })];
-      assert.deepEqual(ids(select(project, items, [], reviewer)), ["pinned-normal", "normal", "pinned-conflict"]);
+      const normal = item("occupied-normal", "awaiting_votes", { [`${prefix}VoteCount`]: 1, [`${prefix}ActiveViewerCount`]: 1 });
+      assert.deepEqual(select(project, [normal], [], reviewer), []);
+      assert.deepEqual(ids(select(project, [{ ...normal, [`${prefix}CheckedOutByCurrentUser`]: true }], [], reviewer)), [normal.id]);
+    });
+
+    check(`${stage}: acquiring, renewing, switching, and releasing reservations preserve queue order`, () => {
+      const items = [
+        ...Array.from({ length: 12 }, (_, index) => item(`regular-${index}`)),
+        item("unvoted-conflict-one", "conflict"), item("unvoted-conflict-two", "needs_third_vote"),
+        item("voted-conflict-one", "conflict"), item("voted-conflict-two", "conflict")
+      ];
+      const decisions = [vote("voted-conflict-one"), vote("voted-conflict-two")];
+      const baseline = ids(select(project, items, decisions, reviewer));
+      for (const selectedId of baseline) {
+        const reserved = items.map(entry => ({
+          ...entry,
+          [`${prefix}CheckedOutByCurrentUser`]: entry.id === selectedId,
+          [`${prefix}ActiveViewerCount`]: entry.id === selectedId ? 1 : 0,
+          [`${prefix}CheckoutExpiresAt`]: entry.id === selectedId ? "2026-11-22T15:00:00Z" : undefined
+        }));
+        assert.deepEqual(ids(select(project, reserved, decisions, reviewer)), baseline, `selecting ${selectedId} must not move it`);
+        const renewed = reserved.map(entry => ({ ...entry, [`${prefix}CheckoutExpiresAt`]: "2026-11-22T16:00:00Z" }));
+        assert.deepEqual(ids(select(project, renewed, decisions, reviewer)), baseline, "renewing a reservation preserves order");
+        assert.deepEqual(ids(select(project, items.slice().reverse(), decisions, reviewer)), baseline, "releasing a reservation preserves order after a refresh");
+      }
     });
 
     check(`${stage}: legacy conflicts without aggregate status use current visible decisions`, () => {
@@ -134,17 +156,29 @@ try {
     assert.equal(selectors.getNextReviewQueueItemId([], "voted"), null);
   });
 
-  check("extraction queues keep their template-specific randomization and checkout ordering", () => {
+  check("extraction reservations preserve template-specific queue order throughout selection and renewal", () => {
     const templateId = "active-template";
     const reports = Array.from({ length: 10 }, (_, index) => ({ ...seeds.reportQueue[0], id: `extract-${index}`, projectId: project.id,
       extractionTemplateId: templateId, extractionVoteCount: 0, extractionRequiredVotes: 2,
-      extractionCheckedOutByCurrentUser: index === 3 }));
+      extractionActiveViewerCount: 0, extractionCheckedOutByCurrentUser: false }));
     const expected = selectors.randomizeReviewQueueItems(reports, {
-      projectId: project.id, currentUserId: reviewer, phase: "extraction", salt: templateId,
-      isPinned: report => report.extractionCheckedOutByCurrentUser
+      projectId: project.id, currentUserId: reviewer, phase: "extraction", salt: templateId
     });
-    assert.deepEqual(ids(selectors.getActiveExtractionReports(project, reports, [], templateId, reviewer)), ids(expected));
-    assert.equal(expected[0].id, "extract-3");
+    const select = entries => selectors.getActiveExtractionReports(project, entries, [], templateId, reviewer);
+    assert.deepEqual(ids(select(reports)), ids(expected));
+    for (const selected of expected) {
+      const reserved = reports.map(report => ({
+        ...report, extractionCheckedOutByCurrentUser: report.id === selected.id,
+        extractionActiveViewerCount: report.id === selected.id ? 1 : 0,
+        extractionCheckoutExpiresAt: "2026-11-22T15:00:00Z"
+      }));
+      assert.deepEqual(ids(select(reserved)), ids(expected), `selecting ${selected.id} must not move it`);
+      assert.deepEqual(ids(select(reserved.map(report => ({ ...report, extractionCheckoutExpiresAt: "2026-11-22T16:00:00Z" })))), ids(expected));
+      assert.deepEqual(ids(select(reports.slice().reverse())), ids(expected), "releasing a reservation preserves order after a refresh");
+    }
+    const occupied = { ...reports[0], extractionVoteCount: 1, extractionActiveViewerCount: 1 };
+    assert.deepEqual(select([occupied]), [], "another reviewer's reservation still fills the remaining slot");
+    assert.deepEqual(ids(select([{ ...occupied, extractionCheckedOutByCurrentUser: true }])), [occupied.id], "your own reservation remains available");
   });
 
   // Execute the real save handlers so queue selection after a mutation cannot

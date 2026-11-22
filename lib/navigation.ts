@@ -1,5 +1,9 @@
 import type { ViewKey } from "./prismaData";
 
+export function buildReviewedFullTextReportPath(projectId: string, reportId: string) {
+  return `${buildPathForState("fullTextReviewed", projectId)}?reportId=${encodeURIComponent(reportId)}`;
+}
+
 export function buildPathForState(view: ViewKey, projectId: string) {
   switch (view) {
     case "dashboard":

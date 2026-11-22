@@ -1,9 +1,10 @@
-import { ViewLink } from "@/components/navigation-link";
+import { PageLink, ViewLink } from "@/components/navigation-link";
+import { PaperCommentIndicator } from "@/components/paper-comment-indicator";
 import { useState, type ReactNode } from "react";
 import type { Study, ViewKey } from "@/lib/prismaData";
 import { formatReviewDateTime } from "@/lib/reviewDisplay";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, ArrowLeft, Check, RotateCcw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, Eye, RotateCcw } from "lucide-react";
 import { Badge, EmptyState, SectionTitle, renderDoiLink } from "@/components/prisma-review-ui";
 
 export type ReviewedQueueItem = {
@@ -35,6 +36,7 @@ type ReviewedItemsSectionProps = {
   actionLabel: string;
   onOpenQueue: () => void;
   onReturnToQueue: (itemId: string) => void;
+  getViewHref?: (itemId: string) => string;
   children?: ReactNode;
 };
 
@@ -55,6 +57,7 @@ export function ReviewedItemsSection({
   actionLabel,
   onOpenQueue,
   onReturnToQueue,
+  getViewHref,
   children
 }: ReviewedItemsSectionProps) {
   const [statusFilter, setStatusFilter] = useState("all");
@@ -124,7 +127,7 @@ export function ReviewedItemsSection({
                   return (
                     <tr key={item.id}>
                       <td>
-                        <strong>{item.title}</strong>
+                        <strong>{item.title}<PaperCommentIndicator study={item.study} /></strong>
                         <span>{item.subtitle}</span>
                         {item.detail ? <span>{item.detail}</span> : null}
                         {item.study ? (
@@ -136,15 +139,22 @@ export function ReviewedItemsSection({
                       </td>
                       <td>{item.completedAt ? formatReviewDateTime(item.completedAt) : "Recorded"}</td>
                       <td>
-                        <button
-                          className="ghostButton"
-                          type="button"
-                          disabled={Boolean(pendingItemId)}
-                          onClick={() => onReturnToQueue(item.id)}
-                        >
-                          {isPending ? <span className="inlineSpinner" aria-hidden="true" /> : <RotateCcw size={17} />}
-                          {isPending ? "Returning..." : actionLabel}
-                        </button>
+                        <div className="buttonRow">
+                          {getViewHref ? (
+                            <PageLink className="ghostButton" href={getViewHref(item.id)} disabled={Boolean(pendingItemId)} aria-label={`View ${item.title}`}>
+                              <Eye size={17} />View
+                            </PageLink>
+                          ) : null}
+                          <button
+                            className="ghostButton"
+                            type="button"
+                            disabled={Boolean(pendingItemId)}
+                            onClick={() => onReturnToQueue(item.id)}
+                          >
+                            {isPending ? <span className="inlineSpinner" aria-hidden="true" /> : <RotateCcw size={17} />}
+                            {isPending ? "Returning..." : actionLabel}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

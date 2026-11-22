@@ -310,7 +310,20 @@ try {
     : Array.isArray(node) ? node.map(text).join(" ") : text(node.props?.children);
   const noop = () => {};
 
-  await check("the comment panel exposes one author-owned editor and renders peer comments as escaped read-only text", () => {
+  await check("title indicators appear only for saved, nonempty paper comments", () => {
+    const { PaperCommentIndicator } = require(path.join(out, "components/paper-comment-indicator.js"));
+    const indicator = paper => renderToStaticMarkup(React.createElement(PaperCommentIndicator, { study: paper }));
+    for (const paper of [undefined, {}, { comments: [] }, { comments: [comment("reviewer-a", " \n ")] }]) {
+      assert.equal(indicator(paper), "", "empty or removed comments do not leave a title icon");
+    }
+    const one = indicator({ comments: [comment("reviewer-a", "A saved comment"), comment("reviewer-b", " ")] });
+    assert.match(one, /aria-label="1 paper comment"/);
+    assert.match(one, /title="1 paper comment"/);
+    assert.match(one, /lucide-message-square/);
+    assert.match(indicator({ comments: [comment("reviewer-a", "Own"), comment("reviewer-b", "Peer")] }), /aria-label="2 paper comments"/);
+  });
+
+  await check("all saved comments use the same read-only cards and only the author has an Edit action", () => {
     const paper = { ...study(fixture()), comments: [
       comment("reviewer-a", "Own saved comment"), comment("reviewer-b", "Peer's <script>alert('text')</script> comment")
     ] };
@@ -318,14 +331,16 @@ try {
       const html = renderToStaticMarkup(React.createElement(PaperComments, {
         projectId, study: paper, currentUser: user(actor), onSaveComment: async () => {}
       }));
-      assert.equal((html.match(/<textarea\b/g) ?? []).length, 1, "only the current reviewer's comment has an editor");
-      assert.equal((html.match(/<article class="paperComment"/g) ?? []).length, actor === "owner" ? 2 : 1);
+      assert.doesNotMatch(html, /<textarea\b|Save comment/, "the editor stays hidden until Edit or Add comment is selected");
+      assert.equal((html.match(/<article class="paperComment"/g) ?? []).length, actor === "owner" ? 3 : 2);
       assert.match(html, /Comments are shared with project reviewers across review stages/);
-      assert.match(html, /maxLength="10000"/);
       assert.doesNotMatch(html, /<script>/, "comment text is escaped through ordinary React text rendering");
-      const editor = html.match(/<textarea\b[^>]*>([\s\S]*?)<\/textarea>/)?.[1] ?? "";
-      assert.equal(editor, actor === "owner" ? "" : actor === "reviewer-a" ? "Own saved comment" : "Peer&#x27;s &lt;script&gt;alert(&#x27;text&#x27;)&lt;/script&gt; comment");
-      assert.match(html, /disabled=""[^>]*>[\s\S]*?Save comment/, "unchanged comments cannot be resubmitted");
+      assert.match(html, /Own saved comment/);
+      assert.match(html, /Peer&#x27;s &lt;script&gt;alert\(&#x27;text&#x27;\)&lt;\/script&gt; comment/);
+      const cards = html.match(/<article class="paperComment">[\s\S]*?<\/article>/g) ?? [];
+      assert.equal(cards.filter(card => card.includes("<button")).length, 1, "only the current reviewer's card has an edit or add button");
+      assert.match(cards[0], new RegExp(`aria-label="${actor === "owner" ? "Add" : "Edit"} your comment"`));
+      assert.match(cards[0], /\(you\)/);
     }
   });
 
@@ -339,10 +354,15 @@ try {
     React.useSyncExternalStore = (_subscribe, getSnapshot) => getSnapshot();
     const render = props => { PaperComments(props); return PaperComments(props); };
     const editor = props => nodes(render(props)).find(node => node.type === "textarea");
-    const button = props => nodes(render(props)).find(node => node.type === "button");
+    const button = props => nodes(render(props)).find(node => node.type === "button" && /Save comment|Saving…/.test(text(node)));
+    const open = props => nodes(render(props)).find(node => node.type === "button" && /^(Edit|Add) your comment$/.test(node.props["aria-label"] ?? "")).props.onClick();
+    const cancel = props => nodes(render(props)).find(node => node.type === "button" && text(node) === "Cancel").props.onClick();
     try {
-      await test({ render, editor, button,
-        edit: (props, value) => editor(props).props.onChange({ target: { value } }),
+      await test({ render, editor, button, open, cancel,
+        edit: (props, value) => {
+          if (!editor(props)) open(props);
+          editor(props).props.onChange({ target: { value } });
+        },
         click: props => button(props).props.onClick(),
         settle: () => new Promise(resolve => setImmediate(resolve))
       });
@@ -351,8 +371,63 @@ try {
     }
   }
 
+  await check("Edit and Add comment open only the author's editor; Save and Cancel restore the comment card", async () => {
+    await withCommentClient(async ({ render, editor, button, open, cancel, edit, click, settle }) => {
+      const requests = [];
+      const peer = comment("reviewer-b", "Peer comment remains read-only");
+      const props = { projectId: "edit-view-project", study: { ...study(fixture()), id: "edit-view-paper", comments: [comment("reviewer-a", "My original comment"), peer] },
+        currentUser: user("reviewer-a"), onSaveComment: async (projectId, studyId, value) => {
+          requests.push([projectId, studyId, value]);
+          props.study = { ...props.study, comments: [...(value ? [comment("reviewer-a", value)] : []), peer] };
+        } };
+      assert.equal(editor(props), undefined);
+      open(props);
+      assert.equal(editor(props).props.value, "My original comment");
+      assert.equal(editor(props).props.maxLength, 10000);
+      assert.equal(editor(props).props.autoFocus, true);
+      assert.equal(nodes(render(props)).filter(node => node.type === "textarea").length, 1);
+      assert.equal(button(props).props.disabled, true, "unchanged comments cannot be resubmitted");
+      assert.ok(nodes(render(props)).some(node => node.props.className === "paperCommentText" && text(node) === peer.text));
+      edit(props, "A cancelled edit");
+      cancel(props);
+      assert.equal(editor(props), undefined);
+      assert.match(text(render(props)), /My original comment/);
+      assert.doesNotMatch(text(render(props)), /A cancelled edit/);
+      assert.deepEqual(requests, [], "cancelling sends no request");
+      open(props);
+      assert.equal(editor(props).props.value, "My original comment", "Cancel discards the unsaved draft");
+      edit(props, "  My updated comment  ");
+      click(props);
+      assert.equal(editor(props).props.disabled, true);
+      assert.ok(nodes(render(props)).filter(node => node.type === "button").every(node => node.props.disabled), "Save and Cancel wait for the request");
+      cancel(props);
+      assert.ok(editor(props), "an in-flight save cannot be cancelled");
+      await settle();
+      assert.equal(editor(props), undefined, "saving returns to the uniform comment card");
+      assert.match(text(render(props)), /My updated comment/);
+      assert.match(text(render(props)), /Comment saved\./);
+      open(props);
+      edit(props, "   ");
+      click(props);
+      await settle();
+      assert.equal(editor(props), undefined);
+      assert.match(text(render(props)), /No comment yet\./);
+      assert.match(text(render(props)), /Comment removed\./);
+      assert.ok(nodes(render(props)).some(node => node.props["aria-label"] === "Add your comment"));
+      open(props);
+      assert.equal(editor(props).props.value, "");
+      edit(props, "A new comment");
+      click(props);
+      await settle();
+      assert.equal(editor(props), undefined);
+      assert.match(text(render(props)), /A new comment/);
+      assert.deepEqual(requests.map(request => request[2]), ["My updated comment", "", "A new comment"]);
+      assert.deepEqual(props.study.comments.find(item => item.userId === "reviewer-b"), peer);
+    });
+  });
+
   await check("draft comments persist across stages while remaining scoped to each paper, project, and reviewer", async () => {
-    await withCommentClient(async ({ editor, edit }) => {
+    await withCommentClient(async ({ editor, edit, open }) => {
       const props = { projectId: "draft-project", study: { ...study(fixture()), id: "draft-paper", comments: [] },
         currentUser: user("reviewer-a"), onSaveComment: async () => {} };
       const otherPaper = { ...props, study: { ...props.study, id: "another-draft-paper" } };
@@ -371,6 +446,8 @@ try {
       const colonA = { ...props, projectId: "review:paper", study: { ...props.study, id: "id" } };
       const colonB = { ...props, projectId: "review", study: { ...props.study, id: "paper:id" } };
       edit(colonA, "Collision-safe draft");
+      assert.equal(editor(colonB), undefined, "editing another paper cannot open this editor");
+      open(colonB);
       assert.equal(editor(colonB).props.value, "");
     });
   });
@@ -394,7 +471,7 @@ try {
   });
 
   await check("a delayed save cannot clear drafts belonging to another paper or reviewer", async () => {
-    await withCommentClient(async ({ render, editor, button, edit, click, settle }) => {
+    await withCommentClient(async ({ render, editor, button, open, cancel, edit, click, settle }) => {
       let resolveSave;
       const requests = [];
       const props = { projectId: "pending-project", study: { ...study(fixture()), id: "pending-paper", comments: [] },
@@ -413,11 +490,15 @@ try {
       await settle();
       assert.equal(editor(otherPaper).props.value, "Next paper draft");
       assert.equal(editor(otherUser).props.value, "Peer's unsaved draft");
-      assert.equal(editor(props).props.value, "First paper comment");
-      assert.equal(button(props).props.disabled, true, "a successful save becomes the baseline");
+      assert.equal(editor(props), undefined, "only the saved paper's editor closes");
+      assert.match(text(render(props)), /First paper comment/);
       assert.match(text(render(props)), /Comment saved\./, "updated server props keep the success confirmation visible");
       const refreshed = { ...props, study: structuredClone(props.study) };
       assert.match(text(render(refreshed)), /Comment saved\./, "refreshing saved study objects does not clear the confirmation");
+      open(props);
+      assert.equal(editor(props).props.value, "First paper comment");
+      assert.equal(button(props).props.disabled, true, "a successful save becomes the baseline");
+      cancel(props);
     });
   });
 
@@ -518,6 +599,10 @@ try {
       assert.equal((html.match(/class="paperComments"/g) ?? []).length, 1, `${Component.name} includes one shared panel`);
       assert.match(html, /Own shared text/);
       assert.match(html, /Peer shared text/);
+      assert.match(html, /class="paperCommentIndicator"[^>]*aria-label="2 paper comments"/, `${Component.name} indicates comments beside the article title`);
+      if (Component === ScreeningSection) {
+        assert.match(html, /class="queueItemTitleRow"[\s\S]*?class="paperCommentIndicator"/, "the screening sidebar shows the comment icon beside its title");
+      }
       if (Component === FullTextSection) {
         assert.match(html, /2 comments/, "full-text metadata counts saved comments on the study");
         assert.doesNotMatch(html, /7 notes/, "the legacy numeric report.notes badge is not used");

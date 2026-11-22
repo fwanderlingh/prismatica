@@ -74,16 +74,17 @@ try {
     assert.notEqual(selectors.getNextReviewQueueItemId(ordered, lastUntouched.id), lastUntouched.id);
   });
 
-  check("newly eligible papers precede postponed papers and checkout pinning cannot lift a postponed paper", () => {
+  check("newly eligible papers precede postponed papers and reservations do not change either group", () => {
     const tail = [ordinary[0].id, ordinary[1].id];
     const refreshed = [...ordinary.map(item => item.id === tail[0] ? { ...item, titleAbstractCheckedOutByCurrentUser: true } : item),
       study("newly-imported"), ...conflicts];
     const ordered = ids(select(refreshed, tail, decisions));
     assert.ok(ordered.indexOf("newly-imported") < ordered.indexOf(tail[0]));
     assert.deepEqual(ordered.slice(-5), [...tail, ...baseline.filter(id => id.includes("conflict"))]);
-    const pinned = study("current-untouched", { titleAbstractCheckedOutByCurrentUser: true });
-    assert.equal(select([pinned, ...refreshed], tail, decisions)[0].id, pinned.id,
-      "ordinary checkouts retain their existing queue priority");
+    const current = study("current-untouched");
+    const withoutReservation = ids(select([current, ...refreshed], tail, decisions));
+    assert.deepEqual(ids(select([{ ...current, titleAbstractCheckedOutByCurrentUser: true, titleAbstractActiveViewerCount: 1 }, ...refreshed], tail, decisions)),
+      withoutReservation, "reserving an ordinary citation preserves its position");
   });
 
   check("queue reordering never revives completed, already voted, missing, or occupied papers", () => {
@@ -291,7 +292,7 @@ try {
     Module._load = originalLoad;
   });
 
-  console.log(`Screening postpone checks passed: ${passed} groups covering queue order, repeated postponement, new work, checkout pinning, eligibility, conflicts, record immutability, handler isolation and guards, shared comment display, no decision requests, layout, callback, and busy controls.`);
+  console.log(`Screening postpone checks passed: ${passed} groups covering queue order, repeated postponement, new work, reservation-independent ordering, eligibility, conflicts, record immutability, handler isolation and guards, shared comment display, no decision requests, layout, callback, and busy controls.`);
 } finally {
   Module._resolveFilename = originalResolve;
   Module._load = originalLoad;

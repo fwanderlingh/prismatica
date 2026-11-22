@@ -3368,9 +3368,16 @@ td span {
   min-width: 0;
 }
 
+.queueItemTitleRow {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
 .queueItemTitle {
   display: -webkit-box;
   overflow: hidden;
+  min-width: 0;
   color: var(--text);
   font-size: 0.86rem;
   line-height: 1.28;
@@ -3619,10 +3626,24 @@ textarea {
 }
 
 .paperCommentMeta label span,
+.paperCommentMeta h4 span,
 .paperCommentMeta time {
   color: var(--muted);
   font-size: 0.76rem;
   font-weight: 500;
+}
+
+.paperCommentMetaActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(8px * var(--ui-scale));
+}
+
+.paperCommentEditButton {
+  min-height: 0;
+  padding: calc(5px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  font-size: 0.78rem;
 }
 
 .paperCommentEditor textarea {
@@ -3639,7 +3660,8 @@ textarea {
   margin-top: calc(10px * var(--ui-scale));
 }
 
-.paperCommentActions .primaryButton {
+.paperCommentActions .primaryButton,
+.paperCommentActions .ghostButton {
   min-height: 0;
   padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
   font-size: 0.82rem;
@@ -3698,6 +3720,10 @@ textarea {
   display: grid;
   gap: calc(10px * var(--ui-scale));
   margin: calc(14px * var(--ui-scale)) 0;
+}
+
+.decisionButtons > .notRetrievedButton {
+  grid-column: 1 / -1;
 }
 
 .bottomMargin {
@@ -4036,6 +4062,30 @@ textarea {
   margin-bottom: calc(8px * var(--ui-scale));
   font-size: 1.22rem;
   line-height: 1.22;
+}
+
+.paperCommentIndicator {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-block: 0;
+  margin-inline-start: calc(6px * var(--ui-scale));
+  color: var(--teal);
+  vertical-align: middle;
+}
+
+.paperCommentIndicator > svg {
+  flex-shrink: 0;
+}
+
+.reviewedReportAbstract {
+  margin-top: calc(16px * var(--ui-scale));
+}
+
+.reviewedReportAbstract p {
+  margin-top: calc(8px * var(--ui-scale));
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .pdfStatusGrid {

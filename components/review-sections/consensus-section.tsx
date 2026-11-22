@@ -1,5 +1,6 @@
 import { ViewLink } from "@/components/navigation-link";
 import { useState, type ReactNode } from "react";
+import { PaperCommentIndicator } from "@/components/paper-comment-indicator";
 import { AlertTriangle, Check, ClipboardCheck, GitMerge } from "lucide-react";
 import {
   type AppUser,
@@ -214,7 +215,7 @@ export function ConsensusSection({
           const statusLabel = status === "pending" ? "Pending consensus" : status === "collecting" ? "Collecting extractions" : "Finalized";
           return (
             <li key={report.id} aria-current={isSelected ? "true" : undefined}>
-              <strong>{reportLabel}</strong>
+              <strong>{reportLabel}<PaperCommentIndicator study={study} /></strong>
               {study ? <div className="reviewedItemDoi">{renderDoiLink(study.doi, `DOI ${study.doi || "Missing"}`, study)}</div> : null}
               <Badge label={statusLabel} tone={status === "finalized" ? "success" : status === "pending" ? "warning" : "info"} />
               <small>
@@ -340,6 +341,7 @@ export function ConsensusSection({
             {activeStudyForConsensus
               ? `${activeStudyForConsensus.title} · ${activeQueueItem?.status === "finalized" ? "finalized" : "pending arbitration"}`
               : "Select a report to review extraction discrepancies."}
+            <PaperCommentIndicator study={activeStudyForConsensus} />
           </p>
           {activeStudyForConsensus ? (
             <div className="reviewedItemDoi">{renderDoiLink(activeStudyForConsensus.doi, `DOI ${activeStudyForConsensus.doi || "Missing"}`, activeStudyForConsensus)}</div>

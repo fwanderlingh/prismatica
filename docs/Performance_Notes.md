@@ -7,7 +7,7 @@ checkout capacity, duplicate matching, vote thresholds, or queue ordering.
 Changes:
 
 - Screening, full-text and extraction queues index decisions/responses once.
-- Randomized queue ordering computes each item's hash and pinned state once per sort.
+- Randomized queue ordering computes each item's hash and conflict priority once per sort. Reservations affect availability without changing the order of eligible items.
 - Server response preparation passes each item's decisions and checkouts to the
   existing workflow evaluators, instead of repeatedly scanning all records.
 - Conflict calculations index decisions without changing their evaluation rules.
