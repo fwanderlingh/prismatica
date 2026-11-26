@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "source_hostname": "REPLACE_WITH_SOURCE_HOSTNAME",
+  "target_hostname": "REPLACE_WITH_NEW_PC_HOSTNAME",
+  "staging_ip": "REPLACE_WITH_STAGING_IP",
+  "final_ip": "REPLACE_WITH_FINAL_IP",
+  "app_dir": "/home/user/public_html/prismatica",
+  "data_dir": "/home/user/public_html/prismatica/data",
+  "app_user": "user",
+  "app_group": "user",
+  "app_units": ["REPLACE_WITH_ACTUAL_APP_SERVICE.service"],
+  "database": {
+    "enabled": true,
+    "name": "prismatica",
+    "owner": "REPLACE_WITH_DATABASE_ROLE",
+    "os_user": "postgres",
+    "socket_dir": "/var/run/postgresql",
+    "port": 5432
+  },
+  "minio": {
+    "enabled": true,
+    "single_node_single_volume": true,
+    "data_dir": "/usr/local/share/minio",
+    "binary": "/usr/local/bin/minio",
+    "user": "minio",
+    "group": "minio",
+    "unit": "minio.service"
+  },
+  "caddy": {
+    "enabled": true,
+    "data_dir": "/var/lib/caddy",
+    "user": "caddy",
+    "group": "caddy",
+    "unit": "caddy.service"
+  },
+  "host_config_paths": [
+    "/etc/caddy",
+    "/etc/default/minio",
+    "/etc/systemd/system/minio.service",
+    "/etc/systemd/system/REPLACE_WITH_ACTUAL_APP_SERVICE.service",
+    "/REPLACE_WITH_ACTUAL_APP_ENV_FILE"
+  ]
+}
