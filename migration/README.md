@@ -10,9 +10,25 @@ This guide uses documentation addresses **192.0.2.20** (staging) and
 configuration values before running any commands. They do not describe a live
 deployment.
 
-Start from [deploy/server-migration.example.json](deploy/server-migration.example.json)
+Start from [server-migration.example.json](server-migration.example.json)
 or use your existing private migration configuration. Keep the filled
 configuration and credentials out of version control.
+
+The repository layout is:
+
+```text
+migration/
+  README.md
+  prepare-destination.py
+  migrate-server.py
+  server-migration.example.json
+  server-migration.json          # private, ignored by Git
+```
+
+Commands with a `migration/` prefix assume the repository root as the working
+directory. On a fresh destination, copy this folder outside the future app
+directory, for example `/root/prismatica-migration-tools`, and run its scripts
+from there. The private configuration may be stored elsewhere under `/root`.
 
 IP address, username and credentials are sufficient to establish SSH access.
 The script also checks the local hostname before export/restore to catch running
@@ -23,7 +39,7 @@ target hostname.
 
 ## What is included
 
-[`scripts/migrate-server.py`](scripts/migrate-server.py) creates a coordinated,
+[`migrate-server.py`](migrate-server.py) creates a coordinated,
 offline backup and restores it on the new PC. It preserves the same absolute
 application and data paths on both machines.
 
@@ -35,6 +51,10 @@ application and data paths on both machines.
 | Complete single-node/single-volume MinIO store, including `.minio.sys` | Archive made **after MinIO stops**, plus its existing server binary |
 | Caddy storage, including internal CA private keys and certificates | Offline archive of Caddy's data directory |
 | Explicitly listed environment files, service units, overrides, proxy and MinIO configuration | Archive restored into a private review directory |
+
+[`prepare-destination.py`](prepare-destination.py) installs the destination's
+system requirements separately. Both scripts default to a plan and require
+`--execute` for changes.
 
 `node_modules`, `.next`, TypeScript build cache, and workspace agent directories
 `.agents`, `.codex`, `.aws` are excluded. Dependencies and the production build
@@ -66,16 +86,16 @@ key/configuration too. AIStor licensing may also need updating for the new PC.
 MinIO's maintainers caution against copying a running store; an offline clone
 requires downtime ([maintainer discussion](https://github.com/minio/minio/discussions/20669)).
 
-This moves Prismatica, rather than cloning the operating system. Install the
-required software and create service accounts on the destination. PostgreSQL
-cluster-wide roles/passwords, custom grants, other databases, firewall rules,
-cron jobs, SSH host keys and network settings are not installed by this script.
+This moves Prismatica, rather than cloning the operating system. The preparation
+script installs system packages and creates missing named accounts on Ubuntu.
+PostgreSQL roles/passwords, custom grants, other databases, firewall rules,
+cron jobs, SSH host keys and network settings are not migrated by these scripts.
 Recreate the application's database login and any custom grants explicitly.
 Symlinks are preserved; include their external targets separately where needed.
 
 Plan downtime from the final backup until the new PC is verified. The source
-services remain stopped after export, including on failure. There is no automatic
-restart, service activation, deletion, package installation or IP reassignment.
+services remain stopped after export, including on failure. The backup/restore
+script does not restart services, install packages, delete data or change IPs.
 An export/restore without `--execute` only prints a plan. `verify` reads backup
 files and checks hashes.
 
@@ -119,7 +139,7 @@ when installing it.
 Prepare the migration configuration:
 
 ```bash
-sudo install -m 600 deploy/server-migration.example.json /root/prismatica-migration.json
+sudo install -m 600 migration/server-migration.example.json /root/prismatica-migration.json
 sudoedit /root/prismatica-migration.json
 ```
 
@@ -131,26 +151,90 @@ missing configured paths abort export before any service is stopped.
 Preview without changing anything:
 
 ```bash
-sudo python3 scripts/migrate-server.py plan --config /root/prismatica-migration.json
+sudo python3 migration/migrate-server.py plan --config /root/prismatica-migration.json
 ```
 
 ## 2. Prepare the new server at the staging address
 
-Install SSH, tmux, Python 3, GNU tar with ACL/xattr support, PostgreSQL server/client
-tools, Node.js/npm and Caddy if used. Use the source Node.js major version and a
-compatible npm version. Start with the same PostgreSQL major version, or a newer
-version tested with this application. PostgreSQL logical dumps support migration
-to newer versions; restoring into older majors is not guaranteed
-([PostgreSQL documentation](https://www.postgresql.org/docs/current/app-pgdump.html)).
-The destination's `pg_restore` must also be at least as new as the `pg_dump`
-version recorded in the backup's `inventory.json`.
+Install Ubuntu and configure its hostname, staging IP and administrative login.
+The automated preparation supports Ubuntu 22.04 or newer with systemd on amd64
+or arm64. Python 3 must already be available to run the script; on a minimal
+installation without it, install `python3` first. The staging IP check also needs
+`iproute2`, normally included in Ubuntu.
 
-Create the configured application, MinIO and Caddy users/groups and their home
-directories. Reusing an existing app account is fine. Numeric UIDs/GIDs may
-differ: the script resets ownership of the app/data/MinIO/Caddy trees to those
-named accounts.
-Review ownership of staged configuration files and any ACLs referencing old
-numeric user/group IDs separately.
+Copy the migration tools and your filled private configuration to the new
+server, outside the future application directory. Preview from the tools folder:
+
+```bash
+sudo python3 prepare-destination.py --config /root/prismatica-migration.json
+```
+
+Install after reviewing the plan:
+
+```bash
+sudo python3 prepare-destination.py \
+  --config /root/prismatica-migration.json \
+  --execute
+```
+
+The installer checks the configured destination hostname and staging IP before
+making changes. It refuses active configured app/MinIO/Caddy services and
+nonempty destination app/data/storage directories. It installs:
+
+| Requirement | Preparation behavior |
+| --- | --- |
+| Node.js and npm | Default Node.js major 24, with bundled npm, from the [NodeSource APT repository](https://github.com/nodesource/distributions/blob/master/scripts/deb/setup_24.x) |
+| PostgreSQL | Default major 18 server and client tools from the [PostgreSQL PGDG repository](https://www.postgresql.org/download/linux/ubuntu/), when enabled in config |
+| Caddy | Stable package from the [official Caddy APT repository](https://caddyserver.com/docs/install#debian-ubuntu-raspbian), when enabled in config |
+| Supporting tools | SSH server, Git, rsync, tmux, Python, GNU tar, ACL/xattr tools, curl, GPG, build tools and PostgreSQL development libraries |
+| Accounts/storage | Missing named app, MinIO and Caddy accounts; empty storage roots and required parent directories |
+| Services | Enables SSH; creates/starts the selected PostgreSQL `main` cluster; leaves Caddy stopped and disabled |
+
+The repositories are scoped to their signing keys. Repository configuration is
+written directly; no downloaded setup script is piped into a shell. Existing
+service-start policy is temporarily preserved while package starts are blocked,
+then restored. Initial Caddy files created during package installation/account
+setup are preserved under `/root/prismatica-preparation-state` so the restore
+destination stays empty. Existing nonempty Caddy storage is refused before
+installation. MinIO's account/storage are prepared, but its **matching binary and
+unit come from the source backup**; the preparation script does not download a
+different MinIO release.
+
+Choose different package majors when matching or upgrading the source requires
+it, for example:
+
+```bash
+sudo python3 prepare-destination.py \
+  --config /root/prismatica-migration.json \
+  --node-major 24 --postgres-major 18 \
+  --execute
+```
+
+Use the source Node.js major when possible. If a completed backup is already
+available, pass `--bundle /root/prismatica-migration-final`: the installer checks
+the inventory checksum and architecture, defaults to the source's Node.js major,
+and chooses a PostgreSQL major at least as new as both the source server and
+`pg_dump` (with 18 as its default minimum). Explicit version flags override these
+defaults; an older PostgreSQL major than the inventory requires is refused.
+Node.js majors must be even and at least 22, and the selected releases must be
+available in the package repositories for the installed Ubuntu version. This
+inventory check does not replace the full backup verification before restore.
+
+PostgreSQL logical dumps support migration to newer versions; restoring into
+older majors is not guaranteed ([PostgreSQL documentation](https://www.postgresql.org/docs/current/app-pgdump.html)).
+The destination's `pg_restore` must also be at least as new as the source
+`pg_dump` major. Test application compatibility when selecting newer software.
+
+Preparation does **not** create the app's database role/password or database,
+transfer/restore files, install archived secrets or MinIO configuration, run
+`npm ci`/the app build, start the website, change firewall/network settings or
+assign the final IP. Continue with the remaining steps below. Newly created
+login accounts have no password; existing account credentials are preserved.
+Recreate SSH access for a new account separately when needed.
+
+Numeric UIDs/GIDs may differ: restore resets ownership of the
+app/data/MinIO/Caddy trees to the configured named accounts. Review ownership of
+staged configuration files and any ACLs referencing old numeric IDs separately.
 
 Create the configured database role and an **empty** database owned by that role.
 Using the documentation example names:
@@ -172,8 +256,9 @@ Prepare the same storage mounts and filesystem capacity before restoring. Allow
 space for both the transferred archives and extracted data, plus dependencies
 and the build. Mounts and `/etc/fstab` are configured manually.
 
-All destination data directories must be absent or empty. Package installation
-may create Caddy or MinIO state: inspect it and move it aside before restoring.
+All destination data directories must be absent or empty. If packages were
+installed manually, inspect and move aside any initial Caddy or MinIO state
+before restoring.
 The script refuses to overwrite nonempty directories or an existing database.
 Copy the migration script to `/root/migrate-server.py` on the new PC, outside the
 future application directory, so that directory can remain empty.
@@ -199,7 +284,7 @@ MinIO and Caddy. PostgreSQL stays running so `pg_dump` can export the database.
 Choose a new, private backup directory for each attempt:
 
 ```bash
-sudo python3 scripts/migrate-server.py export \
+sudo python3 migration/migrate-server.py export \
   --config /root/prismatica-migration.json \
   --bundle /root/prismatica-migration-final \
   --execute --writers-stopped
@@ -223,7 +308,7 @@ SSH and sudo prompt as needed. From the application directory on the old server,
 using the documentation account and staging address:
 
 ```bash
-sudo scp -rp /root/prismatica-migration-final scripts/migrate-server.py \
+sudo scp -rp /root/prismatica-migration-final migration/migrate-server.py \
   user@192.0.2.20:/home/user/
 ```
 
@@ -353,7 +438,7 @@ on port 3000, the documentation staging URL is **http://192.0.2.20:3000**; restr
 testing access to the migration team. If the app uses a reverse proxy, restore
 and check its configuration and use its staging URL instead.
 
-HTTPS can be configured separately using the main README's Caddy deployment
+HTTPS can be configured separately using the [main README's Caddy deployment](../README.md#recommended-production-tls-caddy-reverse-proxy)
 guide. With HTTPS, set secure cookies, the allowed origins and any canonical
 email URL consistently. The `allowedDevOrigins` setting in `next.config.mjs`
 only affects development and is not needed for this production startup command.

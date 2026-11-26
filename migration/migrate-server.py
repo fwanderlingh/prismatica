@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline Prismatica host migration. No migration occurs without --execute.
 
-Read README_SERVER_MIGRATION.md before use. Python 3.8+; Linux/systemd/GNU tar.
+Read migration/README.md before use. Python 3.8+; Linux/systemd/GNU tar.
 All subprocesses run locally. This program never connects over SSH or changes IPs.
 """
 

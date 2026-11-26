@@ -455,6 +455,14 @@ npm run start -- --hostname 0.0.0.0 --port 3000
 
 Then open `http://<server-hostname-or-ip>:3000`.
 
+## Server Migration
+
+The [migration guide](migration/README.md) covers destination preparation,
+backing up the website and data, restoring on a new server, and the final address
+switch. Server migration scripts and the sanitized configuration template live
+in [`migration/`](migration/). Keep the actual configuration private and ignored
+by Git.
+
 ## Recommended Production TLS: Caddy Reverse Proxy
 
 Prismatica is intended to run behind Caddy with Next.js bound to localhost (`127.0.0.1:3000`).

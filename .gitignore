@@ -12,3 +12,4 @@ tsconfig.tsbuildinfo
 .agents/
 docs/Prismatica_Migration_Request.md
 deploy/server-migration.json
+migration/server-migration.json
