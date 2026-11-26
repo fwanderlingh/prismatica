@@ -169,7 +169,8 @@ server, outside the future application directory. Preview from the tools folder:
 sudo python3 prepare-destination.py --config /root/prismatica-migration.json
 ```
 
-Install after reviewing the plan:
+Install after reviewing the plan (this downloads packages and requires Internet
+access from the destination):
 
 ```bash
 sudo python3 prepare-destination.py \
@@ -438,8 +439,9 @@ on port 3000, the documentation staging URL is **http://192.0.2.20:3000**; restr
 testing access to the migration team. If the app uses a reverse proxy, restore
 and check its configuration and use its staging URL instead.
 
-HTTPS can be configured separately using the [main README's Caddy deployment](../README.md#recommended-production-tls-caddy-reverse-proxy)
-guide. With HTTPS, set secure cookies, the allowed origins and any canonical
+HTTPS can be configured separately using the
+[main README's Caddy deployment guide](../README.md#recommended-production-tls-caddy-reverse-proxy).
+With HTTPS, set secure cookies, the allowed origins and any canonical
 email URL consistently. The `allowedDevOrigins` setting in `next.config.mjs`
 only affects development and is not needed for this production startup command.
 
@@ -495,6 +497,14 @@ machine-specific. Use the actual addresses from your private configuration.
    PC and migration bundle until the migration has been accepted.
 
 ## Rollback and interrupted attempts
+
+If preparation fails, packages already installed are retained; no data restore
+or website startup is attempted. Fix the reported dependency/repository problem
+and rerun on empty destination storage. The temporary `policy-rc.d` policy is
+restored on normal errors and interrupts. After a power loss or forced kill,
+inspect that file before retrying: any prior policy was saved as
+`/usr/sbin/policy-rc.d.prismatica-PID.saved`. If no prior policy existed, remove
+only the temporary policy carrying the preparation script's marker.
 
 Before real users write to the new PC, rollback is straightforward: stop all
 target writers, remove the final IP from the target, restore it to the old PC if

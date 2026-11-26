@@ -8,6 +8,7 @@ migration configuration and --execute. This script does not restore app data.
 import argparse
 from contextlib import contextmanager
 import datetime
+import fcntl
 import grp
 import hashlib
 import ipaddress
@@ -137,9 +138,9 @@ def select_versions(args):
         inventory = read_json(inventory_path)
         require(inventory["architecture"] == platform.machine(), "Source and target architectures differ.")
         versions = inventory["versions"]
-    node = args.node_major or (version_major(versions["node"]) if "node" in versions else DEFAULT_NODE_MAJOR)
+    node = args.node_major if args.node_major is not None else (version_major(versions["node"]) if "node" in versions else DEFAULT_NODE_MAJOR)
     pg_minimum = max([version_major(versions[key]) for key in ("postgres_server", "pg_dump") if key in versions] or [0])
-    postgres = args.postgres_major or max(DEFAULT_POSTGRES_MAJOR, pg_minimum)
+    postgres = args.postgres_major if args.postgres_major is not None else max(DEFAULT_POSTGRES_MAJOR, pg_minimum)
     require(node >= 22 and node % 2 == 0, "Select an even Node.js major version >= 22 supported by NodeSource.")
     require(postgres >= 14 and postgres >= pg_minimum,
             "PostgreSQL must be at least as new as the source server and pg_dump major versions.")
@@ -170,7 +171,9 @@ def preflight(config, release):
     for _, path, _, _ in storage_trees(config):
         empty_directory(path)
     units = config["app_units"] + [config[name]["unit"] for name in ("minio", "caddy") if config[name]["enabled"]]
-    for unit in units:
+    if config["caddy"]["enabled"]:
+        units.append("caddy.service")
+    for unit in dict.fromkeys(units):
         state = subprocess.run(["systemctl", "is-active", "--quiet", unit], check=False)
         require(state.returncode in (0, 3, 4), "Cannot inspect service: " + unit)
         require(state.returncode != 0, "Stop the existing destination service before preparation: " + unit)
@@ -184,6 +187,10 @@ def prevent_package_service_starts():
     saved = policy.with_name("policy-rc.d.prismatica-" + str(os.getpid()) + ".saved")
     require(not saved.exists() and not saved.is_symlink(), "Temporary service-policy backup already exists.")
     had_policy = policy.exists() or policy.is_symlink()
+    if policy.is_file() and not policy.is_symlink():
+        require(MARKER not in policy.read_text(errors="replace"),
+                "An interrupted preparation left its temporary service policy installed. "
+                "Inspect /usr/sbin/policy-rc.d.prismatica-*.saved and restore the previous policy before retrying.")
     if had_policy:
         policy.rename(saved)
     try:
@@ -217,7 +224,7 @@ def managed_text(path, value):
 
 
 def download(url, output):
-    run(["curl", "--proto", "=https", "--tlsv1.2", "--fail", "--silent", "--show-error",
+    run(["curl", "--proto", "=https", "--proto-redir", "=https", "--tlsv1.2", "--fail", "--silent", "--show-error",
          "--location", "--retry", "3", "--connect-timeout", "15", "--max-time", "120",
          "--output", output, url])
 
@@ -316,7 +323,7 @@ def clusters():
         return []
     result = []
     for line in run(["pg_lsclusters", "--no-header"], capture=True).splitlines():
-        parts = line.split()
+        parts = re.sub(r"\x1b\[[0-9;]*m", "", line).split()
         if parts:
             result.append({"version": parts[0], "name": parts[1], "port": int(parts[2]), "status": parts[3]})
     return result
@@ -347,8 +354,7 @@ def start_postgres(config, postgres, previous_clusters):
          "--dbname", "postgres", "--no-password", "-X", "-v", "ON_ERROR_STOP=1", "-c", "SELECT 1;"])
 
 
-def install(config, node, postgres, release):
-    architecture = preflight(config, release)
+def install_packages(config, node, postgres, release, architecture):
     previous_clusters = clusters()
     print("Installing Ubuntu prerequisites and signed APT repositories.", flush=True)
     with prevent_package_service_starts():
@@ -380,9 +386,20 @@ def install(config, node, postgres, release):
             print(program + ": " + run([program, "--version"], capture=True))
     if config["caddy"]["enabled"]:
         print("caddy: " + run(["caddy", "version"], capture=True))
-    print("Preparation complete. SSH and PostgreSQL are available; Caddy remains stopped and disabled.")
+    print("Preparation complete. SSH is available; configured PostgreSQL is started and Caddy remains stopped.")
     print("Next: create the database role/empty database, then follow README.md for transfer and restore.")
     print("MinIO's existing binary/unit come from the backup. No app data, secrets or IP settings were installed.")
+
+
+def install(config, node, postgres, release):
+    architecture = preflight(config, release)
+    # Serialize our temporary global service-start policy across concurrent runs.
+    with open("/run/lock/prismatica-destination-preparation.lock", "a", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Another destination preparation is already running.")
+        install_packages(config, node, postgres, release, architecture)
 
 
 def main():
