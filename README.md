@@ -544,6 +544,26 @@ sudo systemctl reload caddy
 - Open only required firewall ports (`443`; optionally `80` for ACME HTTP challenge)
 - Keep Caddy internal CA materials restricted to trusted admins (if using internal CA mode)
 
+### Maintenance mode
+
+Administrators can open **Maintenance Mode** (`/admin/maintenance`), choose an
+expected end date and time, and select **Start maintenance**. Visitors and signed-in
+regular users are then sent to `/maintenance`, which displays the estimated return
+time in their own timezone. Existing tabs check for changes every 30 seconds;
+non-admin API requests receive HTTP 503 with `Retry-After` and cannot change data.
+
+Administrators retain access to the site and can sign in through the link on the
+maintenance page. Use **Update end date** to change the estimate or **Stop maintenance**
+to reopen immediately. Reaching the displayed date does not automatically reopen
+the site. Open maintenance pages return to the dashboard after maintenance stops.
+
+Maintenance settings persist across restarts: PostgreSQL mode uses the
+`website_maintenance` table; JSON mode uses a companion file at
+`${PRISMATICA_DATA_FILE}.maintenance.json` (by default,
+`data/prismatica-state.json.maintenance.json`). All app instances must share the
+configured storage. Check the access restrictions and both persistence backends
+with `npm run check:maintenance`; PostgreSQL checks use a temporary, isolated cluster.
+
 ### Storage information
 
 Administrators can open **Storage Info** (`/admin/storage`) to see total PDF file

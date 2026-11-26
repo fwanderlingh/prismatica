@@ -332,7 +332,8 @@ export function FullTextSection({
               </button>
               <span className={`retrievalTooltip${isRetrievalHintOpen ? " isOpen" : ""}`} id="retrieval-status-help" role="tooltip">
                 Mark the full text available when you can read the complete report, including outside this app. PDF upload is optional.
-                Your selection is saved when you submit a vote or confirm not retrieved.
+                Retrieval in progress is saved as soon as you select it.
+                Full text available is saved when you submit a vote; not retrieved is saved when you confirm it.
                 Mark not retrieved only when retrieval attempts have ended; confirming this closes the queue item without an eligibility exclusion.
                 {retrievalLocked ? " A stored PDF or current full-text vote requires the report to remain available." : ""}
                 {activeReport.retrievalStatus === "not_sought" ? " This report is pending retrieval and is not yet counted as sought in the PRISMA diagram." : ""}
@@ -344,13 +345,26 @@ export function FullTextSection({
             value={retrievalStatus}
             aria-describedby="retrieval-status-help"
             disabled={isFullTextActionPending}
-            onChange={(event) => setRetrievalStatus(event.target.value as Report["retrievalStatus"])}
+            onChange={(event) => {
+              const nextStatus = event.target.value as Report["retrievalStatus"];
+              setFullTextMessage("");
+              if (nextStatus === "sought" && activeReport.retrievalStatus !== "sought") {
+                updateFullTextReport({ retrievalStatus: nextStatus });
+              } else {
+                setRetrievalStatus(nextStatus);
+              }
+            }}
           >
             <option value="not_sought" disabled={retrievalLocked}>Retrieval not started</option>
             <option value="sought" disabled={retrievalLocked}>Retrieval in progress</option>
             <option value="retrieved">Full text available</option>
             <option value="not_retrieved" disabled={retrievalLocked}>Not retrieved after attempts</option>
           </select>
+          {pendingFullTextAction === "retrieval" && retrievalStatus !== "not_retrieved" ? (
+            <p className="validationItem muted" role="status">
+              <span className="inlineSpinner" aria-hidden="true" /> Saving retrieval status...
+            </p>
+          ) : null}
 
           <div className="decisionState">
             <span>My current full-text vote</span>

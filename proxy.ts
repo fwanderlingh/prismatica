@@ -1,14 +1,34 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getSessionUserFromToken } from "./lib/serverAuth";
+import { getMaintenanceSettings } from "./lib/serverMaintenance";
+import { isMaintenanceExemptPath, maintenanceRetryAfter } from "./lib/maintenance";
 
 const sessionCookieName = "prismatica_session";
 const unsafeMethods = new Set(["DELETE", "PATCH", "POST", "PUT"]);
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (pathname.startsWith("/api/") && unsafeMethods.has(request.method.toUpperCase())) {
     const response = enforceSameOriginMutation(request);
     if (response) {
       return response;
+    }
+  }
+
+  if (!isMaintenanceExemptPath(pathname)) {
+    const maintenance = await getMaintenanceSettings();
+    if (maintenance.enabled && !getSessionUserFromToken(request.cookies.get(sessionCookieName)?.value)?.isAdmin) {
+      const headers = { "Cache-Control": "no-store", "Retry-After": maintenanceRetryAfter(maintenance.endsAt) };
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "The site is under maintenance. Please try again later.", maintenance: true, endsAt: maintenance.endsAt },
+          { status: 503, headers }
+        );
+      }
+      const maintenanceUrl = request.nextUrl.clone();
+      maintenanceUrl.pathname = "/maintenance";
+      maintenanceUrl.search = "";
+      return NextResponse.redirect(maintenanceUrl, { status: 307, headers });
     }
   }
 
@@ -106,5 +126,5 @@ function firstForwardedHeaderValue(value: string | null) {
 }
 
 export const config = {
-  matcher: ["/api/:path*", "/projects/:path*"]
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg).*)"]
 };

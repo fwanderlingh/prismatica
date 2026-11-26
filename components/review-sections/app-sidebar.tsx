@@ -197,7 +197,7 @@ export function AppSidebar({
           globalNavItems
             .filter((item) => !["profile", "about"].includes(item.key))
             .filter((item) => item.key !== "dashboard" || !currentUser.isAdmin)
-            .filter((item) => !["adminReviews", "registeredUsers", "systemSettings", "storageInfo", "infrastructure"].includes(item.key) || currentUser.isAdmin)
+            .filter((item) => !["adminReviews", "registeredUsers", "systemSettings", "maintenance", "storageInfo", "infrastructure"].includes(item.key) || currentUser.isAdmin)
             .map(({ key, label, path, Icon }) => {
               const navClassName = ["navItem", activeView === key ? "active" : ""].filter(Boolean).join(" ");
               return (

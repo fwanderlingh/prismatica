@@ -50,15 +50,15 @@ function decodeSession(token: string): SessionPayload | null {
 
 export async function getSessionUserId() {
   const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get(sessionCookieName);
-  if (!sessionCookie?.value) {
-    return null;
-  }
+  return getSessionUserFromToken(cookieStore.get(sessionCookieName)?.value)?.id ?? null;
+}
 
-  const session = decodeSession(sessionCookie.value);
+export function getSessionUserFromToken(token: string | undefined) {
+  if (!token) return null;
+  const session = decodeSession(token);
   if (!session) return null;
   const state = getUserSessionState(session.userId);
-  return state && state.version === (session.version ?? "") ? session.userId : null;
+  return state && state.version === (session.version ?? "") ? { id: session.userId, isAdmin: state.isAdmin } : null;
 }
 
 // Use a one-way key for presence; never store the authentication cookie itself.

@@ -11,6 +11,7 @@
     "start:prod": "next start --hostname 127.0.0.1 --port 3000",
     "build": "next build",
     "check": "tsc --noEmit && npm run check:api-auth",
+    "check:maintenance": "node scripts/check-maintenance.mjs",
     "check:navigation": "node scripts/check-navigation.mjs",
     "check:palette": "node scripts/check-palette-preference.mjs",
     "check:progress": "node scripts/check-load-progress.mjs",

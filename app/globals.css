@@ -1156,6 +1156,81 @@ h3 {
   align-self: start;
 }
 
+.maintenanceShell {
+  grid-template-columns: minmax(0, 560px);
+}
+
+.maintenancePanel {
+  gap: 28px;
+}
+
+.maintenanceNotice {
+  display: grid;
+  gap: 16px;
+  line-height: 1.6;
+}
+
+.maintenanceNotice h1 {
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  line-height: 1.2;
+}
+
+.maintenanceIcon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.maintenanceEnd {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  background: var(--accent-panel-bg);
+}
+
+.maintenanceEnd svg {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--teal);
+}
+
+.maintenanceEnd time {
+  display: block;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.maintenanceActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.maintenanceSettings,
+.maintenancePreview {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.maintenanceSettings .inviteForm {
+  margin: 0;
+}
+
+.maintenanceSettings .buttonRow {
+  flex-wrap: wrap;
+}
+
 .authTabs {
   width: 100%;
 }

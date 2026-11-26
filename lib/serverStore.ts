@@ -1620,7 +1620,7 @@ export function getUserSessionState(userId: string) {
   const state = readState();
   const user = getUser(state, userId);
   if (!user || (state.authSettings.transactionalEmailEnabled && user.emailAuth?.verificationRequired)) return null;
-  return { version: user.emailAuth?.sessionVersion ?? "" };
+  return { version: user.emailAuth?.sessionVersion ?? "", isAdmin: user.isAdmin };
 }
 
 export function getEmailStatusForAdmin(userId: string) {

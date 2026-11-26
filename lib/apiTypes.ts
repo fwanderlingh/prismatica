@@ -50,6 +50,7 @@ export type AppReviewSettings = {
 
 export type PublicAuthConfigPayload = {
   authSettings: AppAuthSettings;
+  maintenanceEnabled?: boolean;
   captcha: {
     question: string;
     token: string;
@@ -66,4 +67,5 @@ export type AppMutationPayload = AppStatePayload & {
 
 export type ApiErrorPayload = {
   error: string;
+  maintenance?: boolean;
 };

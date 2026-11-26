@@ -7,6 +7,7 @@ type FormSubmitEvent = {
 };
 
 type LoginShellProps = {
+  maintenanceEnabled?: boolean;
   registrationEnabled: boolean;
   transactionalEmailEnabled: boolean;
   authNotice: string;
@@ -35,6 +36,7 @@ type LoginShellProps = {
 };
 
 export function LoginShell({
+  maintenanceEnabled = false,
   registrationEnabled,
   transactionalEmailEnabled,
   authNotice,
@@ -65,7 +67,12 @@ export function LoginShell({
 
   return (
     <main className="loginShell">
-      {!registrationEnabled ? (
+      {maintenanceEnabled ? (
+        <div className="loginNotice" role="status">
+          <Info size={17} />
+          <span>Maintenance is in progress. Administrators can sign in here to manage the site. <a href="/maintenance">View maintenance information</a>.</span>
+        </div>
+      ) : !registrationEnabled ? (
         <div className="loginNotice" role="status" aria-live="polite">
           <Info size={17} />
           <span>

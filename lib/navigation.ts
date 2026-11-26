@@ -18,6 +18,8 @@ export function buildPathForState(view: ViewKey, projectId: string) {
       return "/admin/users";
     case "systemSettings":
       return "/admin/settings";
+    case "maintenance":
+      return "/admin/maintenance";
     case "storageInfo":
       return "/admin/storage";
     case "infrastructure":

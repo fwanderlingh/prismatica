@@ -24,6 +24,7 @@ export type ViewKey =
   | "adminReviews"
   | "registeredUsers"
   | "systemSettings"
+  | "maintenance"
   | "storageInfo"
   | "infrastructure"
   | "profile";

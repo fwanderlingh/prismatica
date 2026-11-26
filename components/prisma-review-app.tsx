@@ -29,6 +29,7 @@ import {
   LayoutDashboard,
   Server,
   Settings,
+  Wrench,
   Users
 } from "lucide-react";
 import {
@@ -97,6 +98,7 @@ import { AboutSection } from "./review-sections/about-section";
 import { AdminReviewsSection } from "./review-sections/admin-reviews-section";
 import { RegisteredUsersSection } from "./review-sections/registered-users-section";
 import { SystemSettingsSection } from "./review-sections/system-settings-section";
+import { MaintenanceSection } from "./review-sections/maintenance-section";
 import { StorageInfoSection } from "./review-sections/storage-info-section";
 import { InfrastructureSection } from "./review-sections/infrastructure-section";
 import { ImportEditorSection } from "./review-sections/import-editor-section";
@@ -165,6 +167,7 @@ const globalNavItems: NavItem[] = [
   { key: "adminReviews", label: "Review Admin", path: "/admin/reviews", Icon: LayoutDashboard },
   { key: "registeredUsers", label: "Registered Users", path: "/admin/users", Icon: Users },
   { key: "systemSettings", label: "System Settings", path: "/admin/settings", Icon: Settings },
+  { key: "maintenance", label: "Maintenance Mode", path: "/admin/maintenance", Icon: Wrench },
   { key: "storageInfo", label: "Storage Info", path: "/admin/storage", Icon: HardDrive },
   { key: "infrastructure", label: "Infrastructure", path: "/admin/infrastructure", Icon: Server },
   { key: "profile", label: "Profile", path: "/profile" },
@@ -185,7 +188,7 @@ const projectNavItems: NavItem[] = [
   { key: "settings", label: "Settings", path: "/project/current/settings", Icon: Settings }
 ];
 
-const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "systemSettings", "storageInfo", "infrastructure", "profile"];
+const globalViewKeys: ViewKey[] = ["dashboard", "newProject", "about", "adminReviews", "registeredUsers", "systemSettings", "maintenance", "storageInfo", "infrastructure", "profile"];
 const reviewPhaseNavKeys = new Set<ViewKey>([
   "imports",
   "dedup",
@@ -224,6 +227,7 @@ const viewKeySet = new Set<ViewKey>([
   "adminReviews",
   "registeredUsers",
   "systemSettings",
+  "maintenance",
   "storageInfo",
   "infrastructure",
   "profile"
@@ -277,6 +281,9 @@ function parseRouteState(pathname: string, search: string): { view: ViewKey; pro
   }
   if (normalizedPath === "/admin/settings") {
     return { view: "systemSettings", isKnownRoute: true };
+  }
+  if (normalizedPath === "/admin/maintenance") {
+    return { view: "maintenance", isKnownRoute: true };
   }
   if (normalizedPath === "/admin/storage") {
     return { view: "storageInfo", isKnownRoute: true };
@@ -505,6 +512,9 @@ async function apiRequest<T>(url: string, init?: RequestInit, onProgress?: (prog
   onProgress?.({ label: "Receiving workspace data", detail: "Loading your reviews, citations, and decisions." });
   const payload = (await response.json().catch(() => ({}))) as T | ApiErrorPayload;
   if (!response.ok) {
+    if (response.status === 503 && (payload as ApiErrorPayload).maintenance && window.location.pathname !== "/sign-in") {
+      window.location.replace("/maintenance");
+    }
     throw new Error((payload as ApiErrorPayload).error || "The server request failed.");
   }
 
@@ -556,6 +566,7 @@ export function PrismaReviewApp() {
   const [pendingAuthAction, setPendingAuthAction] = useState<"login" | "register" | "logout" | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [authSettings, setAuthSettings] = useState<AppAuthSettings>(defaultAuthSettings);
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [authSettingsMessage, setAuthSettingsMessage] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [reviewSettings, setReviewSettings] = useState(defaultReviewSettings);
@@ -1222,6 +1233,7 @@ export function PrismaReviewApp() {
   async function loadAuthConfig() {
     const payload = await apiRequest<PublicAuthConfigPayload>("/api/auth/config");
     setAuthSettings(payload.authSettings);
+    setMaintenanceEnabled(Boolean(payload.maintenanceEnabled));
     setCaptchaChallenge(payload.captcha);
     if (!payload.authSettings.registrationEnabled) {
       switchAuthMode("signIn");
@@ -3371,6 +3383,8 @@ export function PrismaReviewApp() {
         return currentUser.isAdmin ? renderRegisteredUsers() : renderProfile();
       case "systemSettings":
         return currentUser.isAdmin ? renderSystemSettings() : renderProfile();
+      case "maintenance":
+        return currentUser.isAdmin ? <MaintenanceSection /> : renderProfile();
       case "storageInfo":
         return currentUser.isAdmin ? <StorageInfoSection openProject={openProject} /> : renderProfile();
       case "infrastructure":
@@ -4124,6 +4138,7 @@ export function PrismaReviewApp() {
   if (!isAuthenticated) {
     return (
       <LoginShell
+        maintenanceEnabled={maintenanceEnabled}
         registrationEnabled={authSettings.registrationEnabled}
         transactionalEmailEnabled={authSettings.transactionalEmailEnabled}
         authNotice={authNotice}
